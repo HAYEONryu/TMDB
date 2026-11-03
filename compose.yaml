@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+    environment:
+      POSTGRES_USER: tm
+      POSTGRES_PASSWORD: tm-local-only
+      POSTGRES_DB: tm_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U tm -d tm_dev]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  web:
+    build: .
+    image: tm-customer-manager:stage2
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://tm:tm-local-only@postgres:5432/tm_dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  scheduler:
+    image: tm-customer-manager:stage2
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://tm:tm-local-only@postgres:5432/tm_dev
+    command: [python, manage.py, run_scheduler]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  proxy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    profiles: [proxy]
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on: [web]
+volumes:
+  postgres_data:

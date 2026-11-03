@@ -1,0 +1,13 @@
+.env
+.venv/
+.local/
+.cache/
+__pycache__/
+*.py[cod]
+.coverage
+htmlcov/
+staticfiles/
+test-results/
+playwright-report/
+node_modules/
+.DS_Store

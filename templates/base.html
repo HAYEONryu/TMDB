@@ -1,0 +1,19 @@
+{% load static %}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}TM 고객관리{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'app.css' %}">
+  <script src="{% static 'forms.js' %}" defer></script>
+</head>
+<body>
+  <header class="border-bottom bg-white"><div class="container py-3 d-flex align-items-center justify-content-between gap-3">
+    <a class="brand text-decoration-none" href="/">TM <span>고객관리</span></a>
+    {% if user.is_authenticated %}<div class="d-flex align-items-center gap-3"><span>{{ user.name }} · {{ user.get_role_display }}</span><form method="post" action="/auth/logout">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">로그아웃</button></form></div>{% endif %}
+  </div></header>
+  <main class="container py-5">{% block content %}{% endblock %}</main>
+</body>
+</html>

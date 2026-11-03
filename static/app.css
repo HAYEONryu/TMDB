@@ -1,0 +1,11 @@
+:root { --bs-primary: #245c4e; --bs-primary-rgb: 36,92,78; }
+body { background: #f5f7f6; color: #1c3029; font-family: -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic",sans-serif; }
+.brand { color: #245c4e; font-weight: 800; font-size: 1.2rem; letter-spacing: .02em; }
+.brand span { color: #33473e; font-weight: 500; margin-left: .4rem; }
+.auth-card { max-width: 480px; border: 1px solid #dfe8e2; border-radius: 16px; }
+.eyebrow { color: #497362; font-size: .8rem; font-weight: 700; letter-spacing: .08em; }
+input { display: block; width: 100%; padding: .7rem .85rem; border: 1px solid #aabdb2; border-radius: 7px; background: white; color: #1c3029; }
+input:focus { outline: 3px solid #c4dfd0; border-color: #245c4e; }
+.btn-primary { --bs-btn-bg: #245c4e; --bs-btn-border-color: #245c4e; --bs-btn-hover-bg: #174536; --bs-btn-hover-border-color: #174536; }
+.btn-outline-primary { --bs-btn-color: #245c4e; --bs-btn-border-color: #245c4e; --bs-btn-hover-bg: #245c4e; --bs-btn-hover-border-color: #245c4e; }
+.field-error { color: #a51e2c; font-size: .875rem; margin: .5rem 0 0; }
