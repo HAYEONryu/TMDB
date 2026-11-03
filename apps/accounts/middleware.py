@@ -1,4 +1,5 @@
 from django.contrib.auth import SESSION_KEY, logout
+from django.core.exceptions import ValidationError
 from django.shortcuts import redirect
 from apps.accounts.access import api_error
 from apps.accounts.models import User
@@ -16,7 +17,7 @@ class AccessMiddleware:
         if user_id:
             try:
                 current = User.objects.filter(pk=user_id).first()
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, ValidationError):
                 current = None
             if not current or not current.is_active:
                 session_error = "ACCOUNT_DISABLED" if current else "UNAUTHENTICATED"

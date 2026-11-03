@@ -11,3 +11,10 @@ test-results/
 playwright-report/
 node_modules/
 .DS_Store
+
+# Local environment files and credentials (v2 package rules merged)
+.env.*
+!.env.example
+!.env.ai.example
+secrets/
+backups/

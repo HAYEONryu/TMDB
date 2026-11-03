@@ -3,10 +3,16 @@ from pathlib import Path
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
-from dotenv import load_dotenv
+from dotenv import dotenv_values
+from config.ai import load_ai_config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env", override=False)
+for env_name, env_value in dotenv_values(BASE_DIR / ".env", interpolate=False).items():
+    if env_value is not None and not env_name.startswith("AI_") and env_name != "TM_PROCESS_ROLE":
+        os.environ.setdefault(env_name, env_value)
+PROCESS_ROLE = os.environ.get("TM_PROCESS_ROLE", "management")
+TESTING = False
+AI_CONFIG = load_ai_config(BASE_DIR, role=PROCESS_ROLE)
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
 if not SECRET_KEY:
@@ -22,6 +28,7 @@ INSTALLED_APPS = [
     "django.contrib.auth", "django.contrib.contenttypes", "django.contrib.sessions",
     "django.contrib.staticfiles", "apps.accounts", "apps.sites", "apps.customers",
     "apps.assignments", "apps.callbacks", "apps.imports", "apps.operations",
+    "apps.consultations", "apps.ai_assistant",
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -78,5 +85,10 @@ BUSINESS_LOCK_TIMEOUT_MS = int(os.environ.get("BUSINESS_LOCK_TIMEOUT_MS", "5000"
 ALLOW_DEMO_SEED = os.environ.get("ALLOW_DEMO_SEED", "false").lower() == "true"
 # Request bodies, query values and password/phone fields are never added to app logs.
 LOGGING = {"version": 1, "disable_existing_loggers": False,
-           "handlers": {"console": {"class": "logging.StreamHandler"}},
-           "loggers": {"django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False}}}
+           "formatters": {"safe": {"()": "config.security.RedactingFormatter", "format": "%(levelname)s %(name)s %(message)s"}},
+           "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "safe"}},
+           "root": {"handlers": ["console"], "level": "INFO"},
+           "loggers": {
+               "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
+               "django.server": {"handlers": ["console"], "level": "WARNING", "propagate": False},
+           }}

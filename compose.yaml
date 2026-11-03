@@ -14,8 +14,8 @@ services:
       retries: 20
   web:
     build: .
-    image: tm-customer-manager:stage2
-    env_file: .env
+    image: tm-customer-manager:v2-p1
+    env_file: [.env, .env.ai]
     environment:
       DATABASE_URL: postgresql://tm:tm-local-only@postgres:5432/tm_dev
     ports:
@@ -29,7 +29,7 @@ services:
       timeout: 5s
       retries: 5
   scheduler:
-    image: tm-customer-manager:stage2
+    image: tm-customer-manager:v2-p1
     build: .
     env_file: .env
     environment:
@@ -46,5 +46,16 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on: [web]
+  ai_worker:
+    image: tm-customer-manager:v2-p1
+    build: .
+    profiles: [ai]
+    env_file: [.env, .env.ai]
+    environment:
+      DATABASE_URL: postgresql://tm:tm-local-only@postgres:5432/tm_dev
+    command: [python, manage.py, run_ai_worker]
+    depends_on:
+      postgres:
+        condition: service_healthy
 volumes:
   postgres_data:

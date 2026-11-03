@@ -7,3 +7,11 @@ node_modules
 __pycache__
 test-results
 staticfiles
+
+# v2: never send credentials to the image build context
+.env.*
+!.env.example
+!.env.ai.example
+secrets/
+backups/
+docs/history/

@@ -1,7 +1,9 @@
 from django.urls import path
 from apps.accounts import views
+from apps.ai_assistant.views import availability
 
 urlpatterns = [
+    path("api/ai/availability", availability),
     path("healthz", views.health),
     path("", views.home),
     path("auth/login", views.login_view),
