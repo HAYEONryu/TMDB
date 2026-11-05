@@ -1,4 +1,4 @@
-document.querySelectorAll("form").forEach((form) => {
+document.querySelectorAll("form:not([data-async])").forEach((form) => {
   form.addEventListener("submit", (event) => {
     if (form.dataset.submitting === "true") {
       event.preventDefault();

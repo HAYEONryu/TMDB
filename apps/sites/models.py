@@ -36,6 +36,7 @@ class GlobalSettings(models.Model):
 
 
 class DefaultSiteHistory(TimestampedModel):
+    settings_version = models.PositiveBigIntegerField(null=True,db_index=True)
     previous_site = models.ForeignKey(Site, null=True, on_delete=models.SET_NULL, related_name="previous_default_history")
     new_site = models.ForeignKey(Site, null=True, on_delete=models.SET_NULL, related_name="new_default_history")
     previous_site_id_snapshot = models.UUIDField(null=True)

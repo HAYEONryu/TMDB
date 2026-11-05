@@ -27,6 +27,7 @@ def load_ai_config(base_dir, *, role, environment=None):
     if role not in AI_ROLES:
         return AIConfig(reason="AI_PROCESS_DISABLED")
     environment = os.environ if environment is None else environment
+    register_secret(environment.get("AI_API_KEY") or "")
     file_path = Path(environment.get("AI_ENV_FILE") or Path(base_dir) / ".env.ai")
     values = {}
     try:

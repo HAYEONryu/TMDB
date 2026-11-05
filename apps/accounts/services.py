@@ -57,10 +57,17 @@ def change_password(actor, data):
 
 
 @retry_transient_write
-def reset_password(actor, target_id):
+def reset_password(actor, target_id, *, idempotency_key=None):
+    from apps.common.receipts import fingerprint,replay,remember
+    from apps.common.http import identifier
+    key=identifier(idempotency_key) if idempotency_key is not None else None
+    body_hash=fingerprint({"target_id":str(target_id)})
     with business_write():
         users = {u.pk: u for u in User.objects.select_for_update().filter(pk__in=[actor.pk, target_id]).order_by("pk")}
         verify_actor(actor, users[actor.pk], admin=True)
+        if key:
+            cached=replay(users[actor.pk],"PASSWORD_RESET",key,body_hash)
+            if cached:return users.get(target_id)
         target = users.get(target_id)
         if target is None:
             raise AccessError("NOT_FOUND", "사용자를 찾을 수 없습니다.", 404)
@@ -69,51 +76,11 @@ def reset_password(actor, target_id):
         target.session_version += 1
         target.save(update_fields=["password", "must_change_password", "session_version", "updated_at"])
         OperationEvent.objects.create(actor=users[actor.pk], operation="PASSWORD_RESET", occurred_at=timezone.now(), affected_count=1)
+        if key:remember(users[actor.pk],"PASSWORD_RESET",key,body_hash,{"ok":True,"id":str(target.pk)},target_ids=[target.pk])
         return target
 
 
-@retry_transient_write
 def set_user_access(actor, target_id, *, is_active=None, role=None):
-    """Foundation service for later user management. No partial deactivation writes."""
-    from apps.assignments.models import Assignment
-    from apps.customers.models import Customer
-
-    with business_write():
-        users = {u.pk: u for u in User.objects.select_for_update().filter(pk__in=[actor.pk, target_id]).order_by("pk")}
-        verify_actor(actor, users[actor.pk], admin=True)
-        target = users.get(target_id)
-        if not target:
-            raise AccessError("NOT_FOUND", "사용자를 찾을 수 없습니다.", 404)
-        new_active = target.is_active if is_active is None else is_active
-        new_role = target.role if role is None else role
-        if type(new_active) is not bool or new_role not in User.Role.values:
-            raise AccessError("VALIDATION_ERROR", "활성 상태 또는 역할이 올바르지 않습니다.", 422)
-        if target.role == User.Role.ADMIN and target.is_active and (not new_active or new_role != User.Role.ADMIN):
-            if not User.objects.filter(is_active=True, role=User.Role.ADMIN).exclude(pk=target.pk).exists():
-                raise AccessError("LAST_ACTIVE_ADMIN", "마지막 활성 관리자는 비활성화하거나 직원으로 변경할 수 없습니다.", 409)
-        if (new_active, new_role) == (target.is_active, target.role):
-            return target
-        if target.is_active and not new_active:
-            # Lock order: sorted users -> sorted customers -> assignments.
-            customers = list(Customer.objects.select_for_update(of=("self",)).filter(
-                current_assignment__employee=target,
-                current_assignment__first_activity_at__isnull=True,
-                current_assignment__ended_at__isnull=True,
-            ).exclude(current_assignment=None).order_by("pk"))
-            assignment_ids = [c.current_assignment_id for c in customers]
-            assignments = list(Assignment.objects.select_for_update().filter(pk__in=assignment_ids).order_by("pk"))
-            now = timezone.now()
-            for customer in customers:
-                customer.current_assignment = None
-                customer.version += 1
-                customer.save(update_fields=["current_assignment", "version", "updated_at"])
-            for assignment in assignments:
-                assignment.ended_at = now
-                assignment.end_reason = Assignment.EndReason.USER_DISABLED
-                assignment.ended_by = users[actor.pk]
-                assignment.save(update_fields=["ended_at", "end_reason", "ended_by", "updated_at"])
-        target.is_active, target.role = new_active, new_role
-        target.session_version += 1
-        target.save(update_fields=["is_active", "role", "session_version", "updated_at"])
-        OperationEvent.objects.create(actor=users[actor.pk], operation="USER_ACCESS_CHANGED", occurred_at=timezone.now(), affected_count=1)
-        return target
+    """Compatibility entry point, sharing P4's atomic user/deactivation rules."""
+    from apps.accounts.management_services import update_access
+    return update_access(actor,target_id,is_active=is_active,role=role)

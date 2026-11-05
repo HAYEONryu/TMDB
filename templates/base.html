@@ -6,14 +6,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}TM 고객관리{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
-  <link rel="stylesheet" href="{% static 'app.css' %}">
   <script src="{% static 'forms.js' %}" defer></script>
+  <script src="{% static 'auth-context.js' %}" defer></script>
+  {% block assets %}{% endblock %}
+  <link rel="stylesheet" href="{% static 'app.css' %}">
 </head>
-<body>
+<body data-user-id="{% if user.is_authenticated %}{{ user.pk }}{% endif %}" data-role="{{ user.role }}" data-initial="{{ user.must_change_password|yesno:'true,false' }}">
   <header class="border-bottom bg-white"><div class="container py-3 d-flex align-items-center justify-content-between gap-3">
     <a class="brand text-decoration-none" href="/">TM <span>고객관리</span></a>
     {% if user.is_authenticated %}<div class="d-flex align-items-center gap-3"><span>{{ user.name }} · {{ user.get_role_display }}</span><form method="post" action="/auth/logout">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">로그아웃</button></form></div>{% endif %}
   </div></header>
-  <main class="container py-5">{% block content %}{% endblock %}</main>
+  <main class="container py-4">{% if user.is_authenticated and user.role == 'ADMIN' and not user.must_change_password %}<nav class="workspace-nav mb-4" aria-label="관리자 메뉴"><a href="/app/admin">대시보드</a><a href="/app/admin/customers">DB 관리</a><a href="/app/admin/assignments">DB 분배·회수</a><a href="/app/admin/trash">휴지통</a><a href="/app/admin/users">사용자 관리</a></nav>{% elif user.is_authenticated and not user.must_change_password %}<nav class="workspace-nav mb-4" aria-label="직원 메뉴"><a href="/app/employee">대시보드</a><a href="/app/employee/today">오늘 할 일</a><a href="/app/employee/mine">나의 DB</a></nav>{% endif %}{% block content %}{% endblock %}</main>
 </body>
 </html>

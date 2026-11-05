@@ -19,6 +19,9 @@ class ImportBatch(TimestampedModel):
     success_count = models.PositiveIntegerField(default=0)
     failure_count = models.PositiveIntegerField(default=0)
     last_error_code = models.CharField(max_length=64, blank=True, default="")
+    validation_summary = models.JSONField(default=dict)
+    committed_at = models.DateTimeField(null=True, blank=True)
+    committed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="committed_imports")
 
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(status__in=["VALIDATED", "COMMITTED", "EXPIRED", "FAILED"]), name="import_status_valid")]
@@ -37,7 +40,7 @@ class ImportRowResult(TimestampedModel):
     batch = models.ForeignKey(ImportBatch, on_delete=models.CASCADE, related_name="row_results")
     row_number = models.PositiveIntegerField()
     success = models.BooleanField(default=False)
-    customer_name = models.CharField(max_length=100, blank=True, default="")
+    customer_name = models.TextField(blank=True, default="")
     phone_input = models.TextField(blank=True, default="")
     error_code = models.CharField(max_length=64, blank=True, default="")
     reason = models.TextField(blank=True, default="")

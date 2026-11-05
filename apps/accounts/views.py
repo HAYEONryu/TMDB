@@ -142,7 +142,13 @@ def employee_access(request):
 @database_write_errors
 def reset_password_view(request, user_id):
     try:
-        user = reset_password(request.user, user_id)
+        key=None
+        if is_json(request) and request.body:
+            from apps.common.http import json_object,identifier
+            body=json_object(request)
+            if set(body) not in (set(),{"idempotency_key"}):raise AccessError("VALIDATION_ERROR","비밀번호 재설정 요청 키를 확인해 주세요.",422)
+            key=identifier(body["idempotency_key"]) if "idempotency_key" in body else None
+        user = reset_password(request.user, user_id, idempotency_key=key)
     except AccessError as exc:
         return api_error(exc.code, exc.message, exc.status, exc.fields)
     return JsonResponse({"id": str(user.pk), "must_change_password": True})

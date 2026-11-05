@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}DB 분배·회수 · TM 고객관리{% endblock %}
+{% block assets %}<script type="module" src="{% static 'assignments.js' %}"></script>{% endblock %}
+{% block content %}
+<section id="assignment-management" data-user-id="{{ user.pk }}">
+<p class="eyebrow">관리자 · 업무 배정</p><h1 class="h2">DB 분배·회수</h1><p class="text-secondary">직원당 수량을 지정합니다. 부족하면 전체 분배를 취소합니다.</p>
+<div class="card card-body p-4 mb-3"><div class="d-flex flex-wrap gap-3 align-items-end"><label>현장<select id="assignment-site" class="form-select mt-2"></select></label><button id="check-availability" class="btn btn-outline-primary">확인</button><p id="availability-count" class="mb-2" role="status">현장을 확인해 주세요.</p></div>
+<hr><div class="d-flex flex-wrap gap-3 align-items-end"><label>직원<select id="assignment-employee" class="form-select mt-2" disabled></select></label><label>직원당 분배 수량<input id="assignment-quantity" type="number" min="1" step="1" class="form-control mt-2" disabled></label><button id="distribute" class="btn btn-primary" disabled>분배</button><button id="recall" class="btn btn-outline-secondary" disabled>오늘 할당 회수</button></div>
+<p class="small text-secondary mt-3 mb-0">분배 가능: 선택 현장의 미삭제·미할당 고객. 실행 시 활성 직원과 잔여 수를 다시 확인합니다. 회수는 선택 직원의 오늘 현재 할당 전체이며 진행 건도 포함합니다.</p></div>
+<p id="assignment-message" class="grid-message" role="alert"></p><div id="assignment-result" role="status" class="mb-3"></div>
+<div id="assignment-pending" class="card card-body border-warning mb-3" hidden><h2 class="h6">결과를 확인하지 못한 요청이 있습니다</h2><p>같은 요청으로 결과를 확인하세요. 대기 정보 폐기는 서버에서 이미 처리된 작업을 취소하지 않습니다.</p><div class="d-flex gap-2 flex-wrap"><button id="assignment-retry" class="btn btn-primary">동일 요청 다시 확인</button><button id="assignment-discard" class="btn btn-outline-secondary">대기 정보 폐기</button></div></div>
+<a href="/app/admin/customers" class="btn btn-link">DB 관리 열기</a></section>
+<dialog id="recall-dialog"><h2 class="h5">오늘 할당 전체 회수</h2><p id="recall-preview"></p><p>진행 여부와 관계없이 회수합니다. 실행 시 대상과 건수를 다시 계산하며 상담정보·재콜 이력은 유지합니다.</p><div class="dialog-actions"><button id="recall-cancel" class="btn btn-outline-secondary">취소</button><button id="recall-confirm" class="btn btn-primary">회수</button></div></dialog>
+{% endblock %}

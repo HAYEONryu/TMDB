@@ -45,6 +45,8 @@ class ScheduledJobRun(TimestampedModel):
     started_at = models.DateTimeField(null=True)
     completed_at = models.DateTimeField(null=True)
     lease_expires_at = models.DateTimeField(null=True)
+    lease_token = models.UUIDField(null=True)
+    next_retry_at = models.DateTimeField(null=True)
     affected_count = models.PositiveIntegerField(default=0)
     last_error_code = models.CharField(max_length=64, blank=True, default="")
 
@@ -60,3 +62,12 @@ class OperationEvent(TimestampedModel):
     operation = models.CharField(max_length=64)
     occurred_at = models.DateTimeField()
     affected_count = models.PositiveIntegerField(default=0)
+
+
+class SchedulerState(models.Model):
+    id = models.PositiveSmallIntegerField(primary_key=True,default=1,editable=False)
+    start_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints=[models.CheckConstraint(condition=Q(id=1),name='scheduler_singleton')]

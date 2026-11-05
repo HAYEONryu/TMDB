@@ -1,5 +1,7 @@
 # 2단계 실행·검증 결과
 
+> v1.1의 과거 실행 이력이다. 현재 v2.0 결과는 [P1 검증 기록](P1_VERIFICATION.md)을 따르며 아래 통과 수치를 승계하지 않는다.
+
 - 실행일: 2026-11-03, Asia/Seoul
 - 환경: macOS arm64, 프로젝트 Python 3.13.18, Django 5.2.18, PostgreSQL 17.11
 - DB: 프로젝트 내부 클러스터 `127.0.0.1:55432`; 앱 `tm_dev`, 테스트 `test_tm_dev`

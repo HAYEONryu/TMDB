@@ -1,5 +1,6 @@
 from django.contrib.auth import SESSION_KEY, logout
 from django.core.exceptions import ValidationError
+from django.contrib.auth.models import AnonymousUser
 from django.shortcuts import redirect
 from apps.accounts.access import api_error
 from apps.accounts.models import User
@@ -26,6 +27,8 @@ class AccessMiddleware:
             elif not request.user.is_authenticated:
                 session_error = "UNAUTHENTICATED"
             if session_error:
+                if current is None:
+                    request.user = AnonymousUser()
                 logout(request)
 
         business_path = request.path == "/" or request.path.startswith(("/api/", "/app/"))

@@ -1,0 +1,79 @@
+# P8 기본 업무 69항목 검수 결과
+
+실행 완료 시각(UTC): `2026-11-05T06:12:24.102882+00:00`. 실제 실행한 Django 267개 결과와 동일 소스 SHA를 대조했다.
+
+미실행·실패·skip·소스 변경을 통과로 처리하지 않는다. 자동 테스트 수와 검수 문항 수는 다르다.
+
+| ID | 설계서 검수 항목 | 결과 | 실행한 테스트 ID |
+|---|---|---|---|
+| 18.1-01 | 직원이 다른 직원의 고객 ID·할당 ID를 보내도 조회·저장이 거부된다. | 통과 | `tests.test_p2.P2ApiTests.test_scoped_filters_candidates_and_errors_never_disclose_other_employee`<br>`tests.test_p5.EmployeeTests.test_recall_same_employee_new_assignment_does_not_rebind_old_queue` |
+| 18.1-02 | 직원의 필터 후보값에 타인 DB 값이 포함되지 않는다. | 통과 | `tests.test_p2.P2ApiTests.test_scoped_filters_candidates_and_errors_never_disclose_other_employee` |
+| 18.1-03 | 관리자도 고객명·연락처 수정 API를 사용할 수 없다. | 통과 | `tests.test_p2.P2ApiTests.test_save_batch_partial_success_and_whole_row_validation` |
+| 18.1-04 | 초기·재설정 비밀번호가 dodream이며 변경 전 업무 API는 차단된다. | 통과 | `tests.test_auth.AuthenticationTests.test_admin_and_employee_login_initial_password_gate`<br>`tests.test_auth.AuthenticationTests.test_reset_invalidates_all_sessions_and_requires_initial_change_again` |
+| 18.1-05 | 비활성화·재설정 후 다른 브라우저의 기존 세션이 다음 요청부터 차단된다. | 통과 | `tests.test_auth.AuthenticationTests.test_deactivation_invalidates_session_and_reactivation_does_not_restore_it`<br>`tests.test_auth.AuthenticationTests.test_reset_invalidates_all_sessions_and_requires_initial_change_again` |
+| 18.1-06 | 마지막 활성 관리자를 제거할 수 없다. | 통과 | `tests.test_p4.P4Tests.test_last_admin_guard_and_atomic_handover_and_promotion_preserves_assignment`<br>`tests.test_p4.P4ConcurrencyTests.test_two_last_admin_deactivations_keep_one_admin` |
+| 18.2-01 | 현장 중복 생성의 동시 요청도 하나만 성공한다. | 통과 | `tests.test_p2.P2ConcurrencyTests.test_site_normalization_concurrent_one_success` |
+| 18.2-02 | 기본 현장 변경은 작업 중인 화면을 강제 전환하지 않고 다음 화면부터 적용된다. | 통과 | `tests.browser_p2.AdminGridBrowserTests.test_grid_paging_filters_manual_save_trash_restore_site_default_and_mobile` |
+| 18.2-03 | 첫 현장·기본 현장 삭제·마지막 현장 삭제의 빈 상태가 정상이다. | 통과 | `tests.test_p2.P2ApiTests.test_sites_first_default_normalized_duplicate_and_explicit_default`<br>`tests.test_p7.P7Tests.test_site_deletion_default_fallback_then_none_and_original_name_not_in_receipt` |
+| 18.2-04 | 고객명·연락처 누락, 잘못된 enum·날짜·담당자 값은 행 오류로 표시된다. | 통과 | `tests.test_imports.ImportTests.test_first_valid_phone_wins_invalid_earlier_does_not_reserve_phone`<br>`tests.test_imports.ImportTests.test_numeric_phone_is_never_repaired_and_invalid_types_enums_lengths`<br>`tests.test_imports.ImportTests.test_dates_excel_datetime_strings_weekday_ignored_and_date_only_rejected`<br>`tests.test_imports.ImportTests.test_formula_staff_and_extra_columns_fail_rows_not_entire_valid_file` |
+| 18.2-05 | 010 하이픈 유무는 동일 연락처로 취급한다. 다른 현장의 같은 번호는 등록된다. | 통과 | `tests.test_imports.ImportTests.test_existing_duplicates_include_trash_but_different_site_allowed`<br>`tests.test_imports.ImportTests.test_first_valid_phone_wins_invalid_earlier_does_not_reserve_phone` |
+| 18.2-06 | 휴지통 중복·파일 내 중복·동시 업로드 중복이 기존 상담정보를 덮어쓰지 않는다. | 통과 | `tests.test_imports.ImportTests.test_existing_duplicates_include_trash_but_different_site_allowed`<br>`tests.test_imports.ImportConcurrencyTests.test_two_batches_same_phone_revalidate_under_lock` |
+| 18.2-07 | 검증 당시 정상이어도 확정 전에 생긴 중복을 다시 검사한다. | 통과 | `tests.test_imports.ImportTests.test_commit_revalidates_new_duplicates_and_replay_counts_do_not_change` |
+| 18.2-08 | 같은 업로드 확정 재시도가 이중 등록되지 않는다. | 통과 | `tests.test_imports.ImportConcurrencyTests.test_same_batch_same_key_exactly_once` |
+| 18.2-09 | 1만 행 처리의 메모리·응답 시간을 측정하고 시간 초과를 조용히 무시하지 않는다. | 통과 | `tests.performance_imports.ImportPerformanceTests.test_10000_rows_actual_postgresql` |
+| 18.3-01 | 직원 4명·잔여 95건·각 30건 요청은 0건 처리되며 23개씩 가능 알림을 표시한다. | 통과 | `tests.test_p4.P4Tests.test_four_employees_95_customers_30_each_allocates_zero_and_suggests23`<br>`tests.browser_p4.P4BrowserTests.test_distribution_shortage_lost_response_reload_replay_and_today_recall` |
+| 18.3-02 | 관리자 두 명이 동시에 분배해도 같은 DB의 현재 할당은 하나다. | 통과 | `tests.test_p4.P4ConcurrencyTests.test_two_admin_distributions_have_no_overlap` |
+| 18.3-03 | 더블클릭·응답 유실·동일 key 재시도에도 분배가 한 번만 실행된다. | 통과 | `tests.test_p4.P4ConcurrencyTests.test_same_key_distribute_once`<br>`tests.browser_p4.P4BrowserTests.test_distribution_shortage_lost_response_reload_replay_and_today_recall` |
+| 18.3-04 | 분배 중 직원 비활성화와 경합해도 비활성 직원에게 유효한 새 배정이 남지 않는다. | 통과 | `tests.test_p4.P4ConcurrencyTests.test_deactivation_racing_distribution_leaves_no_new_active_assignment_to_disabled_user` |
+| 18.3-05 | 수동 회수는 오늘의 현재 할당 전체를 회수하며 진행 DB도 포함한다. 과거 할당은 제외한다. | 통과 | `tests.test_p4.P4Tests.test_manual_recall_today_all_includes_progress_but_not_other_site_or_past` |
+| 18.3-06 | 회수 후 상담정보·재콜 이력은 유지된다. | 통과 | `tests.test_p4.P4Tests.test_manual_recall_today_all_includes_progress_but_not_other_site_or_past` |
+| 18.3-07 | 동일 직원 재선택은 할당일을 초기화하지 않는다. 다른 직원 선택은 새 할당을 생성한다. | 통과 | `tests.test_p4.P4Tests.test_assignee_noop_reassign_clear_and_old_buffer_rejection` |
+| 18.4-01 | 변경이 없는 동안 자동 저장 API를 호출하지 않는다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_first_dirty_deadline_continuous_typing_noop_and_copy_restrictions` |
+| 18.4-02 | 정상 온라인·활성 화면에서 연속 입력해도 첫 변경 후 100초 이내 전송을 시작한다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_first_dirty_deadline_continuous_typing_noop_and_copy_restrictions` |
+| 18.4-03 | 같은 셀 반복 변경은 마지막 값만 전송한다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_first_dirty_deadline_continuous_typing_noop_and_copy_restrictions` |
+| 18.4-04 | 요청 중 새로 입력한 값이 이전 응답으로 삭제되지 않는다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_inflight_later_edit_and_lost_response_recovery` |
+| 18.4-05 | 응답 유실 후 같은 mutation 재시도는 이력·수정을 중복 생성하지 않는다. | 통과 | `tests.test_p2.P2ConcurrencyTests.test_replayed_mutation_concurrent_once`<br>`tests.browser_employee.EmployeeBrowserTests.test_inflight_later_edit_and_lost_response_recovery` |
+| 18.4-06 | 한 행의 충돌이 다른 정상 행의 성공을 막지 않는다. | 통과 | `tests.test_p5.EmployeeTests.test_partial_batch_atomic_rows_and_noop_does_not_mark_activity` |
+| 18.4-07 | 버전 충돌을 조용히 덮어쓰지 않는다. | 통과 | `tests.test_p2.P2ApiTests.test_version_conflict_requires_fresh_mutation_and_keeps_failed_receipt`<br>`tests.browser_employee.EmployeeBrowserTests.test_multitab_explicit_conflict_and_reassignment_blocks_old_queue` |
+| 18.4-08 | 회수·동일인 재배정 이후 이전 할당의 대기열은 저장되지 않는다. | 통과 | `tests.test_p4.P4Tests.test_same_employee_after_recall_has_new_assignment_and_stale_buffer_rejected`<br>`tests.browser_employee.EmployeeBrowserTests.test_multitab_explicit_conflict_and_reassignment_blocks_old_queue` |
+| 18.4-09 | 오프라인·새로고침·브라우저 재시작 후 동일 계정의 대기열을 검증·복구한다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_offline_encrypted_persistent_browser_restart_user_isolation` |
+| 18.4-10 | 다른 계정은 이전 계정의 미전송 값을 표시·전송하지 않는다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_offline_encrypted_persistent_browser_restart_user_isolation` |
+| 18.4-11 | 저장 실패 중 화면 이동·로그아웃에 명시적 선택을 요구한다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_navigation_logout_failure_cancel_retry_and_confirmed_discard` |
+| 18.5-01 | 오늘 23시 이전 현재 할당·미진행·기본 현장 DB만 자동 회수한다. | 통과 | `tests.test_p6.P6Tests.test_recall_boundaries_existing_values_and_completed_job_replay` |
+| 18.5-02 | 통화결과가 비어 있어도 상담내용·주택상황 등 실제 저장이 있으면 회수하지 않는다. | 통과 | `tests.test_p8.P8IntegrationTests.test_saved_revert_and_admin_housing_edit_survive_recall_but_noop_does_not` |
+| 18.5-03 | 저장된 값 원복·관리자 상담 수정도 진행으로 남는다. | 통과 | `tests.test_p8.P8IntegrationTests.test_saved_revert_and_admin_housing_edit_survive_recall_but_noop_does_not` |
+| 18.5-04 | 저장 전 원복·무변경 저장·조회·필터는 진행으로 만들지 않는다. | 통과 | `tests.test_p2.P2ApiTests.test_noop_normalization_never_progresses`<br>`tests.browser_employee.EmployeeBrowserTests.test_reverted_unsent_values_do_not_create_activity_and_datetime_fields`<br>`tests.test_p8.P8IntegrationTests.test_saved_revert_and_admin_housing_edit_survive_recall_but_noop_does_not` |
+| 18.5-05 | 과거 할당·다른 현장·23시 이후 새 할당은 회수하지 않는다. | 통과 | `tests.test_p6.P6Tests.test_recall_boundaries_existing_values_and_completed_job_replay`<br>`tests.test_p6.P6Tests.test_delayed_job_does_not_undo_saved_activity_or_new_assignment` |
+| 18.5-06 | 저장과 회수 경합은 커밋 순서에 따라 일관되게 처리한다. | 통과 | `tests.test_p6.P6Tests.test_saved_commit_wins_against_automatic_recall`<br>`tests.test_p6.P6Tests.test_automatic_recall_commit_wins_against_late_save` |
+| 18.5-07 | 기본 현장이 변경돼도 재시도는 cutoff 시점의 현장을 유지한다. | 통과 | `tests.test_p6.P6Tests.test_failure_rollback_fixed_cutoff_site_and_retry_after_default_changes` |
+| 18.5-08 | 서버 중단 후 누락 실행·중복 실행이 중복 회수나 새 할당 손상을 일으키지 않는다. | 통과 | `tests.test_p6.P6Tests.test_real_process_exits_after_claim_then_restart_recovers_without_duplicate`<br>`tests.test_p6.P6Tests.test_delayed_job_does_not_undo_saved_activity_or_new_assignment` |
+| 18.5-09 | 비활성화 회수는 모든 현장·모든 날짜의 현재 미진행 할당에 적용된다. | 통과 | `tests.test_p4.P4Tests.test_deactivation_all_sites_dates_only_unprogressed_keeps_progress_and_reactivation_does_not_restore` |
+| 18.6-01 | 오늘의 DB는 오늘 할당 OR 오늘/과거 미완료 재콜이며 한 고객은 한 행이다. | 통과 | `tests.test_p5.EmployeeTests.test_today_kst_boundary_callback_union_priority_and_no_duplicates` |
+| 18.6-02 | 재콜 완료 후 기한 경과 목록에서 빠지고 이력은 남는다. | 통과 | `tests.browser_p6.P6BrowserTests.test_complete_saves_row_first_leaves_today_and_preserves_history` |
+| 18.6-03 | 완료 요청 재시도가 이후 생성된 새 일정을 완료시키지 않는다. | 통과 | `tests.test_p6.P6Tests.test_complete_atomic_progress_revision_and_replay_preserves_new_schedule`<br>`tests.browser_p6.P6BrowserTests.test_lost_completion_response_reload_retry_preserves_new_callback` |
+| 18.6-04 | 휴지통 복구는 기존 통화결과를 유지하고 미할당 상태로 복구한다. | 통과 | `tests.test_p2.P2ApiTests.test_soft_delete_close_request_restore_preserves_business_history` |
+| 18.6-05 | 개별 영구 삭제 후 같은 번호 재등록이 가능하고 이전 내용·이력은 조회되지 않는다. | 통과 | `tests.test_p7.P7Tests.test_hard_customer_deletes_all_history_receipts_and_allows_new_uuid` |
+| 18.6-06 | 현장 삭제 후 관련 조회·미전송 저장·업로드 확정이 안전하게 거부된다. | 통과 | `tests.test_p8.P8IntegrationTests.test_deleted_site_rejects_all_old_reads_queue_writes_and_upload_commit` |
+| 18.6-07 | 직원 그리드에서 복사·우클릭·잘라내기는 제한되고 편집·붙여넣기는 가능하다. | 통과 | `tests.browser_employee.EmployeeBrowserTests.test_first_dirty_deadline_continuous_typing_noop_and_copy_restrictions` |
+| 18.6-08 | 직원용 고객정보 다운로드 경로가 없다. | 통과 | `tests.test_p5.EmployeeTests.test_page_employee_only_and_no_selection_or_export_controls`<br>`tests.test_imports.ImportTests.test_staff_and_initial_login_cannot_read_validate_commit_or_results` |
+| 18.6-09 | 백업을 별도 환경에 실제 복원하고 계정·할당·상담·재콜 정합성을 확인한다. | 통과 | `tests.test_backup.BasicBackupRestoreTests.test_actual_dump_restore_separate_database_accounts_assignments_notes_callbacks_requests` |
+| 18.7-01 | 오늘의 DB·나의 DB에 행별 삭제 요청 버튼이 있고 체크박스 일괄 요청은 없다. | 통과 | `tests.browser_p7.P7BrowserTests.test_row_request_saves_only_target_and_keeps_editing_until_approval`<br>`tests.browser_p7.P7BrowserTests.test_lost_request_response_same_key_reload_and_other_tab_pending` |
+| 18.7-02 | 한 요청은 고객 한 건만 처리하고 제출 중 추가 클릭을 막는다. | 통과 | `tests.browser_p7.P7BrowserTests.test_row_request_saves_only_target_and_keeps_editing_until_approval` |
+| 18.7-03 | 해당 행 미저장 내용의 저장에 실패하면 삭제 요청은 생성하지 않는다. | 통과 | `tests.browser_p7.P7BrowserTests.test_cancel_confirmation_and_offline_save_do_not_submit` |
+| 18.7-04 | 접수 성공 후 `요청완료`가 표시되고 새로고침·다른 탭에서도 유지된다. 실패를 완료로 표시하지 않는다. | 통과 | `tests.browser_p7.P7BrowserTests.test_lost_request_response_same_key_reload_and_other_tab_pending` |
+| 18.7-05 | 직원이 타인의 고객 ID나 과거 할당 ID로 요청하면 거부된다. | 통과 | `tests.test_p7.P7Tests.test_request_authentication_structure_assignment_and_version` |
+| 18.7-06 | 동일 고객의 중복 요청·응답 유실 재시도에 PENDING 요청이 하나만 생긴다. | 통과 | `tests.test_p7.P7Tests.test_request_is_metadata_only_duplicate_keys_and_current_owner_pending`<br>`tests.browser_p7.P7BrowserTests.test_lost_request_response_same_key_reload_and_other_tab_pending` |
+| 18.7-07 | 요청만으로 휴지통 이동·담당자 해제·상담정보 변경이 일어나지 않는다. | 통과 | `tests.test_p7.P7Tests.test_request_is_metadata_only_duplicate_keys_and_current_owner_pending`<br>`tests.browser_p7.P7BrowserTests.test_row_request_saves_only_target_and_keeps_editing_until_approval` |
+| 18.7-08 | 모든 관리자 대시보드에 현재 선택 현장과 관계없이 같은 전체 현장 요청이 표시된다. | 통과 | `tests.test_p7.P7Tests.test_global_notifications_pagination_and_read_does_not_approve`<br>`tests.browser_p7.P7BrowserTests.test_approval_global_list_lost_response_latest_notes_and_blocked_employee_queue` |
+| 18.7-09 | 알림 조회는 활성 대시보드에서만 기본 60초 주기로 수행하며 행마다 API를 호출하지 않는다. | 통과 | `tests.browser_p7.P7BrowserTests.test_notifications_poll_once_per_visible_minute_and_on_return` |
+| 18.7-10 | 승인 전 고객 상담내용이 바뀌어도 승인 시 최신 내용에 삭제 문구를 덧붙인다. | 통과 | `tests.test_p7.P7Tests.test_save_before_approval_uses_latest_note_and_approval_before_save_rejects` |
+| 18.7-11 | 승인하면 휴지통으로 이동하고 `[한국 시간 승인일시] 고객요청으로 인한 삭제`가 상담기타내용에 추가된다. | 통과 | `tests.test_p7.P7Tests.test_approval_latest_notes_long_notes_empty_and_no_staff_progress` |
+| 18.7-12 | 빈 비고·10,000자 비고에서도 기존 내용을 훼손하지 않고 승인 문구가 기록된다. | 통과 | `tests.test_p7.P7Tests.test_approval_latest_notes_long_notes_empty_and_no_staff_progress` |
+| 18.7-13 | 두 관리자 동시 승인·응답 유실 재시도에도 문구·삭제·할당 종료가 한 번만 적용된다. | 통과 | `tests.test_p7.P7Tests.test_concurrent_approvals_one_note_one_event`<br>`tests.test_p7.P7Tests.test_two_admins_replay_preserves_first_approval_and_restore_is_not_redeleted`<br>`tests.browser_p7.P7BrowserTests.test_approval_global_list_lost_response_latest_notes_and_blocked_employee_queue` |
+| 18.7-14 | 승인 후 직원 저장은 거부되고 미전송 자료를 성공으로 처리하지 않는다. | 통과 | `tests.test_p7.P7Tests.test_approval_commits_before_waiting_save`<br>`tests.browser_p7.P7BrowserTests.test_approval_global_list_lost_response_latest_notes_and_blocked_employee_queue` |
+| 18.7-15 | 요청 후 회수·재분배·직원 비활성화가 있어도 관리자 승인으로 처리할 수 있다. | 통과 | `tests.test_p7.P7Tests.test_request_survives_recall_reassignment_and_inactive_requester`<br>`tests.test_p7.P7Tests.test_approval_after_recall_without_current_assignment` |
+| 18.7-16 | 일반 삭제로 이미 처리된 요청은 CLOSED로 종료되며 별도 승인 문구가 중복 생성되지 않는다. | 통과 | `tests.test_p7.P7Tests.test_general_trash_closes_pending_without_approval_note` |
+| 18.7-17 | 복구 후 이전 승인은 되돌리지 않고 필요한 경우 새로운 삭제 요청을 할 수 있다. | 통과 | `tests.test_p7.P7Tests.test_two_admins_replay_preserves_first_approval_and_restore_is_not_redeleted` |
+| 18.7-18 | 고객·현장 영구 삭제 시 관련 요청과 알림이 함께 제거된다. | 통과 | `tests.test_p7.P7Tests.test_hard_customer_deletes_all_history_receipts_and_allows_new_uuid`<br>`tests.test_p7.P7Tests.test_site_deletion_removes_import_sources_and_preserves_other_site_and_job_snapshot` |
+
+**69/69항목 통과.** 원시 근거: `.local/p8-test-results.json`, `.local/p8-acceptance.json`. 재실행 방법과 제한은 [P8_VERIFICATION.md](P8_VERIFICATION.md)를 따른다.

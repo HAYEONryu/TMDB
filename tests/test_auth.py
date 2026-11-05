@@ -26,6 +26,15 @@ class AuthenticationTests(TestCase):
         self.assertEqual(self.client.get("/api/access/admin").status_code, 401)
         self.assertRedirects(self.client.get("/app/employee"), "/auth/login", fetch_redirect_response=False)
 
+    def test_malformed_session_user_id_is_rejected_without_server_error(self):
+        session = self.client.session
+        session["_auth_user_id"] = "invalid-uuid"
+        session["_auth_user_backend"] = "django.contrib.auth.backends.ModelBackend"
+        session["_auth_user_hash"] = "invalid"
+        session["tm_session_version"] = 1
+        session.save()
+        self.assertEqual(self.client.get("/api/me").status_code, 401)
+
     def test_admin_and_employee_login_initial_password_gate(self):
         for account, path in [(self.admin, "/api/access/admin"), (self.employee, "/api/access/employee")]:
             client = login(account)

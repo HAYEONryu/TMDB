@@ -24,7 +24,7 @@ class ConsultationRevision(TimestampedModel):
     after_values = models.JSONField(default=dict)
     notes = models.TextField(blank=True, default="")
     source = models.CharField(max_length=18, choices=Source.choices)
-    # Original AI result FK is added alongside the AI models in P9, before AI_APPLIED is exposed.
+    source_ai_result = models.ForeignKey("ai_assistant.AIResult", null=True, blank=True, on_delete=models.SET_NULL, related_name="applied_revisions")
 
     class Meta:
         constraints = [

@@ -29,6 +29,15 @@ def main():
     if action != "start":
         if not (DATA / "PG_VERSION").exists():
             raise SystemExit("프로젝트 DB가 없습니다.")
+        if action == "status":
+            result = run("pg_ctl", "-D", DATA, "status", check=False, capture=True)
+            if result.returncode == 3:
+                print("프로젝트 PostgreSQL 17: 중지 상태")
+                return
+            if result.returncode:
+                raise SystemExit(result.stderr.strip() or "DB 상태를 확인할 수 없습니다.")
+            print(result.stdout, end="")
+            return
         run("pg_ctl", "-D", DATA, *(["-m", "fast", "-w", "stop"] if action == "stop" else ["status"]))
         return
     DATA.parent.mkdir(exist_ok=True)

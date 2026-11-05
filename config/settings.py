@@ -3,15 +3,14 @@ from pathlib import Path
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
-from dotenv import dotenv_values
 from config.ai import load_ai_config
+from config.process import load_app_environment
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-for env_name, env_value in dotenv_values(BASE_DIR / ".env", interpolate=False).items():
-    if env_value is not None and not env_name.startswith("AI_") and env_name != "TM_PROCESS_ROLE":
-        os.environ.setdefault(env_name, env_value)
+load_app_environment(BASE_DIR / ".env")
 PROCESS_ROLE = os.environ.get("TM_PROCESS_ROLE", "management")
 TESTING = False
+AI_FOUNDATION_TEST_MODE = False
 AI_CONFIG = load_ai_config(BASE_DIR, role=PROCESS_ROLE)
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "")
@@ -77,7 +76,18 @@ CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "false").lower() == "true"
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
-DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024
+# 100 rows × 10,000 Unicode characters, including escaped JSON, must fit.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024 * 1024
+IMPORT_MAX_BYTES = 10 * 1024 * 1024
+IMPORT_MAX_ROWS = 10000
+IMPORT_TTL_HOURS = 24
+AUTOSAVE_TARGET_SECONDS = 90
+SCHEDULER_START_DATE = os.environ.get('SCHEDULER_START_DATE','')
+SCHEDULER_LEASE_SECONDS = 120
+SCHEDULER_MAX_ATTEMPTS = 5
+SCHEDULER_JOBS_PER_TICK = 31
+SCHEDULER_STATEMENT_TIMEOUT_MS = 60000
+FILE_UPLOAD_HANDLERS = ["apps.imports.uploads.ImportLimitHandler", "django.core.files.uploadhandler.MemoryFileUploadHandler", "django.core.files.uploadhandler.TemporaryFileUploadHandler"]
 LOGIN_FAILURE_WINDOW_SECONDS = int(os.environ.get("LOGIN_FAILURE_WINDOW_SECONDS", "900"))
 LOGIN_ACCOUNT_FAILURE_LIMIT = int(os.environ.get("LOGIN_ACCOUNT_FAILURE_LIMIT", "5"))
 LOGIN_REQUEST_FAILURE_LIMIT = int(os.environ.get("LOGIN_REQUEST_FAILURE_LIMIT", "30"))
@@ -89,6 +99,7 @@ LOGGING = {"version": 1, "disable_existing_loggers": False,
            "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "safe"}},
            "root": {"handlers": ["console"], "level": "INFO"},
            "loggers": {
+               "django": {"handlers": ["console"], "level": "WARNING", "propagate": False},
                "django.request": {"handlers": ["console"], "level": "ERROR", "propagate": False},
                "django.server": {"handlers": ["console"], "level": "WARNING", "propagate": False},
            }}

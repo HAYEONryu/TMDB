@@ -1,8 +1,63 @@
 from django.urls import path
 from apps.accounts import views
 from apps.ai_assistant.views import availability
+from apps.sites import views as site_views
+from apps.customers import views as customer_views
+from apps.imports import views as import_views
+from apps.assignments import views as assignment_views
+from apps.accounts import management_views as user_views
+from apps.customers import employee as employee_views
+from apps.callbacks.views import complete_view
+from apps.consultations.views import history
+from apps.operations.dashboard import dashboard
+from apps.customers import deletion_views
+from apps.ai_assistant import views as ai_views
 
 urlpatterns = [
+    path('api/ai/tasks/<uuid:task_id>', ai_views.task_detail),
+    path('api/ai/results/<uuid:result_id>', ai_views.result_detail),
+    path('api/ai/usage', ai_views.usage),
+    path('api/sites/<uuid:site_id>/knowledge', ai_views.knowledge_list),
+    path('api/sites/<uuid:site_id>/knowledge/<uuid:knowledge_id>', ai_views.knowledge_update),
+    path('api/customers/<uuid:customer_id>/deletion-request',deletion_views.request_deletion),
+    path('api/deletion-requests',deletion_views.pending),
+    path('api/deletion-requests/<uuid:request_id>/approve',deletion_views.approve_request),
+    path('api/customers/<uuid:customer_id>/hard-delete',deletion_views.delete_customer),
+    path('api/sites/<uuid:site_id>/hard-delete',deletion_views.delete_site),
+    path('api/sites/<uuid:site_id>/deletion-confirmation',deletion_views.confirm_site_view),
+    path('api/dashboard',dashboard),
+    path('api/customers/<uuid:customer_id>/callback-complete',complete_view),
+    path('api/customers/<uuid:customer_id>/history',history),
+    path("app/employee/today",employee_views.page,{"view":"today"}),
+    path("app/employee/mine",employee_views.page,{"view":"mine"}),
+    path("api/employee/context",employee_views.context),
+    path("api/employee/queue-check",employee_views.check_queue),
+    path("api/employee/batch-update",employee_views.save),
+    path("app/admin/assignments",assignment_views.page),
+    path("app/admin/users",user_views.page),
+    path("api/assignments/availability",assignment_views.availability),
+    path("api/assignments/distribute",assignment_views.distribute),
+    path("api/assignments/recall-preview",assignment_views.preview),
+    path("api/assignments/recall",assignment_views.recall),
+    path("api/customers/<uuid:customer_id>/assignee",assignment_views.assignee),
+    path("api/users",user_views.users),
+    path("api/users/batch-update",user_views.update),
+    path("api/users/transfer-needed",user_views.transfers),
+    path("app/admin/imports", import_views.page),
+    path("api/imports/template", import_views.template),
+    path("api/imports/validate", import_views.validate),
+    path("api/imports/<uuid:batch_id>", import_views.results),
+    path("api/imports/<uuid:batch_id>/commit", import_views.commit),
+    path("api/sites", site_views.sites),
+    path("api/sites/<uuid:site_id>/counts", site_views.counts),
+    path("api/settings/default-site", site_views.default_site),
+    path("api/customers", customer_views.customers),
+    path("api/customers/filter-options", customer_views.options),
+    path("api/customers/batch-update", customer_views.batch_update),
+    path("api/customers/soft-delete", customer_views.soft_delete),
+    path("api/customers/restore", customer_views.restore),
+    path("app/admin/customers", customer_views.management),
+    path("app/admin/trash", customer_views.management, {"trash": True}),
     path("api/ai/availability", availability),
     path("healthz", views.health),
     path("", views.home),

@@ -10,6 +10,11 @@ class AccessError(Exception):
         super().__init__(code)
 
 
+def actor_identity(request):
+    expected=request.headers.get('X-TM-Actor')
+    if expected is not None and expected!=str(request.user.pk):raise AccessError('QUEUE_CONTEXT_MISMATCH','다른 계정으로 로그인되었습니다. 다시 열어 주세요.',403)
+
+
 def api_error(code, message, status=403, fields=None):
     payload = {"error": {"code": code, "message": message}}
     if fields:
