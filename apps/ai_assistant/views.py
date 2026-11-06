@@ -1,5 +1,5 @@
 from django.http import JsonResponse
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET,require_POST
 from django.conf import settings
 from apps.accounts.access import require_role
 from django.utils import timezone
@@ -14,26 +14,43 @@ from apps.customers.queries import KST
 from apps.sites.models import Site
 from apps.sites.services import locked_actor
 from .models import AIRequest, AIResult, AIQuotaBucket, AIUsageAttempt, AIBudgetMonth, SiteKnowledge, AIResultSource, Feature
-from .services import authorize
+from .services import authorize,reserve,test_mode,validate_config,reservation_cost
 from .inputs import STAFF_FEATURES
 
 
 @require_GET
 @require_role()
+@api_errors
 def availability(request):
     # Explicit allowlist: never serialize the config object or environment.
+    from apps.customers.employee import optional_queue_identity
+    optional_queue_identity(request)
     day = timezone.localdate()
     bucket = AIQuotaBucket.objects.filter(user=request.user, korean_date=day).first()
     staff = request.user.role == "EMPLOYEE"
     successful = bucket.successful_count if bucket else 0
     reserved = bucket.reserved_count if bucket else 0
-    return JsonResponse({"generation_available": False, "configured": settings.AI_CONFIG.configured,
-                         "reason": settings.AI_CONFIG.reason,
-                         "message": "AI 상담 도구를 아직 사용할 수 없습니다.",
+    active=AIRequest.objects.filter(actor=request.user,status__in=['RESERVED','RUNNING','UNKNOWN']).exists()
+    enabled=False
+    try:validate_config();enabled=True
+    except AccessError:pass
+    budget_blocked=False
+    if enabled:
+        from .ledger import cost
+        budget=AIBudgetMonth.objects.filter(month=day.replace(day=1)).first()
+        budget_blocked=(budget.charged_usd+budget.reserved_usd if budget else 0)+reservation_cost(staff, settings.AI_CONFIG)>settings.AI_CONFIG.monthly_budget_usd
+    reason=('AI_TEST_ONLY' if test_mode() else 'AI_READY') if enabled else 'AI_NOT_CONFIGURED'
+    if enabled and successful+reserved>=30:reason='AI_DAILY_LIMIT'
+    elif enabled and active:reason='AI_BUSY'
+    elif budget_blocked:reason='AI_BUDGET_LIMIT'
+    return JsonResponse({"generation_available": enabled and successful+reserved<30 and not active and not budget_blocked, "configured": settings.AI_CONFIG.configured,
+                         "reason": reason,
+                         "message": '조직 AI 예산이 부족합니다. 기존 결과와 고객관리는 계속 사용할 수 있습니다.' if budget_blocked else ('테스트 전용 AI입니다. 운영 결과가 아닙니다.' if test_mode() else 'OpenAI 생성은 유료입니다. 생성 버튼을 누를 때만 요청합니다.') if enabled else 'AI 설정 또는 공급자 연결이 없어 생성할 수 없습니다. 기존 고객관리는 정상 작동합니다.',
                          "daily_limit": 30 if request.user.role == "EMPLOYEE" else None,
                          "successful_count": successful if staff else None, "reserved_count": reserved if staff else None,
                          "remaining_count": max(0, 30-successful-reserved) if staff else None,
-                         "korean_date": day.isoformat(), "features": [feature for feature in Feature.values if (feature in STAFF_FEATURES) == staff],
+                         "korean_date": day.isoformat(), "features": [feature for feature in Feature.values if (feature in STAFF_FEATURES) == staff], 'is_test':test_mode(), 'active':active,
+                         "weekly_generation_day": day.weekday()==6,
                          "next_available_at": datetime.combine(day+timedelta(days=1),time.min,KST).isoformat() if staff and successful+reserved >= 30 else None})
 
 
@@ -41,6 +58,8 @@ def task_payload(task):
     result = task.result
     data = {"id": str(task.pk), "feature": task.feature, "status": task.status, "error_code": task.error_code,
             "created_at": task.created_at.isoformat(), "korean_date": task.korean_date.isoformat(),
+            'customer_id':str(task.customer_id) if task.customer_id else None,'assignment_id':str(task.assignment_id) if task.assignment_id else None,
+            'unknown_until':task.unknown_until.isoformat() if task.unknown_until else None,
             "is_test": task.is_test, "test_message": "테스트 전용 결과이며 운영 분석이 아닙니다." if task.is_test else "",
             "result_id": str(result.pk) if task.status == "SUCCEEDED" else None}
     if result.invalidation_reason in {"SOURCE_DELETED","SOURCE_CHANGED"}:
@@ -72,8 +91,53 @@ def result_detail(request, result_id):
     stale = result.stale or bool(task.customer_id and task.customer.version != task.customer_version)
     data.update({"id": str(result.pk), "available": not unavailable, "stale": stale,
                  "payload": result.payload if not unavailable else {}, "source_customer_version": task.customer_version,
-                 "generated_at": result.generated_at.isoformat() if result.generated_at else None, "schema_version": task.schema_version})
+                 "generated_at": result.generated_at.isoformat() if result.generated_at else None, "schema_version": task.schema_version,
+                 'source_ids':sorted({str(s.customer_id or s.revision_id or s.knowledge_id or s.previous_result_id) for s in result.sources.all()}),
+                 'customer_name':task.customer.customer_name if task.customer_id else None})
+    if task.feature not in STAFF_FEATURES and not unavailable:
+        from .admin_views import guide_data
+        data.update({"task_identifier":str(task.pk),"period_start":timezone.localtime(task.period_start,KST).isoformat(),"period_end":timezone.localtime(task.period_end,KST).isoformat(),"period_key":task.period_key,
+                     "cutoff_message":"일요일 업무는 집계 시각까지 포함" if task.feature==Feature.WEEKLY_BRIEFING else "접수 시각 기준 최근 30일",
+                     "slot_message":"이번 주 생성 1회 사용" if task.feature==Feature.WEEKLY_BRIEFING else "대상별 하루 생성 1회 사용",
+                     "guide":guide_data(result) if task.feature==Feature.TEAM_GUIDE else None})
+        actor_ids=[r["actor_id"] for r in result.payload.get("statistics",{}).get("employees",[])]
+        actor_ids += [r["actor_id"] for r in result.payload.get("statistics",{}).get("operations",[]) if r["actor_id"]]
+        data["actors"]={str(u.pk):{"name":u.name,"active":u.is_active,"role":u.role} for u in User.objects.filter(pk__in=actor_ids)}
+        links=[]
+        for source in result.sources.select_related("revision"):
+            cid=source.customer_id or (source.revision.customer_id if source.revision_id else None)
+            if cid:links.append({"source_id":str(source.customer_id or source.revision_id),"url":"/app/admin/ai/cases/"+str(cid)})
+        data["case_links"]=links[:200]
     return JsonResponse(data)
+
+
+@require_POST
+@require_role(User.Role.EMPLOYEE)
+@api_errors
+def customer_task(request):
+    from apps.customers.employee import queue_identity
+    queue_identity(request); body=json_object(request)
+    if not isinstance(body.get('feature'),str) or body.get('feature') not in STAFF_FEATURES:raise AccessError('VALIDATION_ERROR','직원 기능을 확인해 주세요.',422)
+    task,new=reserve(request.user,body)
+    data=task_payload(task);data['task_id']=str(task.pk);data['cached']=not new
+    return JsonResponse(data,status=202 if task.status in ['RESERVED','RUNNING','UNKNOWN'] else 200)
+
+
+@require_GET
+@require_role(User.Role.EMPLOYEE)
+@api_errors
+def customer_results(request):
+    from apps.customers.employee import queue_identity
+    from apps.customers.access import current_access
+    from apps.customers.models import Customer
+    from apps.common.http import identifier
+    queue_identity(request)
+    if set(request.GET)!={'customer_id','assignment_id'}:raise AccessError('VALIDATION_ERROR','고객/할당을 확인해 주세요.',422)
+    customer=Customer.objects.select_related('current_assignment').filter(pk=identifier(request.GET['customer_id'])).first()
+    if not customer:raise AccessError('FORBIDDEN','현재 담당 고객만 조회할 수 있습니다.',403)
+    current_access(request.user,customer,identifier(request.GET['assignment_id']))
+    tasks=AIRequest.objects.filter(actor=request.user,customer=customer,assignment_id=customer.current_assignment_id,feature__in=STAFF_FEATURES,status='SUCCEEDED').select_related('result').order_by('-created_at','-pk')[:10]
+    return JsonResponse({'items':[task_payload(task) for task in tasks],'limit':10})
 
 
 @require_GET

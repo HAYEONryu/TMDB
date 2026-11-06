@@ -1,0 +1,19 @@
+[Unit]
+Description=TMDB encrypted database backup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=40min
+User=tmdb-backup
+WorkingDirectory=/srv/tmdb/app
+EnvironmentFile=/srv/tmdb/secrets/backup.env
+ExecStart=/srv/tmdb/app/.venv/bin/python manage.py backup_database
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/srv/tmdb/backups
+ProtectHome=true
+# For a mounted destination outside /srv/tmdb/backups, add it to ReadWritePaths.

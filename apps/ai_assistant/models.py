@@ -64,6 +64,7 @@ class AIRequest(TimestampedModel):
     schema_version = models.CharField(max_length=32, default="foundation-v1")
     provider = models.CharField(max_length=64)
     model_version = models.CharField(max_length=128)
+    reasoning_effort = models.CharField(max_length=8, blank=True, default="")
     pricing_version = models.CharField(max_length=64)
     input_price = models.DecimalField(max_digits=20, decimal_places=10)
     output_price = models.DecimalField(max_digits=20, decimal_places=10)
@@ -106,6 +107,13 @@ class AIResult(TimestampedModel):
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="reviewed_ai_results")
     reviewed_at = models.DateTimeField(null=True)
     published_at = models.DateTimeField(null=True)
+    guide_body = models.TextField(blank=True)
+    guide_version = models.PositiveIntegerField(default=1)
+    guide_reviewed_version = models.PositiveIntegerField(null=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(guide_version__gte=1), name="ai_guide_version_positive"),
+                       models.CheckConstraint(condition=Q(guide_reviewed_version__isnull=True)|Q(guide_reviewed_version=F("guide_version"),reviewed_by__isnull=False,reviewed_at__isnull=False), name="ai_guide_review_version_matches")]
 
 
 class AIRequestKey(TimestampedModel):
@@ -139,6 +147,8 @@ class AIUsageAttempt(TimestampedModel):
     input_tokens = models.PositiveIntegerField(default=0)
     output_tokens = models.PositiveIntegerField(default=0)
     reasoning_tokens = models.PositiveIntegerField(default=0)
+    cached_tokens = models.PositiveIntegerField(default=0)
+    cache_write_tokens = models.PositiveIntegerField(default=0)
     estimated_cost = models.DecimalField(max_digits=24, decimal_places=12)
     actual_cost = models.DecimalField(max_digits=24, decimal_places=12, null=True)
     accounted_cost = models.DecimalField(max_digits=24, decimal_places=12, default=0)
@@ -179,3 +189,32 @@ class AIResultSource(TimestampedModel):
             Q(customer__isnull=True,revision__isnull=False,knowledge__isnull=True,previous_result__isnull=True)|
             Q(customer__isnull=True,revision__isnull=True,knowledge__isnull=False,previous_result__isnull=True)|
             Q(customer__isnull=True,revision__isnull=True,knowledge__isnull=True,previous_result__isnull=False), name="ai_source_exactly_one")]
+
+
+class AIReportSnapshot(TimestampedModel):
+    """Server aggregates frozen at submission; never accepted from the provider."""
+    request = models.OneToOneField(AIRequest, on_delete=models.CASCADE, related_name="report_snapshot")
+    data = models.JSONField(default=dict)
+
+
+class AINoteClassification(TimestampedModel):
+    revision = models.ForeignKey("consultations.ConsultationRevision", on_delete=models.CASCADE)
+    fingerprint = models.CharField(max_length=64)
+    labels = models.JSONField(default=list)
+    evidence = models.TextField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["revision", "fingerprint"], name="ai_note_classification_unique")]
+
+
+class GuidePublication(TimestampedModel):
+    site = models.OneToOneField("sites.Site", on_delete=models.CASCADE, related_name="guide_publication")
+    result = models.ForeignKey(AIResult, on_delete=models.CASCADE)
+    body = models.TextField()
+    version = models.PositiveIntegerField()
+    published_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    published_at = models.DateTimeField()
+    is_test = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(version__gte=1), name="ai_publication_version_positive")]

@@ -13,7 +13,20 @@ from apps.operations.dashboard import dashboard
 from apps.customers import deletion_views
 from apps.ai_assistant import views as ai_views
 
+from apps.ai_assistant import admin_views as admin_ai
+
 urlpatterns = [
+    path("app/admin/ai",admin_ai.page),
+    path("app/admin/ai/cases/<uuid:customer_id>",admin_ai.case_page),
+    path("app/guides",admin_ai.published_page),
+    path("api/ai/weekly-briefings",admin_ai.reports,{"feature":"WEEKLY_BRIEFING"}),
+    path("api/ai/employees/<uuid:employee_id>/coaching",admin_ai.reports,{"feature":"EMPLOYEE_COACHING"}),
+    path("api/ai/sites/<uuid:site_id>/guides",admin_ai.reports,{"feature":"TEAM_GUIDE"}),
+    path("api/ai/guides/<uuid:result_id>",admin_ai.guide_write),
+    path("api/ai/guides/<uuid:result_id>/publish",admin_ai.guide_write,{"publish":True}),
+    path("api/sites/<uuid:site_id>/published-guide",admin_ai.published),
+    path('api/ai/customer-tasks',ai_views.customer_task),
+    path('api/ai/customer-results',ai_views.customer_results),
     path('api/ai/tasks/<uuid:task_id>', ai_views.task_detail),
     path('api/ai/results/<uuid:result_id>', ai_views.result_detail),
     path('api/ai/usage', ai_views.usage),

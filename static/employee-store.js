@@ -20,7 +20,7 @@ export class QueueStore {
   }
   async put(entry){
     const record={key:entry.key,user_id:this.userId,site_id:entry.site_id,customer_id:entry.customer_id,assignment_id:entry.assignment_id};
-    const payload={version:entry.version,pending:entry.pending,inflight:entry.inflight,first_dirty_at:entry.first_dirty_at,pending_since:entry.pending_since,created_at:entry.created_at,state:entry.state,error:entry.error,retry_at:entry.retry_at,attempt:entry.attempt};
+    const payload={version:entry.version,pending:entry.pending,inflight:entry.inflight,first_dirty_at:entry.first_dirty_at,pending_since:entry.pending_since,created_at:entry.created_at,state:entry.state,error:entry.error,retry_at:entry.retry_at,attempt:entry.attempt,ai_source_id:entry.ai_source_id,ai_fields:entry.ai_fields};
     const iv=crypto.getRandomValues(new Uint8Array(12));
     record.cipher=b64(await crypto.subtle.encrypt({name:"AES-GCM",iv,additionalData:aad(record)},this.cryptoKey,encode.encode(JSON.stringify(payload))));record.iv=b64(iv);
     await this.transaction("readwrite",store=>store.put(record));

@@ -1,4 +1,4 @@
-"""Durable DB queue; no real provider transport is installed in P9."""
+"""Durable queue; real I/O runs outside transactions and is never replayed."""
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
@@ -23,6 +23,8 @@ class ProviderResponse:
     output_tokens: int = 0
     reasoning_tokens: int = 0
     provider_request_id: str = ""
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 class NotPerformed(Exception):
@@ -64,11 +66,14 @@ def reap(*, now=None):
 
 @retry_transient_write
 def claim(*, now=None):
-    if not test_mode(): return None
+    if not test_mode():
+        from .services import validate_config
+        try: validate_config()
+        except AccessError: return None
     now = now or timezone.now()
     with business_write():
         if AIRequest.objects.filter(status__in=["RUNNING","UNKNOWN"]).count() >= 2: return None
-        request = AIRequest.objects.select_for_update().filter(status="RESERVED", is_test=True).order_by("created_at","pk").first()
+        request = AIRequest.objects.select_for_update().filter(status="RESERVED", is_test=test_mode()).order_by("created_at","pk").first()
         if not request: return None
         if not authorized_for_work(request) or not request.input_payload:
             settle(request, "CANCELLED", "AI_ACCESS_REVOKED", now=now)
@@ -80,9 +85,17 @@ def claim(*, now=None):
 
 
 def validate_payload(request, response):
+    if not request.is_test and response.output_tokens + response.reasoning_tokens > request.output_tokens_cap:
+        return False
     payload = response.payload
+    if request.schema_version=="admin-v1":
+        from .admin_schema import validate
+        return validate(request,payload) is not None and all(type(v) is int and 0<=v<=cap for v,cap in [(response.input_tokens,request.input_tokens_cap),(response.output_tokens,request.output_tokens_cap),(response.reasoning_tokens,request.reasoning_tokens_cap)])
+    if request.schema_version=="employee-v1":
+        from .employee_schema import validate
+        return validate(request,payload) is not None and all(type(v) is int and 0<=v<=cap for v,cap in [(response.input_tokens,request.input_tokens_cap),(response.output_tokens,request.output_tokens_cap),(response.reasoning_tokens,request.reasoning_tokens_cap)])
     if not isinstance(payload, dict) or set(payload) != {"feature","text","source_ids","is_test"}: return False
-    if payload["feature"] != request.feature or payload["is_test"] is not True: return False
+    if payload["feature"] != request.feature or payload["is_test"] is not request.is_test: return False
     if not isinstance(payload["text"], str) or not 1 <= len(payload["text"].encode()) <= request.output_tokens_cap*4: return False
     ids = payload["source_ids"]
     if not isinstance(ids, list) or len(ids) > 200 or any(not isinstance(value,str) for value in ids): return False
@@ -95,6 +108,16 @@ def record_usage(request, attempt, response, status, now):
     if any(type(v) is not int or not 0 <= v < 2**31 for v in values): return False
     attempt.input_tokens, attempt.output_tokens, attempt.reasoning_tokens = values
     attempt.actual_cost = cost(*values, request.input_price, request.output_price)
+    if not request.is_test:
+        from .openai_policy import CACHED_PRICE, CACHE_WRITE_PRICE
+        cached, writes = response.cached_tokens, response.cache_write_tokens
+        if any(type(v) is not int or v < 0 for v in [cached, writes]) or cached + writes > response.input_tokens:
+            return False
+        attempt.cached_tokens, attempt.cache_write_tokens = cached, writes
+        attempt.actual_cost = (cost(response.input_tokens-cached-writes, response.output_tokens,
+                                   response.reasoning_tokens, request.input_price, request.output_price)
+                               + cost(cached, 0, 0, CACHED_PRICE, request.output_price)
+                               + cost(writes, 0, 0, CACHE_WRITE_PRICE, request.output_price))
     attempt.accounted_cost = max(attempt.accounted_cost, attempt.actual_cost)
     provider_id = str(response.provider_request_id)
     attempt.provider_request_id = provider_id if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", provider_id) and not (settings.AI_CONFIG.api_key and settings.AI_CONFIG.api_key in provider_id) else ""
@@ -142,9 +165,16 @@ def finish(task_id, token, *, response=None, outcome="success", now=None):
         if outcome != "success" or not valid_usage or not validate_payload(request, response):
             settle(request, "FAILED", "AI_PROVIDER_FAILED", now=now); return False
         result = AIResult.objects.select_for_update().get(request=request)
-        result.payload = response.payload; result.valid = True; result.invalidation_reason = ""; result.generated_at = now
+        if request.schema_version=="employee-v1":
+            from .employee_schema import validate
+            result.payload=validate(request,response.payload)
+        else:result.payload=response.payload
+        result.valid = True; result.invalidation_reason = ""; result.generated_at = now
         try: result.stale = current_fingerprint(request) != request.source_fingerprint
         except AccessError: result.stale = True
+        if request.schema_version=="admin-v1":
+            from .admin_schema import validate, finalize
+            result.payload=finalize(request,result,validate(request,response.payload))
         result.save()
         settle(request, "SUCCEEDED", now=now)
         return True
@@ -157,12 +187,18 @@ def run_once(adapter=None):
     if transaction.get_connection().in_atomic_block:
         raise RuntimeError("AI I/O must run outside database transactions")
     if adapter is None:
-        from .adapters import FoundationFakeAdapter
-        adapter = FoundationFakeAdapter()
+        if task.is_test:
+            from .adapters import FoundationFakeAdapter
+            adapter = FoundationFakeAdapter()
+        else:
+            from .openai_adapter import OpenAIAdapter
+            adapter = OpenAIAdapter()
     try:
         response = adapter.execute_task(task, task.input_payload)
     except NotPerformed:
-        succeeded = finish(task.pk, task.lease_token, outcome="not_performed")
+        # Legacy fake tests can retry a provably unsent attempt; real tasks never do.
+        succeeded = finish(task.pk, task.lease_token, outcome="not_performed" if task.is_test else "failed",
+                           response=None if task.is_test else ProviderResponse({}))
     except ProviderFailed as error:
         succeeded = finish(task.pk, task.lease_token, response=error.response, outcome="failed")
     except Exception:

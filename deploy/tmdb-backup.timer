@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily TMDB backup (Korea time)
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 Asia/Seoul
+Persistent=true
+RandomizedDelaySec=300
+Unit=tmdb-backup.service
+
+[Install]
+WantedBy=timers.target

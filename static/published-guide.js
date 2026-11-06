@@ -1,0 +1,5 @@
+import {api,option} from './api.js';
+const site=document.querySelector('#published-site'),message=document.querySelector('#published-message'),body=document.querySelector('#published-body');let epoch=0;
+async function load(){const token=++epoch;body.textContent='';try{if(!site.value){message.textContent='현장이 없습니다.';return;}const data=await api(`/api/sites/${site.value}/published-guide`);if(token!==epoch)return;message.textContent=data.available?`${data.test_message||'검토·게시 완료'} · 버전 ${data.version} · ${new Date(data.published_at).toLocaleString('ko-KR',{timeZone:'Asia/Seoul',hour12:false})} (한국 시각)`:data.message;body.textContent=data.body||'';}catch(error){if(token===epoch){message.textContent=error.message;body.textContent='';}}}
+site.addEventListener('change',load);document.querySelector('#published-refresh').addEventListener('click',load);
+try{const data=await api('/api/sites');data.items.forEach(row=>site.add(option(row.id,row.name)));if(data.default_site_id)site.value=data.default_site_id;await load();}catch(error){message.textContent=error.message;}

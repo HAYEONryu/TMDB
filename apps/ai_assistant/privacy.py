@@ -2,7 +2,7 @@ from django.apps import apps
 from django.core.exceptions import ImproperlyConfigured
 from django.db.models import Q
 from django.utils import timezone
-from .models import AIRequest, AIRequestKey, AIResult, AIResultSource, AIQuotaBucket, AIBudgetMonth, AIUsageAttempt, AIReportSlot, SiteKnowledge
+from .models import AIRequest, AIRequestKey, AIResult, AIResultSource, AIQuotaBucket, AIBudgetMonth, AIUsageAttempt, AIReportSlot, SiteKnowledge, AIReportSnapshot, AINoteClassification, GuidePublication
 from .ledger import settle
 
 
@@ -23,6 +23,9 @@ def invalidate_results(result_ids, *, reason="SOURCE_DELETED"):
                     attempt.status = "UNKNOWN"; attempt.accounted_cost = attempt.estimated_cost; attempt.finished_at = now; attempt.save()
             settle(request, "CANCELLED", "AI_SOURCE_DELETED", now=now)
         request.input_payload = {}; request.cache_key = ""; request.source_fingerprint = ""; request.save()
+        AIReportSnapshot.objects.filter(request=request).update(data={})
+        GuidePublication.objects.filter(result=result).delete()
+        result.guide_body = ""
         result.payload = {}; result.valid = False; result.stale = True; result.invalidated_at = now; result.invalidation_reason = reason
         result.guide_status = "DRAFT"; result.published_at = None; result.save()
     AIResultSource.objects.filter(result_id__in=visited).delete()
@@ -30,7 +33,7 @@ def invalidate_results(result_ids, *, reason="SOURCE_DELETED"):
 
 
 def erase_sources(customer_ids,*,site_id=None):
-    handled = {AIRequest,AIRequestKey,AIResult,AIResultSource,AIQuotaBucket,AIBudgetMonth,AIUsageAttempt,AIReportSlot,SiteKnowledge}
+    handled = {AIRequest,AIRequestKey,AIResult,AIResultSource,AIQuotaBucket,AIBudgetMonth,AIUsageAttempt,AIReportSlot,SiteKnowledge,AIReportSnapshot,AINoteClassification,GuidePublication}
     if set(apps.get_app_config('ai_assistant').get_models())-handled:
         raise ImproperlyConfigured('AI_PRIVACY_HANDLER_REQUIRED')
     query = Q(customer_id__in=customer_ids)|Q(revision__customer_id__in=customer_ids)

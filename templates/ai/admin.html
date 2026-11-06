@@ -1,0 +1,22 @@
+{% extends 'base.html' %}{% load static %}
+{% block title %}AI 보고서 · TM 고객관리{% endblock %}
+{% block assets %}<script type="module" src="{% static 'admin-ai.js' %}"></script>{% endblock %}
+{% block content %}
+<h1>AI 보고서</h1>
+<p>전체 업무 수치는 서버에서 집계합니다. AI 분류·문장에는 분석 범위와 근거를 표시합니다.</p>
+<div id="report-message" class="alert alert-secondary" role="status">설정 확인 중</div>
+<section class="card card-body mb-3">
+  <div class="row g-3 align-items-end">
+    <div class="col-md-4"><label for="report-type" class="form-label">보고서 종류</label><select id="report-type" class="form-select"><option value="WEEKLY_BRIEFING">주간 브리핑</option><option value="EMPLOYEE_COACHING">직원 코칭</option><option value="TEAM_GUIDE">팀 상담 가이드</option></select></div>
+    <div class="col-md-4" id="report-site-wrap" hidden><label for="report-site" class="form-label">현장</label><select id="report-site" class="form-select"></select></div>
+    <div class="col-md-4" id="report-employee-wrap" hidden><label for="report-employee" class="form-label">직원 (비활성 포함)</label><select id="report-employee" class="form-select"></select></div>
+  </div>
+  <p id="report-rule" class="mt-3 mb-2"></p>
+  <div class="d-flex flex-wrap gap-2"><button id="report-generate" class="btn btn-primary" disabled>새 보고서 생성</button><button id="report-refresh" class="btn btn-outline-secondary">기존 결과 조회</button><button id="report-retry" class="btn btn-outline-warning" hidden>접수 확인·같은 요청 재시도</button></div>
+</section>
+<section class="card card-body mb-3"><h2 class="h5">생성 이력</h2><div id="report-history"></div><button id="report-more" class="btn btn-link" hidden>다음 이력</button></section>
+<section id="report-detail" class="card card-body mb-3" hidden><div class="d-flex justify-content-between"><h2 class="h4">보고서 결과</h2><button id="report-close" class="btn btn-sm btn-outline-secondary">결과 닫기</button></div><div id="report-content"></div>
+ <section id="guide-editor" hidden><h3 class="h5 mt-3">가이드 초안 검토</h3><p>직원에게는 게시본만 표시됩니다. 초안 수정 중에도 이전 게시본을 유지합니다. 개인정보·가격·혜택 등 확인되지 않은 사실을 추가하지 마세요.</p><label for="guide-body" class="form-label">게시할 상담 안내</label><textarea id="guide-body" class="form-control" rows="16" maxlength="20000"></textarea><label class="d-block my-3"><input type="checkbox" id="guide-reviewed"> 현재 문구의 근거와 개인정보 제외를 검토했습니다</label><div class="d-flex flex-wrap gap-2"><button id="guide-save" class="btn btn-outline-primary">초안 저장·검토 반영</button><button id="guide-publish" class="btn btn-primary" disabled>검토본 게시</button></div><p id="guide-status" role="status" class="mt-2"></p></section>
+</section>
+<section id="knowledge-panel" class="card card-body" hidden><h2 class="h5">현장 안내자료</h2><p>검토·유효 처리된 내부 자료만 상품 사실의 근거로 사용합니다. 수정하면 해당 자료를 사용한 AI 결과와 게시본을 무효화합니다.</p><label class="form-label" for="knowledge-select">자료 선택</label><select id="knowledge-select" class="form-select mb-3"><option value="">새 안내자료</option></select><button id="knowledge-more" class="btn btn-link" hidden>다음 자료</button><label for="knowledge-title" class="form-label">자료 제목</label><input id="knowledge-title" class="form-control mb-3" maxlength="100"><label for="knowledge-body" class="form-label">검토할 원문</label><textarea id="knowledge-body" class="form-control" rows="6" maxlength="20000"></textarea><label class="d-block my-2"><input id="knowledge-reviewed" type="checkbox"> 관리자가 검토했습니다</label><label class="d-block mb-3"><input id="knowledge-valid" type="checkbox"> 유효한 안내자료입니다</label><button id="knowledge-save" class="btn btn-outline-primary">안내자료 저장</button><p id="knowledge-message" role="status"></p></section>
+{% endblock %}

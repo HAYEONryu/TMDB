@@ -375,7 +375,8 @@
     "id": "18.6-09",
     "criterion": "백업을 별도 환경에 실제 복원하고 계정·할당·상담·재콜 정합성을 확인한다.",
     "tests": [
-      "tests.test_backup.BasicBackupRestoreTests.test_actual_dump_restore_separate_database_accounts_assignments_notes_callbacks_requests"
+      "tests.test_backup.BasicBackupRestoreTests.test_actual_dump_restore_separate_database_accounts_assignments_notes_callbacks_requests",
+      "tests.test_p13.P13BackupTests.test_encrypted_populated_ai_backup_restores_every_table_and_relations"
     ]
   },
   {

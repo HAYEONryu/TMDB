@@ -4,6 +4,7 @@ import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
+import {EmployeeAI} from './employee-ai.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent),labels={assignee_name:'담당직원명',customer_name:'고객명',phone_normalized:'고객 연락처',call_result:'통화결과',visit_at:'방문예약 날짜',contract_status:'계약여부',notes:'상담기타내용(비고)',callback_due_at:'재콜일정',housing_status:'주택상황',assigned_at:'할당 시각'};
 const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
@@ -11,7 +12,7 @@ const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=val
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
 const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):schema[field]?.[value??'']??(value==null||value===''?'(빈 값)':String(value));
-let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,queueReady=false;
+let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false;
 async function request(url,body){
   const csrf=document.cookie.split('; ').find(v=>v.startsWith('csrftoken='))?.split('=').slice(1).join('=');
   const response=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{'X-TM-Queue-User':userId,...(body===undefined?{}:{'Content-Type':'application/json','X-CSRFToken':csrf||''})},...(body===undefined?{}:{body:JSON.stringify(body)})});
@@ -47,6 +48,8 @@ function editor(cell,onRendered,success,cancel){
   input.addEventListener('input',stage);input.addEventListener('change',stage);
   input.addEventListener('blur',()=>{if(!finish())setTimeout(()=>input.focus(),0);});
   input.addEventListener('keydown',event=>{
+    // Native date segments need arrows and Tab; Tabulator otherwise navigates rows/cells.
+    if(dates.has(field)&&(event.key.startsWith('Arrow')||event.key==='Tab'))event.stopPropagation();
     if(event.key==='Escape'){event.preventDefault();done=true;activeEditor=null;queue.markInvalid(row.id,field,'');if(touched)queue.stage(row,field,original);cancel();}
     if(event.key==='Enter'&&field!=='notes'){event.preventDefault();finish();}
   });
@@ -56,24 +59,27 @@ function column(field){
   return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
     formatter:cell=>{const value=cell.getValue();if(field==='assigned_at'){const span=text('span',value?localDate(value).slice(5,10).replace('-','/'):'');if(value)span.title=display(field,value)+' (한국 시각)';return span;}return text('span',display(field,value));},
     titleFormatter:()=>{const wrap=text('span',labels[field]),button=text('button','▾');button.type='button';button.className='column-filter';button.setAttribute('aria-label',labels[field]+' 필터');button.onclick=e=>{e.stopPropagation();guarded(()=>openFilter(field)).catch(error);};wrap.append(button);return wrap;},
-    ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:field==='notes'}:{})};
+    ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:field==='notes'}:{})};
 }
 const openHistory=installHistory(request);
 function actions(cell){
   const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력'),complete=text('button','재콜 완료');
   history.className=complete.className='btn btn-sm btn-outline-secondary me-2';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};
-  complete.disabled=!row.callback_id||queue.paused||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||!!callbacks?.pending.value;complete.onclick=()=>{commitEditor();callbacks.run(row.id);};
+  complete.disabled=!row.callback_id||queue.paused||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||ai?.busy||!!callbacks?.pending.value;complete.onclick=()=>{commitEditor();callbacks.run(row.id);};
   const requested=!!row.pending_deletion_request_id||deletions?.isConfirmed(row),button=text('button',deletions?.busyId===row.id?'요청 중':requested?'요청완료':'삭제 요청');button.className='btn btn-sm btn-outline-danger';
-  button.disabled=!!requested||queue.paused||!queue.canEdit(row)||deletions?.busy||!!deletions?.pending.value||callbacks?.busy||!!callbacks?.pending.value;button.onclick=()=>{commitEditor();deletions.run(row.id);};wrap.append(history,complete,button);return wrap;
+  button.disabled=!!requested||queue.paused||!queue.canEdit(row)||deletions?.busy||!!deletions?.pending.value||callbacks?.busy||ai?.busy||!!callbacks?.pending.value;button.onclick=()=>{commitEditor();deletions.run(row.id);};wrap.append(history,complete,button);
+  for(const [feature,label] of [['CLEANUP','AI 상담 정리'],['SUMMARY','상담 요약'],['NEXT_QUESTIONS','다음 질문 제안']]){const control=text('button',label);control.className='btn btn-sm btn-outline-primary ms-2';control.disabled=!ai?.canGenerate()||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||!!callbacks?.pending.value||!!deletions?.pending.value;control.onclick=()=>{commitEditor();ai.run(row.id,feature);};wrap.append(control);}
+  const previous=text('button','AI 결과');previous.className='btn btn-sm btn-outline-secondary ms-2';previous.disabled=queue.paused||ai?.busy;previous.onclick=()=>{commitEditor();ai.history(row.id);};wrap.append(previous);return wrap;
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...Object.keys(labels).map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:350,formatter:actions}]});
+  columns:[...Object.keys(labels).map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
   $('#storage-warning').textContent=[queue.storageError,queue.recoveryErrors?`복구하지 못한 암호화 기록 ${queue.recoveryErrors}건이 있습니다. 기록을 지우지 않았습니다.`:'',queue.otherTabs?`다른 탭에서 보관 중인 대기값 ${queue.otherTabs}건은 해당 탭에서 확인하세요.`:''].filter(Boolean).join(' ');
   if(queue.paused){notice(queue.pauseMessage);$('#employee-private').hidden=true;$('#callback-pending').hidden=true;$('#deletion-pending').hidden=true;document.querySelectorAll('dialog[open]').forEach(d=>d.close());}
+  $('#ai-toolbar').hidden=queue.paused;if(queue.paused)ai?.hidePrivate();ai?.syncApply();
   $('#save-now').disabled=queue.paused||!entries.length;$('#pending-panel').hidden=queue.paused||!entries.length;
   $('#pending-rows').replaceChildren(...entries.map(e=>{
     const base=queue.rows.get(e.customer_id),caption=e.state!=='blocked'&&base?`${base.site_name} · ${base.customer_name}`:(e.site_id===state.site?'현재 현장':'다른 현장');
@@ -85,7 +91,7 @@ function renderStatus(){
     if(entry?.state==='blocked'){row.delete().catch(()=>{});continue;}
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
     const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
-    const action=row.getCell('_actions');if(action)action.setValue(JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),queue.paused,entry?.state]));
+    const action=row.getCell('_actions');if(action)action.setValue(JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]));
     row.getElement().classList.toggle('pending-row',!!entry);row.getElement().classList.toggle('failed-row',!!entry&&['failed','conflict','blocked','review','retry'].includes(entry.state));
   }
 }
@@ -109,22 +115,23 @@ function choice(dialog,actions){
   return new Promise(resolve=>{let done=false;const finish=value=>{if(done)return;done=true;dialog.close();resolve(value);};for(const [id,value] of Object.entries(actions))$('#'+id).onclick=()=>finish(value);dialog.oncancel=event=>{event.preventDefault();finish('cancel');};dialog.showModal();});
 }
 async function guarded(action,logout=false){
-  commitEditor();if(navigating||callbacks?.busy||deletions?.busy)return false;navigating=true;
+  commitEditor();if(navigating||callbacks?.busy||deletions?.busy||ai?.busy)return false;navigating=true;
   try{
-    while(queue.entries.size||queue.invalid.size||callbacks?.pending.value||deletions?.pending.value){
+    while(queue.entries.size||queue.invalid.size||callbacks?.pending.value||deletions?.pending.value||ai?.pending.value){
       if(callbacks?.pending.value)await callbacks.run();
       if(deletions?.pending.value)await deletions.run();
-      if(!callbacks?.pending.value&&!deletions?.pending.value&&await queue.flush(true))break;
+      if(ai?.pending.value)await ai.run();
+      if(!callbacks?.pending.value&&!deletions?.pending.value&&!ai?.pending.value&&await queue.flush(true))break;
       $('#leave-message').textContent=queue.paused?queue.pauseMessage:'오프라인·입력 오류·저장 충돌이 있습니다. 저장 상태를 확인해 주세요.';
       $('#leave-cancel').textContent=logout?'로그아웃 취소':'이동 취소';$('#leave-discard').textContent=logout?'대기값 버리고 로그아웃':'대기값 버리고 이동';
       const decision=await choice($('#leave-dialog'),{'leave-cancel':'cancel','leave-discard':'discard','leave-retry':'retry'});
       if(decision==='cancel')return false;
       if(decision==='discard'){
         if(!confirm('이 탭의 저장 대기값을 모두 버리시겠습니까? 이미 서버에 반영된 변경은 취소되지 않습니다.'))continue;
-        callbacks?.clear();deletions?.clear();await queue.discardAll();if(queue.entries.size){notice('로컬 기록을 폐기하지 못했습니다. 이동을 취소합니다.');return false;}break;
+        callbacks?.clear();deletions?.clear();ai?.clear();await queue.discardAll();if(queue.entries.size){notice('로컬 기록을 폐기하지 못했습니다. 이동을 취소합니다.');return false;}break;
       }
     }
-    await action();return true;
+    if($('#ai-dialog').open)$('#ai-dialog').close();await action();return true;
   }finally{navigating=false;}
 }
 async function openConflict(entry){
@@ -151,7 +158,7 @@ document.addEventListener('click',event=>{const link=event.target.closest('a[hre
 document.addEventListener('submit',event=>{const form=event.target;if(form.action?.endsWith('/auth/logout')){event.preventDefault();event.stopImmediatePropagation();guarded(()=>{HTMLFormElement.prototype.submit.call(form);},true).catch(error);}},true);
 for(const name of ['copy','cut','contextmenu'])$('#employee-grid').addEventListener(name,event=>event.preventDefault());
 $('#employee-grid').addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&['c','x'].includes(event.key.toLowerCase()))event.preventDefault();});
-window.addEventListener('beforeunload',event=>{if(queue.entries.size||queue.invalid.size||callbacks?.pending.value||deletions?.pending.value){event.preventDefault();event.returnValue='';}});
+window.addEventListener('beforeunload',event=>{if(queue.entries.size||queue.invalid.size||callbacks?.pending.value||deletions?.pending.value||ai?.pending.value){event.preventDefault();event.returnValue='';}});
 window.addEventListener('offline',()=>{for(const entry of queue.all())if(['dirty','retry'].includes(entry.state))entry.state='offline';renderStatus();});
 async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}await queue.resume();}catch(e){error(e);}}
 window.addEventListener('online',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});window.addEventListener('focus',resume);
@@ -179,8 +186,9 @@ async function openFilter(field){
 await ready;
 callbacks=new CallbackAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:async row=>{if(row)queue.setRows([row]);await load();},notice,changed:renderStatus});callbacks.update();
 deletions=new DeletionAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:load,notice,changed:renderStatus});deletions.update();
+ai=new EmployeeAI({userId,request,queue,flush:async id=>{commitEditor();return queue.flush(true,id);},notice,changed:renderStatus,labels,display,validate});
 try{
   const context=await request('/api/employee/context'),receivedAt=Date.now();await queue.start(context);queueReady=true;renderStatus();installPreRecall({serverTime:context.server_time,receivedAt,commit:commitEditor,flush:()=>queue.flush(true),notice});
   const sites=await request('/api/sites');$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||sites.default_site_id||'';$('#site').value=state.site;
-  await load();queue.tick();
+  await load();await ai.refreshAvailability();queue.tick();
 }catch(e){error(e);loading=false;}

@@ -49,7 +49,7 @@ class AcceptanceRunner(DiscoverRunner):
     @classmethod
     def add_arguments(cls, parser):
         super().add_arguments(parser)
-        parser.add_argument("--evidence-label", choices=["p8","p9"], default="p8")
+        parser.add_argument("--evidence-label", choices=["p8","p9","p10","p11","p12","p13"], default="p8")
 
     def __init__(self, *args, evidence_label="p8", **kwargs):
         super().__init__(*args, **kwargs)

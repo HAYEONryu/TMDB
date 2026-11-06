@@ -31,4 +31,6 @@ class Assignment(TimestampedModel):
         indexes = [
             models.Index(fields=["employee", "ended_at", "assigned_at"], name="assignment_employee_idx"),
             models.Index(fields=["assigned_at", "employee"], name="assignment_date_idx"),
+            # Owner+current-ID lookup stays selective before bulk-load statistics refresh.
+            models.Index(fields=["employee", "id"], condition=Q(ended_at__isnull=True), name="assignment_owner_current_idx"),
         ]

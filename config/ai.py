@@ -59,4 +59,4 @@ def load_ai_config(base_dir, *, role, environment=None):
                     provider=provider, model=model, monthly_budget_usd=budget,
                     input_price=input_price if input_price.is_finite() else None,
                     output_price=output_price if output_price.is_finite() else None,
-                    reason="AI_GENERATION_NOT_IMPLEMENTED" if enabled and configured else "AI_NOT_CONFIGURED")
+                    reason="AI_CONFIGURATION_LOADED" if enabled and configured else "AI_NOT_CONFIGURED")

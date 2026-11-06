@@ -71,10 +71,19 @@ export class EmployeeQueue extends EventTarget {
       this.entries.set(key,entry);this.claim(key).catch(error=>{this.storageError=error.message;this.emit();});
     }
     entry.editSeq=(entry.editSeq||0)+1;
+    if(entry.ai_fields){delete entry.ai_fields[field];if(!Object.keys(entry.ai_fields).length)entry.ai_source_id=null;}
     if(actual===expected)delete entry.pending[field];else entry.pending[field]=actual;
     if(Object.keys(entry.pending).length&&!entry.pending_since)entry.pending_since=this.now();
     if(!has(entry)){this.clear(entry);return true;}
     if(entry.state!=='saving'){entry.state=navigator.onLine?'dirty':'offline';entry.error='';}
+    this.persist(entry).then(()=>{if(entry.unsafe&&!this.saving)this.flush(true);});this.emit();return true;
+  }
+  stageAI(row,values,resultId){
+    const baseline=this.rows.get(row.id);if(this.paused||!baseline||this.entry(row.id)||this.invalidRow(row.id)||baseline.version!==row.version||baseline.assignment_id!==row.assignment_id)return false;
+    const pending={};for(const [field,value] of Object.entries(values)){if(!fields.includes(field))return false;const actual=normalized(field,value);if(actual!==normalized(field,baseline[field]))pending[field]=actual;}
+    if(!Object.keys(pending).length)return true;
+    const key=[this.userId,row.site_id,row.id,row.assignment_id,crypto.randomUUID()].join(':'),entry={key,user_id:this.userId,site_id:baseline.site_id,customer_id:row.id,assignment_id:baseline.assignment_id,version:baseline.version,pending,inflight:null,first_dirty_at:this.now(),pending_since:this.now(),created_at:this.now(),state:navigator.onLine?'dirty':'offline',error:'',retry_at:0,attempt:0,ai_source_id:resultId,ai_fields:Object.fromEntries(Object.keys(pending).map(field=>[field,true]))};
+    this.entries.set(key,entry);this.claim(key).catch(error=>{this.storageError=error.message;this.emit();});
     this.persist(entry).then(()=>{if(entry.unsafe&&!this.saving)this.flush(true);});this.emit();return true;
   }
   markInvalid(id,field,message){const key=id+':'+field;if(message)this.invalid.set(key,message);else this.invalid.delete(key);this.emit();}
@@ -90,7 +99,7 @@ export class EmployeeQueue extends EventTarget {
       else entry.state='dirty';
     }else{
       const code=result.error?.code;entry.error=result.error?.message||'저장 실패';
-      entry.state=blocked.has(code)?'blocked':code==='VERSION_CONFLICT'?'conflict':'failed';entry.server=blocked.has(code)?null:result.server_row||latest;
+      entry.state=blocked.has(code)?'blocked':['VERSION_CONFLICT','AI_RESULT_STALE'].includes(code)?'conflict':'failed';entry.server=blocked.has(code)?null:result.server_row||latest;
       if(auth.has(code))this.pause(entry.error);
     }
     await this.persist(entry);this.emit();
@@ -147,7 +156,7 @@ export class EmployeeQueue extends EventTarget {
         const send=batch.filter(e=>e.checked&&this.entries.has(e.key)&&['dirty','retry','offline'].includes(e.state)&&!this.paused&&!this.invalidRow(e.customer_id));
         if(!send.length)return;
         for(const e of send){
-          if(!e.inflight){e.inflight={customer_id:e.customer_id,assignment_id:e.assignment_id,mutation_id:crypto.randomUUID(),expected_version:e.version,changes:structuredClone(e.pending)};e.pending={};e.pending_since=null;}
+          if(!e.inflight){e.inflight={customer_id:e.customer_id,assignment_id:e.assignment_id,mutation_id:crypto.randomUUID(),expected_version:e.version,changes:structuredClone(e.pending),...(e.ai_source_id&&Object.keys(e.ai_fields||{}).some(field=>Object.hasOwn(e.pending,field))?{source_ai_result_id:e.ai_source_id}:{})};e.pending={};e.pending_since=null;e.ai_source_id=null;e.ai_fields={};}
           e.state='saving';await this.persist(e);
         }
         this.emit();
@@ -168,7 +177,7 @@ export class EmployeeQueue extends EventTarget {
   async reapply(entry,seenVersion){
     await this.reconcile([entry]);if(entry.state==='blocked'||!entry.server||this.paused)return false;
     if(entry.server.version!==seenVersion){entry.error='서버 값이 다시 바뀌었습니다. 새 비교 내용을 확인해 주세요.';this.emit();return false;}
-    const values=changes(entry);entry.version=seenVersion;entry.inflight=null;entry.pending={};this.rows.set(entry.customer_id,structuredClone(entry.server));
+    const values=changes(entry);entry.version=seenVersion;entry.inflight=null;entry.pending={};entry.ai_source_id=null;entry.ai_fields={};this.rows.set(entry.customer_id,structuredClone(entry.server));
     for(const [f,v] of Object.entries(values))if(normalized(f,v)!==normalized(f,entry.server[f]))entry.pending[f]=v;
     entry.created_at=this.now();entry.first_dirty_at=this.now();entry.pending_since=this.now();entry.state='dirty';entry.retry_at=0;entry.error='';entry.attempt=0;
     if(!has(entry))await this.clear(entry);else{await this.persist(entry);await this.flush(true);}return !this.entries.has(entry.key);

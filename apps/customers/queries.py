@@ -7,6 +7,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 from apps.accounts.access import AccessError
 from apps.accounts.models import User
+from apps.assignments.models import Assignment
 from apps.callbacks.models import Callback
 from apps.common.http import identifier
 from apps.customers.models import Customer, CustomerDeletionRequest
@@ -60,7 +61,11 @@ def scoped(actor, params):
             raise AccessError("FORBIDDEN", "접근 권한이 없습니다.")
         query=query.filter(current_assignment__employee_id=identifier(params["assignee_id"]))
     if actor.role != User.Role.ADMIN or view in {"mine", "today"}:
-        query = query.filter(current_assignment__employee=actor, current_assignment__ended_at__isnull=True)
+        # Select the owner's current IDs once. DISTINCT ON keeps this subquery
+        # independent when newly imported rows still have inaccurate statistics;
+        # otherwise a nested join can scan the same owner's assignments per customer.
+        current_ids = Assignment.objects.filter(employee_id=actor.pk, ended_at__isnull=True).order_by("pk").distinct("pk").values("pk")
+        query = query.filter(current_assignment_id__in=current_ids)
     if view == "today":
         today = timezone.localdate()
         start = datetime.combine(today, time.min, KST)

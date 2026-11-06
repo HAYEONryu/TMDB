@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+    environment:
+      POSTGRES_USER: tm
+      POSTGRES_DB: tm
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U tm -d tm]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  web:
+    image: ${TM_APP_IMAGE:?Set an immutable application image digest}
+    env_file: ["${TM_APP_ENV_FILE:?Set the protected application env path}", "${TM_AI_ENV_FILE:?Set the protected AI env path}"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.production_settings
+      APP_DOMAIN: ${APP_DOMAIN:?Set the HTTPS domain}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import os,urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/healthz',headers={'Host':os.environ['APP_DOMAIN'],'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+  scheduler:
+    image: ${TM_APP_IMAGE:?Set an immutable application image digest}
+    env_file: "${TM_APP_ENV_FILE:?Set the protected application env path}"
+    environment:
+      DJANGO_SETTINGS_MODULE: config.production_settings
+      APP_DOMAIN: ${APP_DOMAIN:?Set the HTTPS domain}
+    command: [python, manage.py, run_scheduler]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+  ai_worker:
+    image: ${TM_APP_IMAGE:?Set an immutable application image digest}
+    profiles: [ai]
+    env_file: ["${TM_APP_ENV_FILE:?Set the protected application env path}", "${TM_AI_ENV_FILE:?Set the protected AI env path}"]
+    environment:
+      DJANGO_SETTINGS_MODULE: config.production_settings
+      APP_DOMAIN: ${APP_DOMAIN:?Set the HTTPS domain}
+    command: [python, manage.py, run_ai_worker]
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+  proxy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set the HTTPS domain}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro", "caddy_data:/data", "caddy_config:/config"]
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+secrets:
+  db_password:
+    file: ${TM_DB_PASSWORD_FILE:?Set the protected DB password file}
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

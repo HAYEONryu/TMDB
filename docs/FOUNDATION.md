@@ -200,3 +200,41 @@ worker.claim은 짧은 트랜잭션에서 RUNNING·token·120초 lease·10분 �
 `ledger.settle`은 성공 결과 저장·quota 예약→성공·slot 성공·월 예약→정산을 같은 트랜잭션으로 처리한다. 실패/권한 회수는 quota/미성공 slot만 반환하고 과금된 시도 비용은 남긴다. 종료된 늦은 응답은 결과를 노출하지 않는다. 이미 보수 정산한 비용을 낮추지 않고 새로 확인한 초과 비용만 추가한다. 버전/입력 변경은 결과를 stale로 표시하고 자동 고객 수정/진행 처리는 하지 않는다.
 
 `privacy.invalidate_results`는 고객/revision/knowledge/이전 결과와 AI_APPLIED 근거의 전이 그래프를 방문 집합으로 순회한다. queued 입력·결과 본문/캐시를 제거하고 게시를 해제한다. 실행 중이면 보수 비용을 남기고 취소한다. 이미 성공한 quota/slot·발생 비용은 유지한다. 모든 AIResult는 원문 없는 tombstone으로 남을 수 있으며 Source edge는 제거한다. 추가 미처리 모델의 guard는 유지한다. 실제 별도 PG 연결 경합·worker child process 중단/재시작·삭제 롤백·순환 그래프·권한/CSRF·캐시/alias 검증은 [P9_VERIFICATION.md](P9_VERIFICATION.md)에 기록한다.
+
+## P10 직원 AI schema·UI·저장 출처
+
+P10은 기존 모델/FK를 사용해 새 migration/의존성 없이 직원 POST customer-tasks와 현재 할당의 최근 결과 GET customer-results를 추가했다. 생성 요청은 직원 queue identity·고객/할당/expected_version/feature/key만 받는다. 예산/active/quota를 보여주는 가용성 GET도 queue header가 있으면 동일 계정을 검사한다. 일반/운영 실제 전송은 여전히 비활성이다.
+
+`employee_schema.py`는 직원용 schema/prompt employee-v1을 검증한다. 정리는 여섯 상담 필드의 status/value/source_ids/evidence/reason, 요약은 네 영역, 질문은3~5개 목적/근거다. 필드/enum/길이·원문 인용/근거 ID·테스트 marker·키 노출을 검사하며 임의 URL은 제거한다. 알려진 MANUAL/AI_APPLIED 원문 시각으로 상대 날짜를 대조하고 미상/잘못된 anchor는 NO_SUGGESTION/null로 바꾼다. 저장 가능한 날짜는 ISO로 정규화한다. 금액은 원문에 있는 표기만, 계약 여부는 현재 저장값 또는 보수적인 명시 근거를 사용하며 모호하면 추천하지 않는다. 실제 NLP 품질을 보장하는 의미 판정기는 아니다.
+
+`employee-ai.js`는 행 단위 flush→명시적 POST→ID metadata 보관→열린/visible 결과 창의3초 GET을 담당한다. close/hidden/terminal/known access loss는 폴링을 멈춘다. 접수 미확인은 PendingOperation의 같은 key/body로만 수동 재확인한다. 원문은 DOM textContent로 표시하고 sessionStorage에는 원문을 넣지 않는다. 현재 값/제안·근거 비교 후 기본 미선택 checkbox를 사용한다. 비고 교체는 추가 확인을 거쳐 선택 필드만 EmployeeQueue.stageAI로 전달한다.
+
+stageAI는 깨끗한 동일 버전/할당 행에 대해 한 번에 pending과 ai_source_id/ai_fields를 만든다. QueueStore는 이를 기존 AES-GCM payload에 포함한다. flush는 snapshot의 source_ai_result_id를 mutation에 넣고 이후 수동 입력과 분리한다. 수동 변경 필드는 AI 출처를 해제하고 명시적 충돌 재적용은 출처를 제거하여 일반 편집으로 전환한다. 응답 유실 복구 query는 동일 inflight/source ID와 receipt를 사용한다.
+
+일반 `customers.services.update_row`는 기존 역할/할당/버전/receipt 검사 뒤 AI 적용 출처를 검사한다. 본인·같은 고객/현재 할당·유효한 최신 CLEANUP·적어도 하나의 실제 제안값 일치를 요구하며, 실제 변경만 AI_APPLIED/source_ai_result FK·변경 전후 값·진행·receipt를 함께 저장한다. NO_SUGGESTION/null로 기존 값을 지우지 않고 무변경은 revision/진행을 만들지 않는다. 서버/브라우저/Node 근거와 제한은 [P10_VERIFICATION.md](P10_VERIFICATION.md)를 따른다.
+
+
+## P11 관리자 AI 보고서·게시 경계
+
+관리자 schema는 `admin-v1`, 직원은 `employee-v1`이다. 관리자 입력은 `reports.build_report`가 전체 SQL 집계와 bounded 비고/안내자료/이전 코칭을 분리한다. `AIReportSnapshot`은 접수 cutoff의 서버 집계·표본 범위·전후 관찰 구간을 저장하며 모델이 수치를 바꾸지 못한다. `AINoteClassification`은 원문 revision/모델/분류 버전의 근거 확인 결과만 저장하고 고객별 중복 제거 반응 수는 서버가 계산한다. 실제 통화 수를 revision 수로 추정하지 않는다.
+
+`AIResult.guide_body/guide_version/guide_reviewed_version`은 편집·검토할 초안이다. DB가 양수 버전·현재 검토 버전 일치를 검사한다. `GuidePublication`은 현장당 하나의 게시 스냅샷이므로 새 초안이나 기존 결과 편집이 게시본을 덮지 않는다. 직원 API는 게시 본문/버전/시각/테스트 표시만 제공한다. 편집/게시 receipt는 본문 없이 hash·ID·버전 metadata만 저장하며7일 정리 대상이다.
+
+Source graph에는 전체 수치의 고객도 연결한다. 영구 삭제/자료 변경은 파생 코칭과 혼합 결과를 함께 무효화하고 `AIReportSnapshot.data`·초안 본문을 비우며 관련 게시 스냅샷을 제거한다. 원문 revision 삭제는 분류 캐시 CASCADE다. 이미 성공한 slot·quota/비용을 되돌리지 않고 자동 재생성하지 않는다. 가이드 일반 문장/상품 사실·입력 cap·코칭 관찰 기준 등 구현 기본값은 [P11_VERIFICATION.md](P11_VERIFICATION.md)를 따른다.
+
+## P12 보안·통합 검수 경계
+
+직원/관리자 응답 schema는 전체 UTF-8 크기와 인코딩 가능 여부를 검사한다. 개별 문자열 길이가 유효해도 전체 상한을 넘거나 잘못된 Unicode를 포함하면 실패로 정산하고 결과를 저장하지 않는다. 실패·공급자 장애가 일반 고객 조회/저장에 영향을 주지 않는지 별도 테스트한다.
+
+`tests/acceptance_ai.json`은 설계서 18.8의23문항을 실제 테스트 ID와 연결한다. `AcceptanceRunner`는 실행 전후 소스 해시와 개별 결과를 기록하며, `verify_acceptance.py --suite ai`가 동일 소스·누락/skip/실패·추가 경계 증거를 확인한다. 해시는 검수 JSON·Git/Docker 제외 규칙·Dockerfile·Compose·빈 AI 예시도 포함하며 실제 키 파일은 읽지 않는다.
+
+`verify_ai_boundary.py`의 Git index/ignore·Compose 역할 분리·정적 Docker 제외 규칙은 실제 Docker build context/이미지 레이어 증거와 별도로 기록한다. Docker 엔진이 없으면 해당 항목은 `not_run`이며, 테스트 전체 성공만으로 P12 전체 완료를 선언하지 않는다. 자세한 결과와 제한은 [P12_VERIFICATION.md](P12_VERIFICATION.md)를 따른다.
+
+
+## P13 운영 명령·배포 경계
+
+`operations.backups`와 관리 명령 `backup_database`/`restore_database`는 HTTP 경로가 없는 운영 도구다. 백업은 pg_dump→age 공개 recipient로 스트리밍하며 원문 stderr·DB URL·키를 출력하지 않는다. 암호문 SHA 확인·원자적 완료 공개·완료 후7일 보관·동시 실행 파일 잠금을 사용한다. SSH/scp/age 자식에는 DB/AI 자격증명을 넘기지 않으며 pg 도구에만 DB 환경을 전달한다. 복원은 전체 인증 성공 후 새 tm_restore_* DB에만 수행하고 실패 시 이번 생성 DB만 제거한다. 실제로 채워진 AI12테이블을 포함한39테이블 전체 복원·무효화/게시/UNKNOWN/비용 상태를 대조한다.
+
+직원 범위 조회는 현재 할당 ID를 먼저 선택하며 `DISTINCT ON`으로 독립 조회를 유지한다. 부분 인덱스 `(employee_id,id) WHERE ended_at IS NULL`가 이를 지원한다. 데이터 추정이 틀릴 때1만 고객마다 직원 할당을 반복 스캔하던 계획을 피하며, 저장의 최신 권한/버전 검사·기존 unique 제약은 유지한다.
+
+`production_settings`와 별도 운영 Compose는 비밀파일/공개 포트/신뢰 프록시를 분리한다. 사전 검사는 불변 image digest·checkout 밖0600 파일·web/worker만 AI 파일을 확인한다. 실제 Docker·외부 보관·공개 CA를 정적 검사로 통과시키지 않는다. HSTS는 해당 도메인1시간이며 subdomain/preload는 별도 검토 대상이다. 자세한 절차와 제한은 [운영 절차](OPERATIONS.md)·[P13 검증 기록](P13_VERIFICATION.md)을 따른다.

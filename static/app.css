@@ -69,3 +69,28 @@ dialog::backdrop { background:#142e2666; }
 #deletion-notifications th,#deletion-notifications td {min-width:110px;white-space:nowrap;vertical-align:middle;}
 #deletion-notifications th:first-child,#deletion-notifications td:first-child {min-width:140px;}
 #deletion-notifications th:last-child,#deletion-notifications td:last-child {min-width:70px;}
+/* Employee AI comparisons stay inside the dialog on narrow screens. */
+#ai-dialog { width: min(1100px, 95vw); max-width: 95vw; max-height: 90vh; overflow: auto; }
+#ai-content p, #ai-content td, #ai-content blockquote { white-space: pre-wrap; overflow-wrap: anywhere; }
+#ai-content small { overflow-wrap: anywhere; }
+.ai-compare-scroll { overflow-x: auto; }
+.ai-compare { min-width: 720px; }
+.ai-compare td:nth-child(3), .ai-compare td:nth-child(4) { min-width: 250px; }
+#ai-content input[type=checkbox] { display: inline-block; width: auto; }
+#ai-dialog .dialog-actions { position: sticky; bottom: -1.6rem; background: white; padding: .8rem 0; border-top: 1px solid #dfe8e2; }
+@media(max-width:767px) {
+  .ai-compare { min-width: 0; }
+  .ai-compare thead { display:none; }
+  .ai-compare tbody, .ai-compare tr, .ai-compare td, .ai-compare th { display:block; width:100%; min-width:0 !important; }
+  .ai-compare tr { border-bottom:1px solid #c9d7cf; padding:.6rem 0; }
+  .ai-compare td, .ai-compare th { border:0; padding:.4rem; }
+  .ai-compare td:first-child::before { content:'선택 '; color:#497362; }
+  .ai-compare td:nth-child(3)::before { content:'현재 저장값'; display:block; color:#497362; font-size:.85rem; margin-bottom:.3rem; }
+  .ai-compare td:nth-child(4)::before { content:'AI 제안·근거'; display:block; color:#497362; font-size:.85rem; margin-bottom:.3rem; }
+}
+
+#guide-editor input[type=checkbox], #knowledge-panel input[type=checkbox] {display:inline-block;width:auto;padding:0;margin-right:.4rem;}
+#report-content h3 {font-size:1.15rem;margin-top:1.4rem;}
+#report-content blockquote {border-left:3px solid #d1ded4;padding:.5rem .8rem;white-space:pre-wrap;}
+#report-content .table {min-width:850px;}
+#report-content a {display:inline-block;margin-right:.7rem;}

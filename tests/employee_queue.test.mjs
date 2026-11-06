@@ -15,6 +15,26 @@ function fixture(){
   const r=row();q.setRows([r]);return {q,r,records,sends,setNow:n=>{now=n;}};
 }
 
+test('AI selection stages one atomic row with provenance and keeps other row deadline',async()=>{
+  const {q,r,sends,setNow,records}=fixture(),other=row('other');q.setRows([other]);q.stage(other,'notes','manual');setNow(5000);
+  assert.equal(q.stageAI(r,{notes:'AI proposal'},'result-id'),true);await q.disk;assert.equal(records.get(q.entry(r.id).key).ai_source_id,'result-id');
+  assert.equal(await q.flush(true,r.id),true);assert.equal(sends[0].rows[0].source_ai_result_id,'result-id');assert.equal(q.entry(other.id).pending_since,1000);
+  assert.equal(q.stageAI(q.rows.get(r.id),{notes:'another AI'},'new-result'),true);q.stage(q.rows.get(r.id),'notes','manual override');await q.flush(true,r.id);
+  assert.equal(Object.hasOwn(sends[1].rows[0],'source_ai_result_id'),false);
+});
+
+test('lost AI save retries exact source ID and body while later manual input stays separate',async()=>{
+  const {q,r,sends}=fixture(),request=q.request;let first;let lost=false;
+  q.request=async(url,body)=>{if(url.endsWith('batch-update')&&!lost){lost=true;first=structuredClone(body);throw new Error('lost');}return request(url,body);};
+  q.stageAI(r,{notes:'AI selected'},'ai-result');await q.flush(true);q.stage(r,'housing_status','가상 월세');await q.flush(true);
+  assert.deepEqual(sends[0],first);assert.equal(sends[0].rows[0].source_ai_result_id,'ai-result');assert.equal(Object.hasOwn(sends[1].rows[0],'source_ai_result_id'),false);
+});
+
+test('AI stage refuses dirty rows and stale versions without changing their pending data',()=>{
+  const {q,r}=fixture();q.stage(r,'notes','manual pending');assert.equal(q.stageAI(r,{notes:'AI'},'id'),false);assert.equal(q.entry(r.id).pending.notes,'manual pending');
+  const clean=fixture();assert.equal(clean.q.stageAI({...clean.r,version:99},{notes:'AI'},'id'),false);assert.equal(clean.q.entries.size,0);
+});
+
 test('deadline follows first unsent change, coalesces last input, unchanged/reverted sends nothing',async()=>{
   const {q,r,sends,setNow}=fixture();q.stage(r,'notes','');assert.equal(q.entries.size,0);
   q.stage(r,'notes','first');setNow(61000);q.stage(r,'notes','last');assert.equal(q.entry(r.id).pending_since,1000);

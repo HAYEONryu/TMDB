@@ -15,7 +15,9 @@ from apps.sites.models import Site
 from apps.sites.services import locked_actor
 from .inputs import STAFF_FEATURES, build, digest
 from .ledger import cost
-from .models import AIRequest, AIRequestKey, AIResult, AIResultSource, AIQuotaBucket, AIBudgetMonth, AIReportSlot, Feature
+from .models import AIRequest, AIRequestKey, AIResult, AIResultSource, AIQuotaBucket, AIBudgetMonth, AIReportSlot, AIReportSnapshot, Feature
+from .employee_schema import VERSION as EMPLOYEE_VERSION
+from . import openai_policy
 
 ACTIVE = ["RESERVED", "RUNNING", "UNKNOWN"]
 
@@ -34,13 +36,19 @@ def validate_config():
         if config.input_price is None or config.output_price is None: failure("AI_NOT_CONFIGURED", "테스트 단가가 필요합니다.")
     elif not config.enabled or not config.configured:
         failure("AI_NOT_CONFIGURED", "AI 설정을 확인해 주세요.")
-    else:
-        # No real adapter is connected before explicit paid-call authorization.
-        failure("AI_NOT_CONFIGURED", "실제 공급자 어댑터가 아직 연결되지 않았습니다.")
+    elif not openai_policy.supported(config):
+        failure("AI_NOT_CONFIGURED", "OpenAI gpt-6-luna Standard 모델·단가 설정을 확인해 주세요. 자동 대체는 하지 않습니다.")
     for value in [config.input_price, config.output_price, config.monthly_budget_usd]:
         if not isinstance(value, Decimal) or not value.is_finite() or value < 0:
             failure("AI_NOT_CONFIGURED", "AI 단가·예산을 확인해 주세요.")
     return config
+
+
+def reservation_cost(staff, config):
+    if not test_mode():
+        return openai_policy.estimate(staff)
+    return cost(4000 if staff else 12000, 800 if staff else 2000,
+                800 if staff else 2000, config.input_price, config.output_price)
 
 
 def authorize(request, actor):
@@ -109,15 +117,22 @@ def reserve(actor, body):
                 AIRequestKey.objects.create(actor=actor,key=key,body_hash=body_hash,request=shared)
                 return shared, False
         payload, sources = build(feature, customer=customer, site=site, employee=employee, start=start, end=now, korean_date=day)
+        snapshot = payload.pop("_server_snapshot", None)
         config = validate_config()
-        input_cap, output_cap = (4000, 800) if customer else (12000, 2000)
-        # UTF-8 byte count is a conservative test-stage input bound, not a provider tokenizer.
-        if len(json.dumps(payload, ensure_ascii=False).encode()) > input_cap: failure("AI_INPUT_TOO_LARGE", "분석 입력 상한을 넘었습니다.", 422)
+        payload_cap, output_cap = (4000, 800) if customer else (12000, 2000)
+        if len(json.dumps(payload, ensure_ascii=False).encode()) > payload_cap: failure("AI_INPUT_TOO_LARGE", "분석 입력 상한을 넘었습니다.", 422)
+        input_cap, reasoning_cap = payload_cap, output_cap
+        effort = ""
+        if not test_mode():
+            input_cap, output_cap, reasoning_cap = openai_policy.limits(bool(customer))
+            effort = "none" if customer else "low"
         model_version = config.model or "test-foundation-v1"
-        pricing = digest([config.provider, model_version, str(config.input_price), str(config.output_price), "output-plus-reasoning-v1"])
-        fingerprint = digest(payload)
+        pricing = digest([config.provider, model_version, str(config.input_price), str(config.output_price),
+                          "output-plus-reasoning-v1" if test_mode() else openai_policy.POLICY_VERSION, effort])
+        fingerprint = digest({**payload, "_server_snapshot": snapshot}) if snapshot is not None else digest(payload)
+        schema_version=EMPLOYEE_VERSION if customer else "admin-v1"
         cache = digest([feature, str(actor.pk) if customer else scope, str(customer.current_assignment_id) if customer else None,
-                        customer.version if customer else None, day.isoformat(), start.isoformat(), period, fingerprint, "foundation-v1", model_version, pricing])
+                        customer.version if customer else None, day.isoformat(), start.isoformat(), period, fingerprint, schema_version, model_version, pricing])
         cached = AIRequest.objects.filter(cache_key=cache, status="SUCCEEDED", result__valid=True).first()
         if cached:
             AIRequestKey.objects.create(actor=actor,key=key,body_hash=body_hash,request=cached)
@@ -130,7 +145,7 @@ def reserve(actor, body):
             if bucket.successful_count + bucket.reserved_count >= 30: failure("AI_DAILY_LIMIT", "하루 합산 30회 한도입니다.")
         month, _ = AIBudgetMonth.objects.get_or_create(month=day.replace(day=1))
         month = AIBudgetMonth.objects.select_for_update().get(pk=month.pk)
-        reserved = cost(input_cap, output_cap, output_cap, config.input_price, config.output_price)
+        reserved = reservation_cost(bool(customer), config)
         if month.charged_usd + month.reserved_usd + reserved > config.monthly_budget_usd: failure("AI_BUDGET_LIMIT", "조직 월 AI 예산을 사용할 수 없습니다.")
         month.reserved_usd += reserved; month.save(update_fields=["reserved_usd", "updated_at"])
         if bucket:
@@ -138,8 +153,9 @@ def reserve(actor, body):
         task = AIRequest.objects.create(actor=actor, actor_session_version=actor.session_version, feature=feature, customer=customer, assignment=customer.current_assignment if customer else None,
             employee=employee, site=site, customer_version=customer.version if customer else None, korean_date=day, period_start=start, period_end=now,
             scope_key=scope, period_key=period, idempotency_key=key, body_hash=body_hash, cache_key=cache, source_fingerprint=fingerprint, input_payload=payload,
-            provider=config.provider or "test-only", model_version=model_version, pricing_version=pricing, input_price=config.input_price, output_price=config.output_price,
-            input_tokens_cap=input_cap, output_tokens_cap=output_cap, reasoning_tokens_cap=output_cap, budget_month=month, quota_bucket=bucket, reserved_cost=reserved, is_test=test_mode())
+            provider=config.provider or "test-only", model_version=model_version, prompt_version=schema_version,schema_version=schema_version,pricing_version=pricing, input_price=config.input_price, output_price=config.output_price,
+            input_tokens_cap=input_cap, output_tokens_cap=output_cap, reasoning_tokens_cap=reasoning_cap, reasoning_effort=effort, budget_month=month, quota_bucket=bucket, reserved_cost=reserved, is_test=test_mode())
+        if snapshot is not None: AIReportSnapshot.objects.create(request=task, data=snapshot)
         result = AIResult.objects.create(request=task)
         AIRequestKey.objects.create(actor=actor,key=key,body_hash=body_hash,request=task)
         AIResultSource.objects.bulk_create([AIResultSource(result=result, **source) for source in sources])

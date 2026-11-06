@@ -86,8 +86,10 @@ def safe_row(customer_id):
 
 @retry_transient_write
 def update_row(actor, body, *, employee_only=False):
-    if not isinstance(body, dict) or set(body) != {"customer_id", "assignment_id", "mutation_id", "expected_version", "changes"}:
+    required={"customer_id", "assignment_id", "mutation_id", "expected_version", "changes"}
+    if not isinstance(body, dict) or not required<=set(body) or set(body)-required-{"source_ai_result_id"}:
         invalid("행 저장 형식을 확인해 주세요.")
+    source_id=identifier(body['source_ai_result_id']) if 'source_ai_result_id' in body else None
     cid = identifier(body["customer_id"])
     assignment_id = identifier(body["assignment_id"], nullable=True)
     mutation_id = identifier(body["mutation_id"])
@@ -146,6 +148,16 @@ def update_row(actor, body, *, employee_only=False):
             current = callback.due_at if field == "callback_due_at" and callback else (None if field == "callback_due_at" else getattr(customer, field))
             if current != value:
                 actual[field] = value
+        source_result=None
+        if source_id:
+            try:
+                from apps.ai_assistant.apply import validate_application
+                source_result=validate_application(actor,customer,source_id,values,actual)
+            except AccessError as exc:
+                result={'customer_id':str(cid),'mutation_id':str(mutation_id),'ok':False,'error':{'code':exc.code,'message':exc.message}}
+                if exc.code=='AI_RESULT_STALE':result['server_row']=safe_row(cid)
+                MutationReceipt.objects.create(actor=actor,customer=customer,mutation_id=mutation_id,body_hash=body_hash,result=result,expires_at=timezone.now()+timedelta(days=7))
+                return result
         now = timezone.now()
         if actual:
             for field, value in actual.items():
@@ -173,7 +185,7 @@ def update_row(actor, body, *, employee_only=False):
             CustomerChangeEvent.objects.create(customer=customer, assignment=assignment, changed_by=actor, changed_at=now, changed_fields=sorted(actual))
             ConsultationRevision.objects.create(customer=customer, assignment=assignment, actor=actor, saved_at=now,
                 customer_version=customer.version, changed_fields=sorted(actual), before_values=before, after_values=after,
-                notes=customer.notes, source=ConsultationRevision.Source.MANUAL)
+                notes=customer.notes, source=ConsultationRevision.Source.AI_APPLIED if source_result else ConsultationRevision.Source.MANUAL,source_ai_result=source_result)
         result = {"ok": True, "customer_id": str(cid), "mutation_id": str(mutation_id), "changed": bool(actual),
                   "version": customer.version, "row": safe_row(cid)}
         MutationReceipt.objects.create(actor=actor, customer=customer, mutation_id=mutation_id, body_hash=body_hash,

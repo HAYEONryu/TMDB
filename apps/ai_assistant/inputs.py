@@ -1,4 +1,4 @@
-"""Bounded server inputs; semantic employee/report builders belong to P10/P11."""
+"""Server-selected, bounded employee and report evidence."""
 import hashlib
 import json
 import re
@@ -30,6 +30,9 @@ def sanitize(value, names):
 
 
 def build(feature, *, customer=None, site=None, employee=None, start, end, korean_date):
+    if feature not in STAFF_FEATURES:
+        from .reports import build_report
+        return build_report(feature, site=site, employee=employee, start=start, end=end, korean_date=korean_date)
     query = ConsultationRevision.objects.filter(saved_at__lte=end).select_related("customer")
     sources = []
     payload = {"reference_date": korean_date.isoformat(), "period_start": start.isoformat(), "period_end": end.isoformat(), "records": []}
@@ -43,11 +46,13 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
         payload["current"] = {"notes": customer.notes, "call_result": customer.call_result, "contract_status": customer.contract_status,
                               "housing_status": customer.housing_status, "visit_at": customer.visit_at.isoformat() if customer.visit_at else None,
                               "callback_due_at": callback.due_at.isoformat() if callback else None, "version": customer.version}
+        note_revision=ConsultationRevision.objects.filter(customer=customer,changed_fields__contains=["notes"],source__in=["MANUAL","AI_APPLIED"]).order_by("-saved_at","-pk").first()
+        payload["current"]["source_id"]=str(customer.pk)
+        payload["current"]["notes_saved_at"]=note_revision.saved_at.isoformat() if note_revision and note_revision.notes==customer.notes else None
+        payload["current"]["information_state"]="저장된 상담내용 있음" if customer.notes else "저장된 상담내용 없음"
+        from .employee_schema import INSTRUCTIONS
+        payload["instructions"]=INSTRUCTIONS
         sources.append({"customer_id": customer.pk, "source_version": customer.version})
-    else:
-        query = query.filter(saved_at__gte=start)
-        if site: query = query.filter(customer__site=site)
-        if employee: query = query.filter(actor=employee)
     rows = list(query.order_by("-saved_at", "-pk")[:101])
     if len(rows) > 100:
         from apps.accounts.access import AccessError
@@ -57,13 +62,6 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
         payload["records"].append({"source_id": str(revision.pk), "saved_at": revision.saved_at.isoformat(), "source": revision.source,
                                    "version": revision.customer_version, "notes": revision.notes, "fields": revision.after_values})
         sources.append({"revision_id": revision.pk, "source_version": revision.customer_version})
-    if feature == Feature.TEAM_GUIDE:
-        knowledge = list(SiteKnowledge.objects.filter(site=site, is_valid=True, reviewed_at__isnull=False).order_by("pk")[:101])
-        if len(knowledge) > 100:
-            from apps.accounts.access import AccessError
-            raise AccessError("AI_INPUT_TOO_LARGE", "안내자료 입력 상한을 넘었습니다.", 422)
-        payload["knowledge"] = [{"source_id": str(k.pk), "version": k.version, "title": k.title, "body": k.body} for k in knowledge]
-        sources += [{"knowledge_id": k.pk, "source_version": k.version} for k in knowledge]
     payload = sanitize(payload, names)
     return payload, sources
 

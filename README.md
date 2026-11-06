@@ -1,14 +1,14 @@
 # TM 고객관리
 
-한국어 TM 고객관리 서비스. 설계서 **v2.0의 P9: AI 공통 기반**까지 구현·로컬 검증했다. 기본 업무69항목과 총314개 테스트를 통과했다.
+한국어 TM 고객관리 서비스. **P13 운영 준비 구현·로컬 검증** 당시435개 테스트·기본69/69·AI22/23·전체91/92항목을 통과했다. 이후 데모 날짜 입력 수정과 OpenAI 연결을 추가했으며 영향 범위만 재검증했다. 현재 버전의 범위는 [릴리스 보고서](docs/RELEASE_READINESS.md)를 따른다. Docker 실기 검사와 실제 외부 보관소/공개 HTTPS/운영 환경 검증은 남았다.
 
 Python 3.13.18 / Django 5.2.18 / PostgreSQL 17.11 / Django Templates / Bootstrap 5.3.8을 사용한다. 의존성은 `uv.lock`, 컨테이너 설치용 해시 잠금은 `requirements.lock`에 있다.
 
-관리자 현장·고객 그리드·수동 저장·휴지통·엑셀·분배/회수·담당자 변경·사용자 관리, 직원 오늘 할 일/나의 DB·자동 저장·재콜 완료·이력·상세 통계·23시 예약 회수·삭제 요청/승인·영구 삭제를 사용할 수 있다. AI 본 기능은 후속 단계다. 일반 업무 관리자는 Django superuser가 아니다.
+관리자 현장·고객 그리드·수동 저장·휴지통·엑셀·분배/회수·담당자 변경·사용자 관리, 직원 오늘 할 일/나의 DB·자동 저장·재콜 완료·이력·상세 통계·23시 예약 회수·삭제 요청/승인·영구 삭제를 사용할 수 있다. P10에 직원 AI3종 버튼/결과/선택 적용을 추가했다. 2026-11-07 OpenAI Responses 연결을 구현하고 가짜 응답으로142개를 검증했다. 현재 데모는 AI 비활성이며 fake는 격리 테스트에서만 실행한다. 일반 업무 관리자는 Django superuser가 아니다. [모델·단가·실행 조건](docs/OPENAI_CONNECTION.md)을 먼저 확인한다.
 
-기존 기반 코드를 보존하고 상담 이력 `ConsultationRevision`, 서버 전용 `.env.ai` 로더·프로세스 분리·테스트 전용 fake·로그 마스킹을 추가했다. P9에 AI 요청/결과·30회 quota·비용 예약·DB worker·파생 원문 삭제 기반을 연결했다. 직원 생성 버튼은 P10, 보고서는 P11 범위이며 실제 공급자 전송 경로는 비활성이다.
+기존 기반 코드를 보존하고 상담 이력 `ConsultationRevision`, 서버 전용 `.env.ai` 로더·프로세스 분리·테스트 전용 fake·로그 마스킹을 추가했다. P9의 AI 요청/결과·합산30회·비용 예약·DB worker·파생 원문 삭제에 P10의 직원 선택 적용 저장을 연결했다. P11의 관리자 주간 브리핑·직원 코칭·현장 가이드와 검토·게시·직원 게시본 조회도 연결했다.
 
-현재 결과는 [P9 검증 기록](docs/P9_VERIFICATION.md)·[기본69항목 재검수](docs/P9_BASIC_ACCEPTANCE.md), 이전 결과는 [P1](docs/P1_VERIFICATION.md)·[P2](docs/P2_VERIFICATION.md)·[P3](docs/P3_VERIFICATION.md)·[P4](docs/P4_VERIFICATION.md)·[P5](docs/P5_VERIFICATION.md)·[P6](docs/P6_VERIFICATION.md)·[P7](docs/P7_VERIFICATION.md)·[P8](docs/P8_VERIFICATION.md), 순서는 [개발 계획](docs/IMPLEMENTATION_PLAN.md), 활동은 [진행 기록](docs/PROGRESS.md)을 따른다. 이전 문서와 병합 충돌의 양쪽 내용은 `docs/history/`에 보존했다.
+현재 결과는 [P13 검증 기록](docs/P13_VERIFICATION.md)·[전체92항목](docs/P13_ACCEPTANCE.md)·[운영 절차](docs/OPERATIONS.md), 이전 결과는 [P12](docs/P12_VERIFICATION.md)·[P11](docs/P11_VERIFICATION.md)·[P10](docs/P10_VERIFICATION.md)· [P1](docs/P1_VERIFICATION.md)·[P2](docs/P2_VERIFICATION.md)·[P3](docs/P3_VERIFICATION.md)·[P4](docs/P4_VERIFICATION.md)·[P5](docs/P5_VERIFICATION.md)·[P6](docs/P6_VERIFICATION.md)·[P7](docs/P7_VERIFICATION.md)·[P8](docs/P8_VERIFICATION.md)·[P9](docs/P9_VERIFICATION.md), 순서는 [개발 계획](docs/IMPLEMENTATION_PLAN.md), 활동은 [진행 기록](docs/PROGRESS.md)을 따른다. 이전 문서와 병합 충돌의 양쪽 내용은 `docs/history/`에 보존했다.
 
 ## 1. 현재 컴퓨터에서 실행 — 실제 검증한 경로
 
@@ -19,7 +19,7 @@ cd /Users/hayeon/Documents/TMDB
 .venv/bin/python scripts/local_db.py start
 .venv/bin/python manage.py migrate --noinput
 .venv/bin/python manage.py collectstatic --noinput
-.venv/bin/gunicorn config.wsgi:application
+.venv/bin/gunicorn config.wsgi:application --worker-class gthread --threads 4
 ```
 
 접속: **http://127.0.0.1:8000/auth/login**. DB 연결 확인: http://127.0.0.1:8000/healthz.
@@ -183,9 +183,9 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.cache/ms-playwright" .venv/bin/python -m playwri
 node --experimental-default-type=module --test tests/employee_queue.test.mjs
 ```
 
-2026-11-05 P8 최종 검증의 명령·수치·로그는 [P8 검증 기록](docs/P8_VERIFICATION.md)에 있다. 기존 P1~P7 전체 테스트도 현재 코드에서 다시 실행했다. 대부분의 인증/모델 테스트는 테스트 전용 MD5로 빠르게 실행하고, 실제 기본 PBKDF2 검사·브라우저 흐름·복원 계정은 런타임 해시를 사용한다. 운영 해시는 낮추지 않았다. `manage.py test`는 전용 `config.test_settings`와 별도 PG 테스트 DB를 사용한다. Node 검증은 Node22의 기본 test runner를 쓰며 npm 설치가 필요 없다. 전체 실행과69항목 근거 생성은 아래16절을 따른다.
+2026-11-05 P10 최종 검증의 명령·수치·로그는 [P10 검증 기록](docs/P10_VERIFICATION.md)에 있다. 기존 P1~P9 전체 테스트도 현재 코드에서 다시 실행했다. 대부분의 인증/모델 테스트는 테스트 전용 MD5로 빠르게 실행하고, 실제 기본 PBKDF2 검사·브라우저 흐름·복원 계정은 런타임 해시를 사용한다. 운영 해시는 낮추지 않았다. `manage.py test`는 전용 `config.test_settings`와 별도 PG 테스트 DB를 사용한다. Node 검증은 Node22의 기본 test runner를 쓰며 npm 설치가 필요 없다. P10 전체 실행과69항목 근거 생성은 해당 검증 기록을 따른다.
 
-설계서 v2.0의 **전체 92개 인수 항목 완료를 뜻하지 않는다**. 현재 범위·제한은 [P8 검증 기록](docs/P8_VERIFICATION.md)과 [진행 기록](docs/PROGRESS.md)에 있다. VERIFICATION_STAGE2.md는 이전 v1 실행 이력이다.
+설계서 v2.0의 **전체 92개 인수 항목 완료를 뜻하지 않는다**. 현재 범위·제한은 [P10 검증 기록](docs/P10_VERIFICATION.md)과 [진행 기록](docs/PROGRESS.md)에 있다. VERIFICATION_STAGE2.md는 이전 v1 실행 이력이다.
 
 ## 7. 구조와 후속 경계
 
@@ -208,7 +208,7 @@ git ls-files --error-unmatch -- .env.ai
 
 web/AI worker만 명시적으로 `.env.ai`를 읽는다. 프로세스 환경변수 우선·파일 누락값 보완, AI_ENV_FILE 외부 경로·0600 검사·미설정 fallback을 적용한다. 일반 `.env`로 AI 값을 로딩하지 않으며 일반 관리/scheduler/test 진입점은 상속된 AI 환경을 제거한다. Compose도 web/AI worker에만 AI env_file을 전달한다.
 
-`/api/ai/availability`는 로그인·최초 변경 후 조회 가능하다. P9부터 직원 자신의 KST 오늘 DB bucket의 성공/예약/남은 횟수를 반환한다. 기록이 없으면0/0/30이며 관리자 직원 quota 값은 null이다. 생성 가능은 계속 false다. 실제 생성 버튼과 기능별 결과/선택 적용은 P10 이후다.
+`/api/ai/availability`는 로그인·최초 변경 후 조회 가능하다. 직원 자신의 KST 오늘 DB bucket의 성공/예약/남은 횟수를 반환한다. 기록이 없으면0/0/30이며 관리자 직원 quota 값은 null이다. 현재 데모·AI 비활성 설정에서 생성 가능은 false다. P10의 명시적 테스트 설정/DB에서는 worker fake를 사용해 버튼/결과/선택 적용을 검증한다. 별도 활성화한 OpenAI 연결은 실제 유료 요청을 실행할 수 있으므로 [연결 조건](docs/OPENAI_CONNECTION.md)을 확인한다.
 
 fake는 전용 TESTING 설정과 `test_tm_` 접두어 DB에서만 실행하고 is_test=true를 반환한다. 일반/운영 로더의 AI_PROVIDER=fake는 거부한다. DEBUG=true만으로 테스트 환경이 되지 않는다. 테스트는 네트워크 차단 상태에서 가짜 응답을 확인한다.
 
@@ -312,13 +312,13 @@ DB 관리의 담당직원 셀 **담당 변경**은 상담 저장과 별도다. �
 5. 저장 대기 중 새로고침·브라우저 재시작 후 같은 계정으로 로그인하면 현재 권한·할당·버전을 확인해 복구한다. 다른 계정에서는 대기값을 표시·전송하지 않는다. 브라우저의 사이트 데이터 삭제는 대기값을 지우므로 저장 확인 전에는 실행하지 않는다.
 6. 두 탭에서 같은 고객을 편집하고 차례로 저장하면 뒤의 탭은 충돌을 표시한다. **비교·확인**에서 서버 값과 내 값을 확인한 뒤 다시 적용·저장 또는 폐기를 선택한다. 회수·동일 직원 재배정 후에는 이전 할당 대기값을 재적용할 수 없다.
 
-최신 Chrome/Edge의 IndexedDB·Web Crypto·Web Locks를 기준으로 구현했고 실제 검증은 Chromium에서 수행했다. localhost HTTP는 로컬 테스트용이며 운영 HTTPS 설정은 P12에서 검증한다. 계정별 암호화 키는 실행 중 메모리에만 있고 `.env.ai`나 AI API 키와 관계가 없다. 대기열에는 전체 고객 DB·비밀번호·세션 토큰을 저장하지 않는다. 앱이 닫힌 동안에는 전송하지 않으며, 미리 기록을 완료한 대기값을 다음 로그인 때 복구한다.
+최신 Chrome/Edge의 IndexedDB·Web Crypto·Web Locks를 기준으로 구현했고 실제 검증은 Chromium에서 수행했다. localhost HTTP는 로컬 테스트용이며 운영 HTTPS 설정은 P13에서 검증한다. 계정별 암호화 키는 실행 중 메모리에만 있고 `.env.ai`나 AI API 키와 관계가 없다. 대기열에는 전체 고객 DB·비밀번호·세션 토큰을 저장하지 않는다. 앱이 닫힌 동안에는 전송하지 않으며, 미리 기록을 완료한 대기값을 다음 로그인 때 복구한다.
 
 조회·무변경·저장 전 원복은 진행 이력을 만들지 않는다. 실제 커밋만 고객 버전·최초 진행·상담 revision을 원자적으로 갱신한다. 재콜 완료/취소 이력·상세 통계·23시 자동 회수는 아래 P6에 포함하며 삭제 요청/승인은 P7, AI 버튼은 P10 이후다.
 
 직접 확인은 기존 가짜 고객을 사용하거나 P3 가짜 파일로 새 현장을 준비한다. 확인→직원당 소량 분배→DB 관리 담당/할당일 확인→상담 저장→오늘 할당 회수·상담 보존을 확인한다. 비활성화·권한/전화 변경은 그 가짜 계정의 세션을 종료하므로 기존 비밀번호/계정을 임의 초기화하지 않는다.
 
-P7 삭제 요청·승인·영구 삭제는 아래15절, P8 통합 검수는16절, P9 공통 기반은17절을 따른다. 다음 단계는 **P10 직원 AI 3종**이며 이번 요청에서는 시작하지 않는다. Docker 실행·운영 배포·유료 API 호출은 수행하지 않았다.
+P7 삭제 요청·승인·영구 삭제는 아래15절, P8 통합 검수는16절, P9 공통 기반은17절, P10 직원 AI는18절, P11 관리자 AI3종은19절을 따른다. 현재 P13 운영 준비와 남은 검증은21절을 따른다. Docker 실행·운영 배포·유료 API 호출은 수행하지 않았다.
 
 ## 14. P6 재콜·통계·23시 예약 확인
 
@@ -384,7 +384,7 @@ P9 공통 기반은 아래17절을 따른다. 직원 생성/추천 적용과 브
 
 ## 17. P9 AI 공통 기반 확인
 
-기본 앱은1절 순서로 실행한다. 기존 개발 자료/계정은 그대로 사용한다. DB worker는 별도 터미널에서 다음 명령으로 실행할 수 있다. 현재 실제 공급자 전송은 연결하지 않았고 새 생성 POST/버튼도 아직 없으므로 일반 로컬 실행에서는 AI 작업0건이다. 키를 넣어도 유료 호출을 시작하지 않는다.
+기본 앱은1절 순서로 실행한다. 기존 개발 자료/계정은 그대로 사용한다. DB worker는 별도 터미널에서 다음 명령으로 실행할 수 있다. 현재는 OpenAI 연결 코드가 있으며 `AI_ENABLED=true`·지원 모델/단가·키·worker를 함께 설정하면 생성 버튼으로 유료 요청을 실행할 수 있다. 기본 예시와 현재 데모는 비활성이다. 직원 `gpt-6-luna/none`, 관리자 `gpt-6-luna/low`, Standard 고정이며 자동 대체는 없다. [연결 검증·설정 방법](docs/OPENAI_CONNECTION.md)을 따른다.
 
 ```sh
 .venv/bin/python manage.py run_ai_worker --once
@@ -395,7 +395,7 @@ P9 공통 기반은 아래17절을 따른다. 직원 생성/추천 적용과 브
 
 | API | 현재 제공 범위 |
 |---|---|
-| GET `/api/ai/availability` | 역할별 기능·직원 자신의 KST 오늘 성공/예약/잔여·다음 날짜. 생성 가능 false |
+| GET `/api/ai/availability` | 역할별 기능·직원 자신의 KST 오늘 성공/예약/잔여·다음 날짜. 일반 실행에서 생성 false |
 | GET `/api/ai/tasks/<UUID>` | 현재 권한을 검사한 작업 상태, 원문/키 노출 없음 |
 | GET `/api/ai/results/<UUID>` | 접근 가능한 결과·테스트 표시·오래된 버전 표시. GET은 새 호출 없음 |
 | GET `/api/ai/usage?month=YYYY-MM-01` | 관리자 기능별 성공/실패/취소/미확인·시도/토큰·예약/정산 USD |
@@ -404,12 +404,78 @@ P9 공통 기반은 아래17절을 따른다. 직원 생성/추천 적용과 브
 
 안내자료 POST는 `title`, `body`, `reviewed`, `is_valid`를 받으며 PATCH에는 `expected_version`도 필요하다. 유효 자료는 같은 관리 요청에서 검토해야 한다. 내용을 수정한 뒤 검토하지 않으면 reviewed=false/is_valid=false로 저장한다. 직원에게는 안내자료 관리 API를 공개하지 않는다. 실제 팀 가이드 생성/게시 화면은 P11에 구현한다.
 
-내부 예약 서비스는 직원 기능 합산 성공+예약≤30, 계정 처리 중1개, 전역 RUNNING/UNKNOWN2개를 적용한다. 접수 KST 날짜/월을 고정하고 월 USD5 기본 예산에서 입력 상한과 출력/추론 상한 비용을 먼저 예약한다. 성공만 사용자 횟수로 전환하고 과금된 실패 비용도 보존한다. 모델 미선정 상태의 테스트 단가는 비용 로직 검증용이며 실제 공급자 가격/과금 방식은 아직 검증하지 않았다.
+예약 서비스는 직원 기능 합산 성공+예약≤30, 계정 처리 중1개, 전역 RUNNING/UNKNOWN2개를 적용한다. 접수 KST 날짜/월을 고정하고 월 USD5 기본 예산에서 입력 상한과 총 출력 상한 비용을 먼저 예약한다. 성공만 사용자 횟수로 전환하고 과금된 실패 비용도 보존한다. 현재 Standard 단가는 공식 문서에서 확인했으며 실제 청구서는 검증하지 않았다.
 
-전송 미수행이 확실한 오류만 같은 작업에서1회 재시도한다. 불명확한 응답은 UNKNOWN으로 두고 자동 재호출하지 않는다. 시작 후10분이 지나면 횟수 예약을 반환하고 보수적 비용을 유지한다. 종료된 작업의 늦은 응답은 성공/적용으로 바꾸지 않는다. 원본 영구 삭제는 입력/응답/캐시·연관 보고서/코칭을 재귀적으로 지우고 게시를 해제하며 이미 성공한 quota/slot·발생 비용은 되돌리지 않는다.
+실제 OpenAI 작업은 자동 재시도하지 않는다. 테스트 fake의 전송 미수행 오류만 같은 작업에서1회 재시도할 수 있다. 불명확한 응답은 UNKNOWN으로 두고 자동 재호출하지 않는다. 시작 후10분이 지나면 횟수 예약을 반환하고 보수적 비용을 유지한다. 종료된 작업의 늦은 응답은 성공/적용으로 바꾸지 않는다. 원본 영구 삭제는 입력/응답/캐시·연관 보고서/코칭을 재귀적으로 지우고 게시를 해제하며 이미 성공한 quota/slot·발생 비용은 되돌리지 않는다.
 
 ```sh
 .venv/bin/python manage.py test tests.test_p9 --noinput -v 2
 ```
 
-위 검사는 별도 가짜 테스트 DB에서 예약·작업·결과·삭제를 실제 실행한다. 실제 worker 강제 중단/재시작과 독립 PG 연결의 동시 경합도 포함한다. 전체 회귀와 기본69항목 재검수 명령·제한은 [P9 검증 기록](docs/P9_VERIFICATION.md)을 따른다. 다음 P10은 직원 버튼·행 저장 선행·기능별 schema/결과·선택 적용 UI다. 이번에는 시작하지 않는다.
+위 검사는 별도 가짜 테스트 DB에서 예약·작업·결과·삭제를 실제 실행한다. 실제 worker 강제 중단/재시작과 독립 PG 연결의 동시 경합도 포함한다. 당시 공통 기반 검증은 [P9 검증 기록](docs/P9_VERIFICATION.md)을 따른다. P10의 직원 버튼/선택 적용은 아래18절을 따른다.
+
+## 18. P10 직원 AI3종·선택 적용 확인
+
+1. 1·2절대로 DB/앱 실행→가짜 관리자/직원 로그인과 최초 변경→소량 분배를 수행한다. 직원 **오늘 할 일/나의 DB**의 작업 열에서 **AI 상담 정리 / 상담 요약 / 다음 질문 제안 / AI 결과**를 확인한다. 가로로 스크롤하면 작업 열을 볼 수 있다.
+2. 현재 데모와 비활성 설정에서는 생성3버튼은 비활성이다. 성공/예약/남은 횟수·설정 안내를 표시하며 상담 편집·저장·재콜·삭제 요청은 그대로 동작한다. 서버에 기존 결과가 있으면 **AI 결과**는 새 생성 없이 조회할 수 있다. OpenAI 활성화 시 유료 생성 경로가 있으므로 [설정 절차](docs/OPENAI_CONNECTION.md)를 따른다. 실제 키로 fake를 활성화할 수는 없다.
+3. 아래 전용 검사는 별도 가짜 테스트 DB와 실제 Chromium에서 생성3종을 실행한다. 실제 저장→POST→DB worker의 테스트 전용 결과→현재 권한을 검사한 GET을 사용하며 운영 결과로 표시하지 않는다. 현재 개발 DB/비밀번호는 변경하지 않는다.
+
+```sh
+.venv/bin/python scripts/local_db.py start
+.venv/bin/python manage.py test tests.test_p10 tests.browser_p10 --noinput -v 2
+node --experimental-default-type=module --test tests/employee_queue.test.mjs
+```
+
+검사 화면은 `.local/qa/p10-cleanup-desktop.png`, `p10-cleanup-mobile.png`, `p10-questions-mobile.png`에 남긴다. PC는 원문/제안 비교표,390px은 항목별 원문/제안 카드다. 테스트용이라는 표시를 항상 붙인다. 실제 공급자의 한국어 품질을 검증한 결과는 아니다.
+
+상담 정리는6개 상담 필드의 추천/추천 없음을 표시한다. **체크박스는 모두 미선택**이며 읽기만 해서는 고객 값을 바꾸지 않는다. 제안과 근거를 확인한 뒤 원하는 항목만 체크하고 **선택 항목 적용**을 누른다. 비고 교체는 한 번 더 확인한다. 선택값은 기존 암호화 저장 대기열에 들어가며 **지금 저장** 또는 약90초 자동 저장의 성공을 확인해야 반영된다. 실제 변경 저장에만 AI_APPLIED 이력과 원본 결과 ID·변경 전후 값·진행이 함께 남는다. 선택하지 않은 필드와 null/추천 없음 값은 유지한다.
+
+요약은 핵심/관심·우려/후속 약속/확인 사항, 질문은3~5개 질문과 목적/근거를 읽기 전용으로 제공한다. 결과가 오래되거나 미저장 편집이 있으면 선택 적용을 막는다. 최신 값과 비교한 일반 편집은 가능하며 버전 충돌을 조용히 덮어쓰지 않는다. 회수/재분배/삭제/권한 변경 뒤에는 조회·적용을 다시 검사하고 알려진 권한 거부 시 열린 결과를 비운다.
+
+AI 버튼은 **그 행만 먼저 저장**한다. 저장 실패/오프라인/충돌이면 AI 요청을 보내지 않고 다른 행의 대기 시간도 바꾸지 않는다. 접수 응답을 못 받으면 **AI 접수 결과 다시 확인**으로 같은 key/body를 사용한다. 선택값 저장의 응답 유실도 같은 mutation/source ID로 확인하며 revision을 중복 생성하지 않는다. sessionStorage에는 요청/task/result의 ID·버전·기능 등 metadata만, 선택한 상담 값/출처는 IndexedDB 암호문에 보관한다. AI 전체 응답 원문을 브라우저 영속 저장소에 캐시하지 않는다.
+
+작업 확인 창이 열려 있고 화면이 visible일 때만3초 단위로 상태 GET을 수행한다. 숨김/닫힘/완료 후에는 멈추며 재조회는 새 생성이나 차감이 아니다. 실제 생성 성공은 선택 적용하지 않아도1회로 집계한다. 근거 없는 금액/계약 추천과 모호한 상대 날짜는 확인 필요로 처리하며, 이러한 보수적 검사가 모든 자연어의 사실성을 보장하는 것은 아니다.
+
+전체 회귀·기본69항목 재대조 명령과 실제 결과는 [P10 검증 기록](docs/P10_VERIFICATION.md)을 따른다. 관리자 보고서·가이드 검토/게시는 아래19절과 [P11 검증 기록](docs/P11_VERIFICATION.md)을 따른다.
+
+
+## 19. P11 관리자 보고서·팀 가이드 확인
+
+1. 1절대로 DB/Gunicorn을 시작한 뒤 기존 관리자 계정으로 로그인하고 **AI 보고서**(`/app/admin/ai`)를 연다. 주간 브리핑·직원 코칭·팀 상담 가이드를 선택한다. 현재 데모·비활성 AI 설정에서는 새 생성이 비활성이다. OpenAI 연결을 별도로 활성화하면 `gpt-6-luna/low`를 사용한다. 키가 없어도 기본 고객관리·기존 결과/게시본 조회는 정상이다.
+2. 주간은 일요일 새 접수만 허용하며, KST 월요일00:00~일요일 접수 시각의 전체 SQL 수치와 표본 반응을 구분한다. 조직 주1회 성공 slot을 공유하고, 평일에는 기존 이력만 읽는다. 코칭은 전 현장 최근30일의 실제 작성자 업무와 이전 유효 코칭을 사용한다. 근거가 부족하면 판단 불가이며 직원에게 노출/전송하지 않는다.
+3. 현장 가이드의 **현장 안내자료**에서 검토·유효 자료를 관리한다. 생성된 가이드는 초안이며, 문구 확인→검토 체크→**초안 저장·검토 반영**→**검토본 게시** 순서다. 직원 **팀 상담 가이드**(`/app/guides`)에는 게시 본문만 제공한다. 초안 수정 중에는 기존 게시본을 유지하고, 근거 자료 변경/원본 영구 삭제는 연결된 결과·게시본을 무효화한다.
+4. 생성→검토→게시·직원 읽기 전체 흐름은 아래 검사가 별도 가짜 DB와 실제 Chromium에서 실행한다. 개발 DB의 계정/비밀번호·고객 자료는 변경하지 않는다. fake를 개발/운영 결과처럼 실행하는 경로는 없다.
+
+```sh
+.venv/bin/python scripts/local_db.py start
+.venv/bin/python manage.py migrate --noinput
+.venv/bin/python manage.py test tests.test_p11 tests.browser_p11 tests.performance_reports --noinput -v 2
+```
+
+P11 관련45개(서버35·브라우저9·성능1)와 전체401개(Django383·Node18)를 통과했다. 실제 공급자의 한국어 품질/요금 검증은 아니다. 구현 기본값·입력/출력/표본 상한·코칭 비교 기준·가이드 문구 제약은 [P11 검증 기록](docs/P11_VERIFICATION.md)에 구분했다. PC·390px 검사 이미지는 `.local/qa/p11-guide-desktop.png`, `p11-coaching-mobile.png`, `p11-published-mobile.png`다.
+
+P12 AI 보안·통합 검수 결과와 남은 Docker 검사는 아래20절을 따른다. 실제 유료 호출·운영 배포는 실행하지 않았다.
+
+
+## 20. P12 AI 보안·통합 검수 — Docker 실기 검사 미완료
+
+직원 응답의 전체 크기 상한과 직원/관리자의 잘못된 Unicode 거부를 보강했다. 키 없음·설정 오류·예산 소진·공급자 실패 중 고객 저장, 자동 생성0, 세 관리자 기능의 동시 요청, 권한 회수, 동적 가짜 키의 서버·브라우저·로그 경계를 검증했다.
+
+**총413개 통과 = Django395개 + Node18개**, skip0·실행 전후 소스 해시 동일이다. 기본 업무69/69항목과 AI22/23항목을 동일 실행 근거로 대조했다. 개발 사용자3명·고객65건·기존 비밀번호/상담 전체 값 해시가 동일하며 임시 테스트 DB는 남지 않았다. 실제 공급자 연결·실제 키 사용·유료 호출은 없다.
+
+Git 제외/비추적·빈 예시·0600과 Compose5서비스의 web/ai_worker만 AI 파일 연결을 확인했다. 실제 `.env.ai` 값은 읽지 않았다. **Docker 엔진이 없어 build context·이미지·전체 레이어/history 검사가 미실행**이므로 `18.8-22`는 미완료다. 정적 `.dockerignore` 검사만으로 통과시키지 않는다. 경계 감사/AI 집계 명령의 exit1은 이 미완료를 나타낸다.
+
+검사 재현과 한계는 [P12 검증 기록](docs/P12_VERIFICATION.md), 문항별 근거는 [기본69항목](docs/P12_BASIC_ACCEPTANCE.md)·[AI23항목](docs/P12_AI_ACCEPTANCE.md)를 따른다. 현재 P13 운영 준비와 남은 검증은 아래21절을 따른다. P12 전체 완료·전체92항목 통과로 표시하지 않는다. 검증 소유 서버/DB를 종료했고 기존 자료를 보존했다. 직접 실행은1절을 따른다.
+
+
+## 21. P13 운영 준비 — 실제 운영 환경 검증은 별도
+
+암호화 백업·별도 복원 명령, 기본7일 보관·SSH/파일 전달, 운영 Compose/HTTPS 설정·사전 검사·호스트 백업 service/timer를 추가했다. 실제 AI 자료를 채운 암호화 백업을 별도 PostgreSQL로 복원해39개 전체 테이블 값과 관계를 대조했다. 변조/잘못된 키/기존 DB 덮어쓰기·복원 실패·전송 실패·중복 실행 거부도 검증했다.
+
+직원 현재 할당 조회를 개선하고 부분 인덱스 migration을 적용했다. 통계 추정이 빗나갈 때의 반복 할당 탐색을 피하며 기존 권한/오늘·나의DB 규칙을 유지한다. 실제2 workers×4 threads·20독립 세션·1만 고객의200요청에서 조회 p95 **0.192초**, 저장 p95 **0.268초**, 실패0이다. 실제 로컬 Caddy TLS와 Chromium/Firefox/WebKit 데스크톱·WebKit 터치 화면에서 저장·오프라인 복구·Secure cookie를 확인했다.
+
+**총435개 통과 = Django417개 + Node18개**, skip0·실행 전후 소스 해시 동일이다. 기본69/69·AI22/23·전체91/92항목을 같은 실행에 연결했다. `18.8-22` 실제 Docker 증거가 없어 AI/전체 집계는 의도적으로 exit1이다. 개발 사용자3·고객65·기존 비밀번호/상담 값 해시와 AI 요청0을 보존했고 임시 테스트/복원 DB는 제거했다.
+
+[운영 절차](docs/OPERATIONS.md)에 보호된 환경 파일·키 보관·일일 백업·롤백·별도 복원과 삭제 자료 재등장 확인을 정리했다. 백업 명령은 호스트 PostgreSQL17/age가 필요하며 앱 컨테이너에 도구가 있다고 가정하지 않는다. **실제 Docker build/up/레이어, 외부 보관소 전달·별도 장애 영역, 공개 CA/운영 HTTPS, Linux timer 활성화, 물리 모바일/운영 VM20명 SLA는 미검증**이다. 실제 공급자/과금/배포도 실행하지 않았다. 모든 운영 준비가 끝났다고 표시하지 않는다.
+
+명령과 개별 근거·제한은 [P13 검증 기록](docs/P13_VERIFICATION.md)·[기본69](docs/P13_BASIC_ACCEPTANCE.md)·[AI23](docs/P13_AI_ACCEPTANCE.md)·[전체92](docs/P13_ACCEPTANCE.md)를 따른다. 검증 소유 서비스를 종료하고 기존 자료를 보존하며, 직접 로컬 실행은1절을 따른다.

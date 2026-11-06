@@ -64,8 +64,10 @@ def check_one(actor,item):
     row=serialize(customer)
     inflight=item.get("inflight")
     if inflight:
-        if not isinstance(inflight,dict) or set(inflight)!={"customer_id","assignment_id","mutation_id","expected_version","changes"} or str(cid)!=inflight["customer_id"] or str(aid)!=inflight["assignment_id"]:
+        expected={"customer_id","assignment_id","mutation_id","expected_version","changes"}
+        if not isinstance(inflight,dict) or not expected<=set(inflight) or set(inflight)-expected-{'source_ai_result_id'} or str(cid)!=inflight["customer_id"] or str(aid)!=inflight["assignment_id"]:
             raise AccessError("VALIDATION_ERROR","전송 기록의 식별자를 확인해 주세요.",422)
+        if 'source_ai_result_id' in inflight:identifier(inflight['source_ai_result_id'])
         mid=identifier(inflight["mutation_id"])
         receipt=MutationReceipt.objects.filter(actor=actor,customer=customer,mutation_id=mid).first()
         if receipt:

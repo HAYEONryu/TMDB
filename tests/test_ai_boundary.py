@@ -211,5 +211,5 @@ class AIApplicationBoundaryTests(TestCase):
             with self.assertRaises(RuntimeError):
                 FakeAIAdapter().execute("SUMMARY")
 
-    def test_generation_api_is_not_exposed_in_p1(self):
-        self.assertEqual(self.client.post("/api/ai/customer-tasks", {}, content_type="application/json").status_code, 404)
+    def test_generation_api_requires_employee_queue_identity(self):
+        self.assertEqual(self.client.post("/api/ai/customer-tasks", {}, content_type="application/json").status_code, 403)
