@@ -7,7 +7,7 @@
   <p class="eyebrow">관리자 · 고객 등록</p><h1 class="h2">엑셀 업로드</h1>
   <p class="text-secondary">파일 검증 후 등록 가능 건수를 확인하고 확정해 주세요. 기존 고객의 상담정보는 변경하지 않습니다.</p>
   <div class="card card-body p-4 mb-4"><div class="d-flex flex-wrap gap-2 align-items-center justify-content-between"><h2 class="h5 mb-0">1. 입력 양식 준비</h2><a class="btn btn-outline-primary" href="/api/imports/template">빈 입력 양식 다운로드</a></div>
-    <p class="small text-secondary mt-3 mb-0">.xlsx · 최대 10MB · 빈 행 제외 10,000행 · 첫 워크시트의 9열만 사용합니다. 고객명·텍스트 연락처는 필수, 담당직원명은 비워 주세요. 날짜와 시각을 함께 입력하고 수식·매크로는 사용하지 마세요.</p>
+    <p class="small text-secondary mt-3 mb-0">.xlsx · 최대 10MB · 빈 행 제외 10,000행 · 첫 워크시트의 9열만 사용합니다. 고객명·텍스트 연락처는 필수, 담당직원명은 비워 주세요. 첫 행의 각 열 아래에 입력 형식과 예시가 있으며, 셀을 선택하면 상세 안내가 표시됩니다. 고객 데이터는 2행부터 입력하세요. 날짜와 시각을 함께 입력하고 수식·매크로는 사용하지 마세요. 기존 제목만 있는 양식도 사용할 수 있습니다.</p>
   </div>
   <form id="upload-form" data-async class="card card-body p-4 mb-4"><h2 class="h5">2. 현장과 파일 선택</h2><div class="d-flex flex-wrap gap-3 align-items-end"><label>현장<select id="upload-site" class="form-select mt-2" required></select></label><label class="flex-grow-1">엑셀 파일<input id="upload-file" type="file" accept=".xlsx" class="form-control mt-2" required></label><button id="validate-file" type="submit" class="btn btn-primary">파일 검증</button></div></form>
   <p id="upload-message" role="alert" class="grid-message"></p>

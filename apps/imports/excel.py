@@ -23,6 +23,33 @@ from apps.customers.models import Customer
 from apps.customers.queries import KST
 
 HEADERS = ["담당직원명", "고객명", "고객 연락처", "통화결과", "방문예약 날짜", "계약여부", "상담기타내용", "재콜일정", "주택상황"]
+HEADER_HINTS = [
+    "입력 금지\n빈 칸으로 두세요\n등록 후 담당자 분배",
+    "필수 · 문자 1~100자\n예: 가상고객",
+    "필수 · 010 시작 11자리\n텍스트로 입력\n예: 010-0000-0000",
+    "선택 · 목록에서 선택\n부재/거절/관심/재통화\n방문예약/방문/재방\n빈 값: 미입력",
+    "선택 · 날짜와 시각\nYYYY-MM-DD HH:mm\n예: 2026-11-09 14:30\n한국 시각 · 24시간제",
+    "선택 · 목록에서 선택\n미확인/미계약/계약\n빈 값: 미확인",
+    "선택 · 문자 최대 10,000자\n줄바꿈 가능 · 수식 금지\n예: 다음 주 통화 희망",
+    "선택 · 날짜와 시각\nYYYY-MM-DD HH:mm\n예: 2026-11-10 10:00\n한국 시각 · 24시간제",
+    "선택 · 문자 최대 200자\n예: 자가/전세/월세/기타",
+]
+TEMPLATE_HEADERS = [f"{title}\n{hint}" for title, hint in zip(HEADERS, HEADER_HINTS)]
+HEADER_INSTRUCTIONS = [
+    "입력하지 말고 비워 주세요. 모든 고객은 미할당으로 등록하며 담당자는 등록 후 분배합니다.",
+    "필수. 문자 1~100자. 예: 가상고객. 앞뒤 공백은 제거합니다.",
+    "필수. 010으로 시작하는 11자리 텍스트. 예: 010-0000-0000 또는 01000000000. "
+    "하이픈·공백은 제거해 검사합니다. 숫자로 저장해 앞자리 0이 빠지면 복원하지 않습니다. "
+    "같은 현장의 중복 연락처는 등록하지 않습니다(휴지통 포함).",
+    "선택. 허용값: " + ", ".join(Customer.CallResult.labels) + ". 빈 칸은 미입력입니다.",
+    "선택. YYYY-MM-DD HH:mm 형식의 문자 또는 날짜와 시각을 모두 표시하는 Excel 날짜·시각 셀. "
+    "예: 2026-11-09 14:30. 한국 시각, 24시간제. 날짜만 입력할 수 없으며 빈 칸은 예약 없음입니다.",
+    "선택. 허용값: " + ", ".join(Customer.ContractStatus.labels) + ". 빈 칸은 미확인입니다.",
+    "선택. 문자 최대 10,000자. 줄바꿈 가능. 예: 다음 주 통화 희망. 수식은 사용할 수 없습니다.",
+    "선택. YYYY-MM-DD HH:mm 형식의 문자 또는 날짜와 시각을 모두 표시하는 Excel 날짜·시각 셀. "
+    "예: 2026-11-10 10:00. 한국 시각, 24시간제. 날짜만 입력할 수 없으며 빈 칸은 재콜 없음입니다.",
+    "선택. 자유 입력 문자 최대 200자. 예: 미확인, 자가, 전세, 월세, 기타. 빈 칸도 허용합니다.",
+]
 MAX_EXPANDED_BYTES = 128 * 1024 * 1024
 # Invalid dates/links can cause library warnings containing raw cell input.
 # These are converted to row/file errors below rather than sent to server stderr.
@@ -37,27 +64,31 @@ def template_bytes():
     book = Workbook()
     sheet = book.active
     sheet.title = "고객 등록"
-    sheet.append(HEADERS)
+    sheet.append(TEMPLATE_HEADERS)
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = "A1:I1"
     for cell, width in zip(sheet[1], [18, 18, 23, 18, 26, 18, 55, 26, 28]):
         cell.font = Font(color="FFFFFF", bold=True)
         cell.fill = PatternFill("solid", fgColor="245C4E")
-        cell.alignment = Alignment(vertical="center")
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
         sheet.column_dimensions[cell.column_letter].width = width
-    sheet.row_dimensions[1].height = 28
+    sheet.row_dimensions[1].height = 112
     sheet.column_dimensions["C"].number_format = "@"
     sheet["C2"].number_format = "@"
-    instructions = {"A1":"빈 값만 허용합니다. 담당자 지정은 등록 후 별도로 합니다.",
-        "B1":"필수. 최대 100자.", "C1":"필수 텍스트. 010으로 시작하는 11자리. 숫자로 저장해 앞자리 0이 빠지면 복원하지 않습니다.",
-        "E1":"날짜와 시각을 함께 입력: YYYY-MM-DD HH:mm 또는 Excel 날짜·시각 셀. 한국 시각 기준.",
-        "G1":"최대 10,000자. 수식은 사용할 수 없습니다.", "H1":"재콜 예정 날짜와 시각. 비워도 됩니다.",
-        "I1":"자유 입력, 최대 200자. 미확인 / 자가 / 전세 / 월세 / 기타"}
-    for address, value in instructions.items():
-        sheet[address].comment = Comment(value, "TM 고객관리")
-    for column, choices in [("D", Customer.CallResult.labels), ("F", Customer.ContractStatus.labels)]:
-        validation = DataValidation(type="list", formula1='"'+",".join(choices)+'"', allow_blank=True)
-        validation.errorTitle, validation.error, validation.showErrorMessage = "허용값 확인", "목록에 있는 값을 선택해 주세요.", True
+    choices = {"D": Customer.CallResult.labels, "F": Customer.ContractStatus.labels}
+    for cell, title, instruction in zip(sheet[1], HEADERS, HEADER_INSTRUCTIONS):
+        cell.comment = Comment(instruction, "TM 고객관리")
+        cell.comment.width, cell.comment.height = 380, 140
+        column = cell.column_letter
+        if column in choices:
+            validation = DataValidation(type="list", formula1='"'+",".join(choices[column])+'"', allow_blank=True)
+            validation.errorTitle, validation.error, validation.showErrorMessage = "허용값 확인", "목록에 있는 값을 선택해 주세요.", True
+        else:
+            # Input prompts describe existing server rules without introducing
+            # new Excel-side restrictions or nonblank example customer rows.
+            validation = DataValidation(type="custom", formula1="TRUE", allow_blank=True)
+        validation.promptTitle, validation.prompt = title, instruction
+        validation.showInputMessage = True
         sheet.add_data_validation(validation)
         validation.add(f"{column}2:{column}10001")
     output = BytesIO()
@@ -204,7 +235,11 @@ def parse_upload(upload):
         header = next(rows, ())
         while header and blank(header[-1].value):
             header = header[:-1]
-        if 1 in extra or [cell.value for cell in header] != HEADERS or any(cell.data_type == "f" for cell in header):
+        # The first line is the stable column title. Later lines are guidance,
+        # so files remain valid when examples or explanatory text are updated.
+        titles = [cell.value.split("\n", 1)[0].rstrip("\r") if isinstance(cell.value, str) else cell.value for cell in header]
+        if (1 in extra or titles != HEADERS
+                or any(cell.data_type == "f" for cell in header)):
             file_error("INVALID_HEADER", "첫 행의 9개 열 제목과 순서가 입력 양식과 같아야 합니다.")
         results, candidates, seen = [], [], set()
         for row_number, cells in enumerate(rows, 2):

@@ -22,7 +22,7 @@ from apps.assignments.models import Assignment
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer,CustomerChangeEvent
-from apps.imports.excel import HEADERS,parse_upload,template_bytes
+from apps.imports.excel import HEADERS,TEMPLATE_HEADERS,HEADER_INSTRUCTIONS,parse_upload,template_bytes
 from apps.imports.models import ImportBatch,ImportCandidate,ImportRowResult
 from apps.imports.services import validate_upload,commit_upload,cleanup_imports,result_page
 from apps.operations.models import IdempotencyRecord,OperationEvent
@@ -84,11 +84,54 @@ class ImportTests(Fixtures,TestCase):
         self.assertEqual(response.status_code,200)
         self.assertIn("attachment",response["Content-Disposition"])
         book=load_workbook(BytesIO(response.content));sheet=book.worksheets[0]
-        self.assertEqual([cell.value for cell in sheet[1]],HEADERS)
+        self.assertEqual([cell.value for cell in sheet[1]],TEMPLATE_HEADERS)
         self.assertEqual(sheet["C2"].number_format,"@")
         self.assertTrue(all(cell.value is None for cells in sheet.iter_rows(min_row=2) for cell in cells))
         self.assertEqual(len(book.worksheets),1);book.close()
         self.assertEqual(Customer.objects.count(),0)
+
+    def test_template_has_visible_formats_notes_and_input_prompts_for_every_column(self):
+        book=load_workbook(BytesIO(template_bytes()));sheet=book.worksheets[0]
+        self.assertEqual([cell.value.split("\n",1)[0] for cell in sheet[1]],HEADERS)
+        self.assertEqual(sheet.freeze_panes,"A2")
+        self.assertEqual(sheet.auto_filter.ref,"A1:I1")
+        validations=list(sheet.data_validations.dataValidation)
+        self.assertEqual(len(validations),9)
+        for cell,instruction,validation in zip(sheet[1],HEADER_INSTRUCTIONS,validations):
+            self.assertTrue(cell.alignment.wrap_text)
+            self.assertEqual(cell.comment.text,instruction)
+            self.assertTrue(validation.showInputMessage)
+            self.assertLessEqual(len(validation.prompt),255)
+            self.assertEqual(validation.prompt,instruction)
+            self.assertIn(f"{cell.column_letter}2",validation.sqref)
+        self.assertEqual(validations[3].type,"list")
+        self.assertEqual(validations[5].type,"list")
+        self.assertIn("YYYY-MM-DD HH:mm",sheet["E1"].value)
+        self.assertIn("YYYY-MM-DD HH:mm",sheet["H1"].value)
+        book.close()
+
+    def test_explanatory_headers_accept_valid_row_and_never_import_the_guidance(self):
+        book=load_workbook(BytesIO(template_bytes()));sheet=book.worksheets[0]
+        values=row(**{"3":"관심","4":"2026-11-09 14:30","5":"미계약","6":"가상 상담","7":"2026-11-10 10:00","8":"전세"})
+        for column,value in enumerate(values,1):sheet.cell(2,column,value)
+        output=BytesIO();book.save(output);book.close()
+        batch=validate_upload(self.admin,self.site.pk,uploaded(output.getvalue()))
+        self.assertEqual(batch.validation_summary["total"],1)
+        self.assertEqual(batch.validation_summary["ready"],1)
+        self.assertEqual(batch.candidates.get().row_number,2)
+        self.assertEqual(Customer.objects.count(),0)
+        with self.assertRaises(AccessError) as caught:parse_upload(uploaded(template_bytes()))
+        self.assertEqual(caught.exception.code,"EMPTY_FILE")
+
+    def test_explanatory_headers_still_reject_reordering_and_unknown_titles(self):
+        for headers in [TEMPLATE_HEADERS[::-1],["다른 고객명\n설명",*TEMPLATE_HEADERS[1:]]]:
+            with self.assertRaises(AccessError) as caught:self.validate(headers=headers)
+            self.assertEqual(caught.exception.code,"INVALID_HEADER")
+
+    def test_header_guidance_can_change_without_changing_column_meanings(self):
+        headers=[f"{title}\n예전 안내 또는 새 안내" if index%2 else title for index,title in enumerate(HEADERS)]
+        batch=self.validate(headers=headers)
+        self.assertEqual(batch.validation_summary["ready"],1)
 
     def test_staff_and_initial_login_cannot_read_validate_commit_or_results(self):
         batch=self.validate()

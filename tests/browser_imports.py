@@ -19,6 +19,7 @@ from apps.consultations.models import ConsultationRevision
 from apps.imports.models import ImportBatch
 from tests.helpers import STRONG_PASSWORD
 from tests.test_imports import Fixtures,workbook,row,HEADERS
+from apps.imports.excel import TEMPLATE_HEADERS
 
 
 class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
@@ -71,7 +72,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(page.get_by_role("heading",name="엑셀 업로드",exact=True)).to_be_visible()
         with page.expect_download() as event:page.get_by_role("link",name="빈 입력 양식 다운로드",exact=True).click()
         download=event.value;target=self.evidence/"TM_customer_template.xlsx";download.save_as(target)
-        book=load_workbook(target);self.assertEqual([cell.value for cell in book.worksheets[0][1]],HEADERS);self.assertEqual(book.worksheets[0]["C2"].number_format,"@");book.close()
+        book=load_workbook(target);self.assertEqual([cell.value for cell in book.worksheets[0][1]],TEMPLATE_HEADERS);self.assertEqual(book.worksheets[0]["C2"].number_format,"@");book.close()
         data=workbook([row(name=""),row("기존 중복"),row("파일 중복"),row("가상신규2","01090000002",**{"6":"가상 상담"}),row(phone=1090000001),[],row("<img src=x onerror=window.p3Injected=1>","01090000003",**{"7":"2026-11-05 (월) 10:00"})])
         self.upload(data)
         expect(page.locator("#validation-counts")).to_have_text("검증 시 총 6건 · 등록 가능 2 · 파일 내 중복 1 · 기존 중복 1 · 형식 오류 2")
