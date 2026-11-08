@@ -8,4 +8,5 @@ RUN DJANGO_SECRET_KEY=build-only-fake-key DATABASE_URL=postgresql://tm:fake@post
     && useradd --create-home --uid 10001 app
 USER app
 EXPOSE 8000
+ENTRYPOINT ["/bin/sh", "/app/deploy/entrypoint.sh"]
 CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "--access-logfile", "/dev/null"]

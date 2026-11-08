@@ -4,6 +4,7 @@ from django.db.models import Count,Q
 from django.utils import timezone
 from apps.accounts.access import AccessError,verify_actor
 from apps.accounts.models import User
+from apps.accounts.bootstrap import BOOTSTRAP_ADMIN_ID
 from apps.common.http import identifier
 from apps.common.receipts import fingerprint,replay,remember
 from apps.common.transactions import business_write,retry_transient_write
@@ -52,8 +53,9 @@ def transfer_list(params):
 
 def normalized(name,phone,role,active):
     if not isinstance(name,str) or not name.strip() or len(name.strip())>100:invalid("이름은 1~100자로 입력해 주세요.")
-    try:phone=normalize_phone(phone)
-    except ValidationError:invalid("전화번호는 010으로 시작하는 11자리로 입력해 주세요.")
+    if phone != BOOTSTRAP_ADMIN_ID:
+        try:phone=normalize_phone(phone)
+        except ValidationError:invalid("전화번호는 010으로 시작하는 11자리로 입력해 주세요.")
     if role not in User.Role.values or type(active) is not bool:invalid("활성 상태와 역할을 확인해 주세요.")
     return {"name":name.strip(),"phone_normalized":phone,"role":role,"is_active":active}
 
@@ -81,6 +83,12 @@ def check_capacity(before,after):
 
 def apply_edits(actor,users,edits):
     """Validate the final batch state before any user or assignment is changed."""
+    for uid, values in edits.items():
+        if (users[uid].phone_normalized == BOOTSTRAP_ADMIN_ID
+                and (values["phone_normalized"] != BOOTSTRAP_ADMIN_ID or values["role"] != User.Role.ADMIN)):
+            raise AccessError("BOOTSTRAP_ADMIN_PROTECTED", "최초 관리자 아이디와 관리자 역할은 변경할 수 없습니다.", 409)
+        if users[uid].phone_normalized != BOOTSTRAP_ADMIN_ID and values["phone_normalized"] == BOOTSTRAP_ADMIN_ID:
+            invalid("admin은 최초 관리자 전용 아이디입니다.")
     final={uid:{"role":p.role,"is_active":p.is_active} for uid,p in users.items()}
     for uid,values in edits.items():final[uid].update(role=values["role"],is_active=values["is_active"])
     if not any(v["role"]==User.Role.ADMIN and v["is_active"] for v in final.values()):
@@ -122,6 +130,7 @@ def apply_edits(actor,users,edits):
 def create_user(actor,body):
     if set(body)!={"name","phone","role","idempotency_key"}:invalid("이름·전화번호·관리자 여부와 요청 키를 확인해 주세요.")
     values=normalized(body["name"],body["phone"],body["role"],True)
+    if values["phone_normalized"] == BOOTSTRAP_ADMIN_ID:invalid("admin은 최초 관리자 전용 아이디입니다.")
     key=identifier(body["idempotency_key"]);body_hash=fingerprint(values)
     with business_write():
         actor,users=locked_users(actor)

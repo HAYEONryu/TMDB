@@ -48,7 +48,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
 
     def login(self,account):
         self.page.goto(self.live_server_url+'/auth/login')
-        self.page.get_by_label('전화번호',exact=True).fill(account.phone_normalized)
+        self.page.get_by_label('아이디 또는 전화번호',exact=True).fill(account.phone_normalized)
         self.page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD)
         self.page.get_by_role('button',name='로그인',exact=True).click()
         expect(self.page).to_have_url(self.live_server_url+'/app/'+('admin' if account.role=='ADMIN' else 'employee'))
@@ -65,7 +65,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
             self.page.set_viewport_size({'width':width,'height':900})
             self.assertEqual(self.page.evaluate('Math.max(0,document.documentElement.scrollWidth-innerWidth)'),0)
             self.assertGreaterEqual(self.page.locator('body').evaluate('(e)=>parseFloat(getComputedStyle(e).fontSize)'),16)
-            self.assertGreaterEqual(self.page.get_by_label('전화번호',exact=True).bounding_box()['height'],48)
+            self.assertGreaterEqual(self.page.get_by_label('아이디 또는 전화번호',exact=True).bounding_box()['height'],48)
             self.assertGreaterEqual(self.page.get_by_role('button',name='로그인',exact=True).bounding_box()['height'],48)
 
     def test_admin_overview_counts_site_change_and_empty_requests(self):

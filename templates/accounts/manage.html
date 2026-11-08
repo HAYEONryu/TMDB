@@ -3,7 +3,7 @@
 {% block assets %}<script type="module" src="{% static 'users.js' %}"></script>{% endblock %}
 {% block content %}
 <section id="user-management" data-user-id="{{ user.pk }}"><div class="d-flex flex-wrap justify-content-between gap-3 mb-3"><div><p class="eyebrow">관리자 · 계정과 권한</p><h1 class="h2">사용자 관리</h1></div><button id="add-user" class="btn btn-outline-primary align-self-start">사용자 추가</button></div>
-<p class="text-secondary">편집 후 저장해 주세요. 비활성화하면 세션이 종료되고 전 현장의 미진행 DB만 회수됩니다. 진행 DB는 이관 필요 목록에 남습니다.</p>
+<p class="text-secondary">편집 후 저장해 주세요. 비활성화하면 세션이 종료되고 전 현장의 미진행 DB만 회수됩니다. 진행 DB는 이관 필요 목록에 남습니다. 최초 관리자 admin의 아이디와 관리자 역할은 고정됩니다.</p>
 <div class="d-flex flex-wrap gap-2 align-items-end mb-3"><form data-async id="user-search-form" class="d-flex flex-wrap gap-2 align-items-end"><label>이름·전화번호 검색<input id="user-search" class="form-control mt-2" maxlength="200"></label><button class="btn btn-outline-secondary" type="submit">검색</button></form><button id="save-users" class="btn btn-primary" disabled>저장</button><button id="reload-users" class="btn btn-outline-secondary">다시 조회</button><span id="user-dirty" class="small" role="status"></span></div>
 <p id="user-message" class="grid-message" role="alert"></p><div class="table-responsive"><table id="users-table" class="table bg-white align-middle"><thead><tr><th>이름</th><th>전화번호</th><th>비활성화</th><th>관리자</th><th>계정 상태</th><th>이관 필요</th><th>비밀번호</th></tr></thead><tbody id="user-rows"></tbody></table></div>
 <div class="d-flex flex-wrap justify-content-between gap-2 mb-4"><span id="user-page" role="status"></span><div class="d-flex gap-2"><button id="user-previous" class="btn btn-outline-secondary">이전 사용자</button><button id="user-next" class="btn btn-outline-secondary">다음 사용자</button></div></div>

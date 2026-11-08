@@ -5,11 +5,14 @@ from django.db import models
 from django.db.models import Q
 
 from apps.common.validation import normalize_phone
+from apps.accounts.bootstrap import BOOTSTRAP_ADMIN_ID
 
 
 class UserManager(BaseUserManager):
     def create_user(self, phone_normalized, name, password=None, **extra_fields):
-        user = self.model(phone_normalized=normalize_phone(phone_normalized), name=name.strip(), **extra_fields)
+        identifier = (BOOTSTRAP_ADMIN_ID if phone_normalized == BOOTSTRAP_ADMIN_ID
+                      and extra_fields.get("role") == "ADMIN" else normalize_phone(phone_normalized))
+        user = self.model(phone_normalized=identifier, name=name.strip(), **extra_fields)
         user.set_password(password)
         user.full_clean(exclude=["password"])
         user.save(using=self._db)
@@ -40,7 +43,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         constraints = [
-            models.CheckConstraint(condition=Q(phone_normalized__regex=r"^010[0-9]{8}$"), name="user_phone_format"),
+            models.CheckConstraint(
+                condition=Q(phone_normalized__regex=r"^010[0-9]{8}$")
+                | Q(phone_normalized=BOOTSTRAP_ADMIN_ID, role="ADMIN"),
+                name="user_login_identifier_format"),
             models.CheckConstraint(condition=Q(role__in=["ADMIN", "EMPLOYEE"]), name="user_role_valid"),
             models.CheckConstraint(condition=Q(name__regex=r"\S"), name="user_name_not_empty"),
             models.CheckConstraint(condition=Q(session_version__gte=1), name="user_session_version_positive"),

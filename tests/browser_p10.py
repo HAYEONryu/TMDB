@@ -42,7 +42,7 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
             finally:close_old_connections()
         with ThreadPoolExecutor(max_workers=1) as pool:return pool.submit(run).result()
     def login(self):
-        self.page.goto(self.live_server_url+'/auth/login');self.page.get_by_label('전화번호',exact=True).fill(self.employee.phone_normalized);self.page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);self.page.get_by_role('button',name='로그인',exact=True).click();expect(self.page).to_have_url(self.live_server_url+'/app/employee')
+        self.page.goto(self.live_server_url+'/auth/login');self.page.get_by_label('아이디 또는 전화번호',exact=True).fill(self.employee.phone_normalized);self.page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);self.page.get_by_role('button',name='로그인',exact=True).click();expect(self.page).to_have_url(self.live_server_url+'/app/employee')
     def open(self,view='mine'):
         self.page.goto(self.live_server_url+f'/app/employee/{view}?site_id={self.site.pk}');expect(self.page.locator('#page-info')).to_contain_text('검색 3건');expect(self.page.locator('#ai-availability')).to_contain_text('테스트 전용')
     def row(self,index=0):return self.page.locator('#employee-grid .tabulator-row').filter(has_text=self.rows[index].customer_name)

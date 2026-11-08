@@ -11,7 +11,7 @@
   <div class="login-note"><span class="note-dot" aria-hidden="true"></span>오늘도 한 분의 고객에게, 한 걸음 더 가까이.</div>
 </aside>
 <section class="auth-card card"><div class="card-body p-4 p-md-5">
-  <p class="eyebrow">나의 업무 공간</p><h1 class="h3 mb-2">로그인</h1><p class="text-secondary mb-4">전화번호와 비밀번호를 입력해 주세요.</p>
+  <p class="eyebrow">나의 업무 공간</p><h1 class="h3 mb-2">로그인</h1><p class="text-secondary mb-4">아이디 또는 전화번호와 비밀번호를 입력해 주세요.</p>
   <form method="post" action="/auth/login">
     {% csrf_token %}
     {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
