@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
   <script src="{% static 'forms.js' %}" defer></script>
   <script src="{% static 'auth-context.js' %}" defer></script>
+  <script src="{% static 'connection-status.js' %}" defer></script>
   {% block assets %}{% endblock %}
   <link rel="stylesheet" href="{% static 'app.css' %}">
 </head>
@@ -45,6 +46,7 @@
   </aside>
   {% endif %}
   <main id="main-content" class="container workspace-main" tabindex="-1">
+    <p id="connection-warning" class="alert alert-warning" role="alert" hidden></p>
     {% block content %}{% endblock %}
   </main>
   <footer class="site-footer container"><span>두드림 TM</span><span>좋은 상담을 함께 만들어갑니다.</span></footer>

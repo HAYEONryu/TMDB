@@ -1,4 +1,6 @@
 import {EmployeeQueue,changes,normalized} from './employee-queue.js';
+import {employeeSupportError} from './browser-environment.js';
+import {withRequestTimeout} from './request-timeout.js';
 import {option} from './api.js';
 import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
@@ -14,14 +16,17 @@ const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=
 const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):schema[field]?.[value??'']??(value==null||value===''?'(빈 값)':String(value));
 let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false;
 async function request(url,body){
+  return withRequestTimeout(async signal=>{
   const csrf=document.cookie.split('; ').find(v=>v.startsWith('csrftoken='))?.split('=').slice(1).join('=');
-  const response=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(10000),headers:{'X-TM-Queue-User':userId,...(body===undefined?{}:{'Content-Type':'application/json','X-CSRFToken':csrf||''})},...(body===undefined?{}:{body:JSON.stringify(body)})});
+  const response=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',signal,headers:{'X-TM-Queue-User':userId,...(body===undefined?{}:{'Content-Type':'application/json','X-CSRFToken':csrf||''})},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const data=await response.json().catch(()=>({}));
   if(!response.ok){const error=new Error(data.error?.message||`요청 실패 (${response.status})`);error.code=data.error?.code;error.status=response.status;error.data=data;
     if(response.status===401||response.status===403)queue.pause(error.message+' 다시 로그인해 주세요. 암호화된 대기값은 보관합니다.');throw error;}
   return data;
+  });
 }
 const queue=new EmployeeQueue(userId,request);
+const environmentProblem=employeeSupportError();
 const statusLabels={dirty:'미저장',saving:'저장 중',offline:'오프라인 대기',retry:'저장 실패·재시도 대기',failed:'저장 실패',conflict:'충돌',blocked:'전송 불가',review:'수동 확인 필요',checking:'복구 확인 중',clearing:'보관 정리 중'};
 const params=()=>new URLSearchParams({site_id:state.site,view,q:state.q,filters:JSON.stringify(state.filters)});
 function error(error){notice(error.message);}
@@ -98,6 +103,7 @@ function renderStatus(){
 const eState=e=>[e.state,e.version,Object.keys(e.pending).length,e.error].join(':');
 queue.addEventListener('change',renderStatus);
 async function load(){
+  if(environmentProblem){queue.pause(environmentProblem.message);return;}
   loading=true;notice('');
   try{
     const query=params();query.set('page',state.page);query.set('page_size',state.size);query.set('sort',state.sort);
@@ -187,8 +193,11 @@ await ready;
 callbacks=new CallbackAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:async row=>{if(row)queue.setRows([row]);await load();},notice,changed:renderStatus});callbacks.update();
 deletions=new DeletionAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:load,notice,changed:renderStatus});deletions.update();
 ai=new EmployeeAI({userId,request,queue,flush:async id=>{commitEditor();return queue.flush(true,id);},notice,changed:renderStatus,labels,display,validate});
-try{
-  const context=await request('/api/employee/context'),receivedAt=Date.now();await queue.start(context);queueReady=true;renderStatus();installPreRecall({serverTime:context.server_time,receivedAt,commit:commitEditor,flush:()=>queue.flush(true),notice});
+if(environmentProblem){
+  queue.pause(environmentProblem.message);loading=false;
+  for(const control of document.querySelectorAll('#site,#sort,#page-size,#reload-rows,#search,#search-form button,#clear-filters,#previous,#next,#save-now'))control.disabled=true;
+}else try{
+  const context=await request('/api/employee/context'),receivedAt=Date.now();await queue.start(context);queueReady=!queue.paused;renderStatus();if(queue.paused)throw new Error(queue.pauseMessage);installPreRecall({serverTime:context.server_time,receivedAt,commit:commitEditor,flush:()=>queue.flush(true),notice});
   const sites=await request('/api/sites');$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||sites.default_site_id||'';$('#site').value=state.site;
   await load();await ai.refreshAvailability();queue.tick();
 }catch(e){error(e);loading=false;}

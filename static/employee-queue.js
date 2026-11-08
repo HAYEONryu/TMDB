@@ -1,4 +1,5 @@
 import {newRequestId} from './request-id.js';
+import {employeeSupportError,lockSupportError} from './browser-environment.js';
 import {QueueStore} from './employee-store.js';
 
 export const fields=['call_result','visit_at','contract_status','notes','callback_due_at','housing_status'];
@@ -27,13 +28,15 @@ export class EmployeeQueue extends EventTarget {
   all(){return [...this.entries.values()];}
   entry(id){return this.all().find(item=>item.customer_id===id);}
   async claim(key){
-    if(!navigator.locks)throw new Error('이 브라우저는 안전한 다중 탭 저장을 지원하지 않습니다. 최신 Chrome 또는 Edge를 사용해 주세요.');
+    const problem=lockSupportError();if(problem)throw problem;
     return new Promise((resolve,reject)=>{navigator.locks.request('tm-entry:'+key,{ifAvailable:true},async lock=>{
       if(!lock){resolve(false);return;}
       await new Promise(release=>{this.releases.set(key,release);resolve(true);});
     }).catch(reject);});
   }
   async start(context){
+    const problem=employeeSupportError();
+    if(problem){context.key=null;this.storageError=problem.message;this.pause(problem.message);return false;}
     this.target=context.target_ms;
     try{
       this.store=this.store||new QueueStore(this.userId,context.key);context.key=null;await this.store.open();
@@ -42,7 +45,13 @@ export class EmployeeQueue extends EventTarget {
         try{const entry=await this.store.read(record);entry.stored=true;entry.state='checking';this.entries.set(entry.key,entry);}
         catch{this.recoveryErrors++;this.releases.get(record.key)?.();this.releases.delete(record.key);}
       }
-    }catch(error){this.storageError=error.message;}
+    }catch(error){
+      this.storageError=error.message;
+      if(!this.store?.db||error.name==='SecurityError'){
+        this.storageError='브라우저 보관소를 열 수 없습니다. 사이트 저장 권한과 브라우저 설정을 확인해 주세요.';
+        this.store?.close();this.pause(this.storageError);return false;
+      }
+    }
     await this.reconcile(this.all());this.emit();this.timer=setInterval(()=>this.tick(),1000);
   }
   persist(entry,remove=false){
@@ -152,7 +161,7 @@ export class EmployeeQueue extends EventTarget {
     if(this.paused||!navigator.onLine){if(!navigator.onLine)for(const e of this.all())if(['dirty','retry','saving'].includes(e.state))e.state='offline';this.emit();return false;}
     const eligible=()=>this.all().filter(e=>(!onlyId||e.customer_id===onlyId)&&['dirty','retry','offline'].includes(e.state)&&!this.invalidRow(e.customer_id)&&(force||((e.retry_at||0)<=this.now()&&(e.inflight||this.now()-e.pending_since>=this.target||e.unsafe))));
     if(!eligible().length)return complete();
-    if(!navigator.locks){this.pause('안전한 저장 잠금을 지원하는 브라우저가 필요합니다.');return false;}
+    const problem=lockSupportError();if(problem){this.pause(problem.message);return false;}
     this.saving=(async()=>{
       // One customer per batch; distinct abandoned lanes require explicit review.
       for(const batch of this.batches(eligible()))await this.rowLocks(batch,async()=>{
