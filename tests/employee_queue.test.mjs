@@ -15,6 +15,15 @@ function fixture(){
   const r=row();q.setRows([r]);return {q,r,records,sends,setNow:n=>{now=n;}};
 }
 
+test('new public customer text fields share one save while private memo is never staged',async()=>{
+  const {q,r,sends}=fixture();
+  assert.equal(q.stage(r,'admin_notes','must not stage'),false);
+  q.stage(r,'route',' 소개 ');q.stage(r,'residence',' 서울 ');q.stage(r,'memo','일반 비고\r\n다음 줄');
+  assert.equal(await q.flush(true),true);
+  assert.deepEqual(sends[0].rows[0].changes,{route:'소개',residence:'서울',memo:'일반 비고\n다음 줄'});
+  assert.equal(q.rows.get(r.id).notes,'');
+});
+
 test('without randomUUID the queue creates UUIDs and retries the same mutation',async()=>{
   const descriptor=Object.getOwnPropertyDescriptor(globalThis,'crypto'),provider=globalThis.crypto;
   Object.defineProperty(globalThis,'crypto',{value:{getRandomValues:provider.getRandomValues.bind(provider)},configurable:true});

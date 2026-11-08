@@ -33,7 +33,7 @@ def complete(actor,cid,body,*,employee_only=False):
         current_access(actor,customer,aid)
         if customer.current_assignment_id!=aid:raise AccessError('ASSIGNMENT_CHANGED','담당자가 변경되었습니다. 다시 확인해 주세요.',409)
         cached=replay(actor,'CALLBACK_COMPLETE',key,body_hash)
-        if cached:return {**cached[0],'row':safe_row(cid)},cached[1]
+        if cached:return {**cached[0],'row':safe_row(cid,actor)},cached[1]
         callback=Callback.objects.select_for_update().filter(pk=callback_id,customer=customer).first()
         if not callback:raise AccessError('CALLBACK_CHANGED','해당 재콜 일정을 사용할 수 없습니다.',409)
         changed=callback.status!=Callback.Status.COMPLETED
@@ -51,4 +51,4 @@ def complete(actor,cid,body,*,employee_only=False):
                 changed_fields=['callback_due_at'],before_values=before,after_values=after,notes=customer.notes,source=ConsultationRevision.Source.MANUAL)
         result={'ok':True,'changed':changed,'customer_id':str(cid),'callback_id':str(callback.pk),'completed_at':callback.completed_at.isoformat(),'completed_by':str(callback.completed_by_id),'version':customer.version}
         remember(actor,'CALLBACK_COMPLETE',key,body_hash,result,target_ids=[cid,customer.site_id])
-        return {**result,'row':safe_row(cid)},200
+        return {**result,'row':safe_row(cid,actor)},200

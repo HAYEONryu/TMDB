@@ -21,7 +21,7 @@ class Customer(TimestampedModel):
         CONTRACTED = "CONTRACTED", "계약"
 
     site = models.ForeignKey("sites.Site", on_delete=models.CASCADE, related_name="customers")
-    customer_name = models.CharField(max_length=100)
+    customer_name = models.CharField(max_length=100, blank=True, default="")
     phone_normalized = models.CharField(max_length=11)
     call_result = models.CharField(max_length=12, choices=CallResult.choices, null=True, blank=True)
     visit_at = models.DateTimeField(null=True, blank=True)
@@ -29,6 +29,10 @@ class Customer(TimestampedModel):
     # TextField deliberately has no 10,000-char DB cap: system approval notes must fit.
     notes = models.TextField(blank=True, default="")
     housing_status = models.CharField(max_length=200, blank=True, default="")
+    residence = models.CharField(max_length=200, blank=True, default="")
+    route = models.CharField(max_length=200, blank=True, default="")
+    memo = models.TextField(blank=True, default="")
+    admin_notes = models.TextField(blank=True, default="")
     current_assignment = models.OneToOneField("assignments.Assignment", null=True, blank=True, on_delete=models.SET_NULL, related_name="current_for_customer")
     deleted_at = models.DateTimeField(null=True, blank=True)
     deleted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="deleted_customers")
@@ -39,7 +43,7 @@ class Customer(TimestampedModel):
         constraints = [
             models.UniqueConstraint(fields=["site", "phone_normalized"], name="customer_site_phone_unique"),
             models.CheckConstraint(condition=Q(phone_normalized__regex=r"^010[0-9]{8}$"), name="customer_phone_format"),
-            models.CheckConstraint(condition=Q(customer_name__regex=r"\S"), name="customer_name_not_empty"),
+            models.CheckConstraint(condition=Q(customer_name="") | Q(customer_name__regex=r"\S"), name="customer_name_valid"),
             models.CheckConstraint(condition=Q(version__gte=1), name="customer_version_positive"),
             models.CheckConstraint(condition=Q(call_result__isnull=True) | Q(call_result__in=["NO_ANSWER", "REJECTED", "INTERESTED", "CALL_AGAIN", "VISIT_BOOKED", "VISITED", "REVISITED"]), name="customer_call_result_valid"),
             models.CheckConstraint(condition=Q(contract_status__in=["UNKNOWN", "NO_CONTRACT", "CONTRACTED"]), name="customer_contract_valid"),

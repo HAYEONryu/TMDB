@@ -8,8 +8,9 @@ import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
-const schema=JSON.parse($('#customer-schema').textContent),labels={assignee_name:'담당직원명',customer_name:'고객명',phone_normalized:'고객 연락처',call_result:'통화결과',visit_at:'방문예약 날짜',contract_status:'계약여부',notes:'상담기타내용(비고)',callback_due_at:'재콜일정',housing_status:'주택상황',assigned_at:'할당 시각'};
-const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
+const schema=JSON.parse($('#customer-schema').textContent),labels={assignee_name:'담당직원명',customer_name:'고객명',phone_normalized:'고객 연락처',call_result:'통화결과',visit_at:'방문예약 날짜',contract_status:'계약여부',notes:'상담기타내용(비고)',callback_due_at:'재콜일정',housing_status:'주택상황',assigned_at:'할당 시각',residence:'고객 거주지',route:'루트',memo:'비고'};
+const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
+const multiline=new Set(['notes','memo']),textFields=new Set(['notes','memo','route','residence']);
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
@@ -36,10 +37,12 @@ function validate(field,value,row){
   if(schema[field]&&!Object.hasOwn(schema[field],value??''))throw new Error('선택값을 확인해 주세요.');
   if(field==='notes'&&Array.from(value||'').length>Math.max(10000,Array.from(queue.rows.get(row.id)?.notes||'').length))throw new Error('비고는 최대 10,000자입니다. 기존의 긴 비고는 현재 길이까지 보존할 수 있습니다.');
   if(field==='housing_status'&&Array.from(value||'').length>200)throw new Error('주택상황은 최대 200자입니다.');
+  if(['route','residence'].includes(field)&&Array.from(value||'').length>200)throw new Error(labels[field]+'는 최대 200자입니다.');
+  if(field==='memo'&&Array.from(value||'').length>10000)throw new Error('비고는 최대 10,000자입니다.');
 }
 function editor(cell,onRendered,success,cancel){
   const field=cell.getField(),row=cell.getRow().getData(),original=cell.getValue();
-  const input=document.createElement(schema[field]?'select':field==='notes'?'textarea':'input');input.setAttribute('aria-label',labels[field]);
+  const input=document.createElement(schema[field]?'select':multiline.has(field)?'textarea':'input');input.setAttribute('aria-label',labels[field]);
   if(schema[field])input.replaceChildren(...Object.entries(schema[field]).map(([value,label])=>option(value,label)));
   else if(dates.has(field)){input.type='datetime-local';input.min='0001-01-01T00:00';input.max='9999-12-31T23:59';}
   input.value=dates.has(field)?localDate(original):original??'';
@@ -56,7 +59,7 @@ function editor(cell,onRendered,success,cancel){
     // Native date segments need arrows and Tab; Tabulator otherwise navigates rows/cells.
     if(dates.has(field)&&(event.key.startsWith('Arrow')||event.key==='Tab'))event.stopPropagation();
     if(event.key==='Escape'){event.preventDefault();done=true;activeEditor=null;queue.markInvalid(row.id,field,'');if(touched)queue.stage(row,field,original);cancel();}
-    if(event.key==='Enter'&&field!=='notes'){event.preventDefault();finish();}
+    if(event.key==='Enter'&&!multiline.has(field)){event.preventDefault();finish();}
   });
   onRendered(()=>{activeEditor={finish,input};input.focus();});return input;
 }
@@ -64,7 +67,7 @@ function column(field){
   return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
     formatter:cell=>{const value=cell.getValue();if(field==='assigned_at'){const span=text('span',value?localDate(value).slice(5,10).replace('-','/'):'');if(value)span.title=display(field,value)+' (한국 시각)';return span;}return text('span',display(field,value));},
     titleFormatter:()=>{const wrap=text('span',labels[field]),button=text('button','▾');button.type='button';button.className='column-filter';button.setAttribute('aria-label',labels[field]+' 필터');button.onclick=e=>{e.stopPropagation();guarded(()=>openFilter(field)).catch(error);};wrap.append(button);return wrap;},
-    ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:field==='notes'}:{})};
+    ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
 function actions(cell){
@@ -78,7 +81,7 @@ function actions(cell){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...['customer_name','phone_normalized','call_result','notes','callback_due_at','visit_at','contract_status','housing_status','assigned_at','assignee_name'].map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions}]});
+  columns:[...['customer_name','phone_normalized','call_result','notes','callback_due_at','visit_at','contract_status','residence','housing_status','route','memo','assigned_at','assignee_name'].map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
@@ -174,8 +177,8 @@ async function openFilter(field){
   if(dates.has(field)){
     for(const [key,title] of [['from','시작일'],['to','종료일']]){const label=text('label',title),input=document.createElement('input');input.type='date';input.id='filter-'+key;input.value=state.filters[field]?.[key]||'';label.append(input);area.append(label);}
     condition=()=>{const values={};for(const key of ['from','to'])if($('#filter-'+key).value)values[key]=$('#filter-'+key).value;return Object.keys(values).length?values:undefined;};
-  }else if(field==='notes'){
-    const label=text('label','포함할 내용'),input=document.createElement('input');input.id='filter-contains';input.maxLength=10000;input.value=state.filters.notes?.contains||'';label.append(input);area.append(label);condition=()=>input.value?{contains:input.value}:undefined;
+  }else if(textFields.has(field)){
+    const label=text('label','포함할 내용'),input=document.createElement('input');input.id='filter-contains';input.maxLength=10000;input.value=state.filters[field]?.contains||'';label.append(input);area.append(label);condition=()=>input.value?{contains:input.value}:undefined;
   }else{
     const current=state.filters[field];let exclude=current?.exclude??!current,selected=new Set(current?.values??current??[]),page=1,search='',generation=0;
     const label=text('label','후보값 검색'),input=document.createElement('input'),searchButton=text('button','후보 검색'),all=text('button','전체 선택'),none=text('button','전체 해제'),list=document.createElement('div'),nav=document.createElement('div'),info=text('span',''),previous=text('button','이전 후보'),next=text('button','다음 후보');

@@ -22,7 +22,7 @@ from apps.assignments.models import Assignment
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer,CustomerChangeEvent
-from apps.imports.excel import HEADERS,TEMPLATE_HEADERS,HEADER_INSTRUCTIONS,parse_upload,template_bytes
+from apps.imports.excel import LEGACY_HEADERS as HEADERS,HEADERS as CURRENT_HEADERS,TEMPLATE_HEADERS,HEADER_INSTRUCTIONS,parse_upload,template_bytes
 from apps.imports.models import ImportBatch,ImportCandidate,ImportRowResult
 from apps.imports.services import validate_upload,commit_upload,cleanup_imports,result_page
 from apps.operations.models import IdempotencyRecord,OperationEvent
@@ -79,24 +79,24 @@ class Fixtures:
 class ImportTests(Fixtures,TestCase):
     def setUp(self):self.prepare();self.client=login(self.admin)
 
-    def test_template_is_empty_nine_headers_text_phone_and_no_personal_data(self):
+    def test_template_is_empty_six_headers_text_phone_and_no_personal_data(self):
         response=self.client.get("/api/imports/template")
         self.assertEqual(response.status_code,200)
         self.assertIn("attachment",response["Content-Disposition"])
         book=load_workbook(BytesIO(response.content));sheet=book.worksheets[0]
         self.assertEqual([cell.value for cell in sheet[1]],TEMPLATE_HEADERS)
-        self.assertEqual(sheet["C2"].number_format,"@")
+        self.assertEqual(sheet["B2"].number_format,"@")
         self.assertTrue(all(cell.value is None for cells in sheet.iter_rows(min_row=2) for cell in cells))
         self.assertEqual(len(book.worksheets),1);book.close()
         self.assertEqual(Customer.objects.count(),0)
 
     def test_template_has_visible_formats_notes_and_input_prompts_for_every_column(self):
         book=load_workbook(BytesIO(template_bytes()));sheet=book.worksheets[0]
-        self.assertEqual([cell.value.split("\n",1)[0] for cell in sheet[1]],HEADERS)
+        self.assertEqual([cell.value.split("\n",1)[0] for cell in sheet[1]],CURRENT_HEADERS)
         self.assertEqual(sheet.freeze_panes,"A2")
-        self.assertEqual(sheet.auto_filter.ref,"A1:I1")
+        self.assertEqual(sheet.auto_filter.ref,"A1:F1")
         validations=list(sheet.data_validations.dataValidation)
-        self.assertEqual(len(validations),9)
+        self.assertEqual(len(validations),6)
         for cell,instruction,validation in zip(sheet[1],HEADER_INSTRUCTIONS,validations):
             self.assertTrue(cell.alignment.wrap_text)
             self.assertEqual(cell.comment.text,instruction)
@@ -104,15 +104,15 @@ class ImportTests(Fixtures,TestCase):
             self.assertLessEqual(len(validation.prompt),255)
             self.assertEqual(validation.prompt,instruction)
             self.assertIn(f"{cell.column_letter}2",validation.sqref)
-        self.assertEqual(validations[3].type,"list")
-        self.assertEqual(validations[5].type,"list")
-        self.assertIn("YYYY-MM-DD HH:mm",sheet["E1"].value)
-        self.assertIn("YYYY-MM-DD HH:mm",sheet["H1"].value)
+        self.assertTrue(all(item.type=="custom" for item in validations))
+        self.assertIn("선택",sheet["A1"].value)
+        self.assertIn("필수",sheet["B1"].value)
+        self.assertIn("관리자만",sheet["F1"].value)
         book.close()
 
     def test_explanatory_headers_accept_valid_row_and_never_import_the_guidance(self):
         book=load_workbook(BytesIO(template_bytes()));sheet=book.worksheets[0]
-        values=row(**{"3":"관심","4":"2026-11-09 14:30","5":"미계약","6":"가상 상담","7":"2026-11-10 10:00","8":"전세"})
+        values=[None,"01090000001","서울 강서구","전세","가상 신규 비고","가상 관리자 전용"]
         for column,value in enumerate(values,1):sheet.cell(2,column,value)
         output=BytesIO();book.save(output);book.close()
         batch=validate_upload(self.admin,self.site.pk,uploaded(output.getvalue()))
@@ -168,7 +168,7 @@ class ImportTests(Fixtures,TestCase):
         self.assertTrue(all(not item.success for item in batch.row_results.filter(row_number__lt=5)))
 
     def test_first_valid_phone_wins_invalid_earlier_does_not_reserve_phone(self):
-        batch=self.validate([row(name=""),row("유효 첫 행"),row("유효 둘째 중복")])
+        batch=self.validate([row(name=42),row("유효 첫 행"),row("유효 둘째 중복")])
         self.assertEqual(batch.validation_summary,{"total":3,"ready":1,"duplicate_in_file":1,"duplicate_existing":0,"invalid":1})
         self.assertEqual(batch.candidates.get().row_number,3)
         self.assertEqual(batch.row_results.get(row_number=4).error_code,"DUPLICATE_IN_FILE")

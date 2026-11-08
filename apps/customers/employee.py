@@ -10,7 +10,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.common.http import api_errors,identifier,json_object
 from apps.customers.models import Customer
-from apps.customers.queries import enriched,serialize
+from apps.customers.queries import enriched,serialize,visible_values
 from apps.customers.services import digest
 from apps.operations.models import MutationReceipt
 from apps.sites.models import Site
@@ -73,7 +73,7 @@ def check_one(actor,item):
         if receipt:
             if receipt.body_hash!=digest(inflight):return {**result,"code":"IDEMPOTENCY_CONFLICT","server_row":row}
             if receipt.expires_at<=timezone.now():return {**result,"code":"IDEMPOTENCY_EXPIRED","server_row":row}
-            return {**result,"code":"RECEIPT","server_row":row,"receipt":receipt.result}
+            return {**result,"code":"RECEIPT","server_row":row,"receipt":visible_values(receipt.result)}
     return {**result,"code":"READY" if customer.version==item["expected_version"] else "VERSION_CONFLICT","server_row":row}
 
 

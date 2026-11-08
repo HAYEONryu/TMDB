@@ -44,7 +44,7 @@ def classification_key(revision_id, version):
 
 
 def build_report(feature, *, site, employee, start, end, korean_date):
-    manual = ConsultationRevision.objects.filter(saved_at__gte=start, saved_at__lte=end, source__in=['MANUAL','AI_APPLIED'])
+    manual = ConsultationRevision.objects.filter(saved_at__gte=start, saved_at__lte=end, source__in=['MANUAL','AI_APPLIED']).exclude(changed_fields=['admin_notes'])
     assignments = Assignment.objects.filter(assigned_at__lte=end)
     callbacks = Callback.objects.filter(created_at__lte=end)
     if site:

@@ -17,6 +17,18 @@ KST = ZoneInfo("Asia/Seoul")
 CHOICE_FIELDS = {"assignee_name", "customer_name", "phone_normalized", "call_result", "contract_status", "housing_status"}
 DATE_FIELDS = {"visit_at", "callback_due_at", "assigned_at"}
 SORT_FIELDS = CHOICE_FIELDS | DATE_FIELDS | {"created_at", "notes"}
+TEXT_FIELDS = {"notes", "residence", "route", "memo"}
+
+
+def visible_values(values, *, admin=False):
+    """Use on stored responses too: a former administrator may now be staff."""
+    if admin:
+        return values
+    if isinstance(values, dict):
+        return {key: visible_values(value) for key, value in values.items() if key != "admin_notes"}
+    if isinstance(values, list):
+        return [visible_values(value) for value in values if value != "admin_notes"]
+    return values
 
 
 def error(message="검색·필터 조건을 확인해 주세요."):
@@ -74,7 +86,7 @@ def scoped(actor, params):
     return query, site_id, view
 
 
-def apply_conditions(query, params, *, omit=None):
+def apply_conditions(query, params, *, omit=None, admin=False):
     q = params.get("q", "")
     if len(q) > 200:
         error()
@@ -84,10 +96,10 @@ def apply_conditions(query, params, *, omit=None):
         filters = json.loads(params.get("filters", "{}"))
     except (ValueError, TypeError):
         error()
-    if not isinstance(filters, dict) or len(filters) > 10:
+    if not isinstance(filters, dict) or len(filters) > 15:
         error()
     for field, condition in filters.items():
-        if field not in CHOICE_FIELDS | DATE_FIELDS | {"notes"}:
+        if field not in CHOICE_FIELDS | DATE_FIELDS | TEXT_FIELDS | ({"admin_notes"} if admin else set()):
             error()
         if field == omit:
             continue
@@ -109,10 +121,10 @@ def apply_conditions(query, params, *, omit=None):
                 else:
                     match |= Q(**{field: value})
             query = query.exclude(match) if exclude else query.filter(match)
-        elif field == "notes":
+        elif field in TEXT_FIELDS | {"admin_notes"}:
             if not isinstance(condition, dict) or set(condition) != {"contains"} or not isinstance(condition["contains"], str) or len(condition["contains"]) > 10000:
                 error()
-            query = query.filter(notes__icontains=condition["contains"])
+            query = query.filter(**{field + "__icontains": condition["contains"]})
         else:
             if not isinstance(condition, dict) or not set(condition) <= {"from", "to"}:
                 error()
@@ -140,8 +152,10 @@ def iso(value):
     return value.isoformat() if value is not None else None
 
 
-def serialize(customer):
-    return {"id": str(customer.pk), "site_id": str(customer.site_id), "site_name": customer.site.name,
+def serialize(customer, *, admin=False):
+    return {**({"admin_notes": customer.admin_notes} if admin else {}),
+            "residence": customer.residence, "route": customer.route, "memo": customer.memo,
+            "id": str(customer.pk), "site_id": str(customer.site_id), "site_name": customer.site.name,
             "customer_name": customer.customer_name, "phone_normalized": customer.phone_normalized,
             "assignee_name": customer.assignee_name, "assignee_id":str(customer.current_assignment.employee_id) if customer.current_assignment_id else None, "assignment_id": str(customer.current_assignment_id) if customer.current_assignment_id else None,
             "assigned_at": iso(customer.assigned_at), "call_result": customer.call_result, "visit_at": iso(customer.visit_at),
@@ -163,9 +177,10 @@ def customer_list(actor, params):
     if set(params) - {"site_id", "view", "q", "page", "page_size", "sort", "filters", "assignee_id"}:
         error()
     query, site_id, view = scoped(actor, params)
-    query = apply_conditions(query, params)
+    admin = actor.role == User.Role.ADMIN
+    query = apply_conditions(query, params, admin=admin)
     sort = params.get("sort", "priority" if view=="today" else "-created_at")
-    if sort!="priority" and (not isinstance(sort, str) or sort.lstrip("-") not in SORT_FIELDS or sort.startswith("--")):
+    if sort!="priority" and (not isinstance(sort, str) or sort.lstrip("-") not in SORT_FIELDS | TEXT_FIELDS | ({"admin_notes"} if admin else set()) or sort.startswith("--")):
         error()
     if sort=="priority" and view!="today":error()
     size, page = integer(params, "page_size", 50), integer(params, "page", 1)
@@ -186,7 +201,7 @@ def customer_list(actor, params):
         counts = whole.aggregate(total=Count("pk", filter=Q(deleted_at__isnull=True)),
             unassigned=Count("pk", filter=Q(deleted_at__isnull=True, current_assignment__isnull=True)),
             trash=Count("pk", filter=Q(deleted_at__isnull=False)))
-    return {"data": [serialize(row) for row in rows], "total": total, "page": page, "page_size": size,
+    return {"data": [serialize(row, admin=admin) for row in rows], "total": total, "page": page, "page_size": size,
             "last_page": max(1, (total+size-1)//size), "site_id": str(site_id) if site_id else None, "counts": counts}
 
 
@@ -197,7 +212,7 @@ def filter_options(actor, params):
     if field not in CHOICE_FIELDS:
         error()
     query, _, _ = scoped(actor, params)
-    query = apply_conditions(query, params, omit=field)
+    query = apply_conditions(query, params, omit=field, admin=actor.role == User.Role.ADMIN)
     search = params.get("option_q", "")
     if len(search) > 200:
         error()

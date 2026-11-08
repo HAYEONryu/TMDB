@@ -8,8 +8,10 @@ import {HardDelete} from './hard-delete.js';
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
 const schema = JSON.parse($("#customer-schema").textContent);
-const labels = {assignee_name:"담당직원명", customer_name:"고객명", phone_normalized:"고객 연락처", call_result:"통화결과", visit_at:"방문예약 날짜", contract_status:"계약여부", notes:"상담기타내용(비고)", callback_due_at:"재콜일정", housing_status:"주택상황", assigned_at:"할당 시각"};
-const editableFields = ["call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status"];
+const labels = {assignee_name:"담당직원명", customer_name:"고객명", phone_normalized:"고객 연락처", call_result:"통화결과", visit_at:"방문예약 날짜", contract_status:"계약여부", notes:"상담기타내용(비고)", callback_due_at:"재콜일정", housing_status:"주택상황", assigned_at:"할당 시각", residence:"고객 거주지", route:"루트", memo:"비고", admin_notes:"관리자 비고"};
+const editableFields = ["call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"];
+const textFields = new Set(['notes','memo','admin_notes','route','residence']);
+const multiline = new Set(['notes','memo','admin_notes']);
 const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
 const pending = new Map();
 const assigneeOperation=new PendingOperation("assignee",$("#management").dataset.userId,/^\/api\/customers\/[0-9a-f-]+\/assignee$/);
@@ -21,7 +23,7 @@ const notice = message => { $("#message").textContent = message; };
 const text = (tag, value) => { const el = document.createElement(tag); el.textContent = value; return el; };
 const display = (field, value) => field === "phone_normalized" && value ? String(value).replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3") : schema[field]?.[value ?? ""] ?? (value == null || value === "" ? "(빈 값)" : String(value));
 const localDate = value => value ? new Intl.DateTimeFormat("sv-SE", {timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value)).replace(" ", "T") : "";
-const normalize = (field, value) => dates.has(field) ? (value ? new Date(value.includes("Z") || /[+-]\d\d:\d\d$/.test(value) ? value : value+":00+09:00").toISOString() : null) : field === "call_result" ? value || null : field === "contract_status" ? value || "UNKNOWN" : field === "housing_status" ? (value || "").trim() : (value || "").replace(/\r\n?/g,"\n");
+const normalize = (field, value) => dates.has(field) ? (value ? new Date(value.includes("Z") || /[+-]\d\d:\d\d$/.test(value) ? value : value+":00+09:00").toISOString() : null) : field === "call_result" ? value || null : field === "contract_status" ? value || "UNKNOWN" : ['housing_status','residence','route'].includes(field) ? (value || "").trim() : (value || "").replace(/\r\n?/g,"\n");
 const params = () => new URLSearchParams({site_id:state.site, view:trash?"trash":"all", q:state.q, filters:JSON.stringify(state.filters),...(state.assignee?{assignee_id:state.assignee}:{})});
 function status() {
   const blocked=busy||callbacks?.busy||!!callbacks?.pending.value||hard?.busy||!!hard?.pending.value||(!trash&&!!assigneeOperation.value);
@@ -64,14 +66,14 @@ function column(field) {
   if(field==="assigned_at")definition.formatter=cell=>{const value=localDate(cell.getValue()),span=text("span",value?value.slice(5,10).replace("-","/"):"");if(value)span.title=`${value.slice(0,10)} (${new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",weekday:"short"}).format(new Date(cell.getValue()))}) ${value.slice(11).replace(":","시")}분`;return span;};
   if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"미할당");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
-    editor: dates.has(field) ? dateEditor : schema[field] ? "list" : field === "notes" ? "textarea" : "input",
+    editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
     ...(schema[field] ? {editorParams:{values:schema[field],clearable:field === "call_result"}} : field === "housing_status" ? {editorParams:{elementAttributes:{placeholder:"미확인 / 자가 / 전세 / 월세 / 기타"}}} : {}),
-    ...(field === "notes" ? {variableHeight:true} : {})});
+    ...(multiline.has(field) ? {variableHeight:true} : {})});
   return definition;
 }
 const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:"표시할 고객정보가 없습니다.", selectableRows:true,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
-    ...['customer_name','phone_normalized','call_result','notes','callback_due_at','assignee_name','visit_at','contract_status','housing_status','assigned_at'].map(column),
+    ...['customer_name','phone_normalized','call_result','notes','callback_due_at','assignee_name','visit_at','contract_status','residence','housing_status','route','memo','admin_notes','assigned_at'].map(column),
     ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
     {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
     ...(!trash ? [{title:"저장 상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
@@ -206,8 +208,8 @@ async function openFilter(field) {
   if(dates.has(field)){
     for(const [key,title] of [["from","시작일"],["to","종료일"]]){const label=text("label",title);const input=document.createElement("input");input.type="date";input.id="filter-"+key;input.value=state.filters[field]?.[key]||"";label.append(input);area.append(label);}
     getCondition=()=>{const result={};for(const key of ["from","to"])if($("#filter-"+key).value)result[key]=$("#filter-"+key).value;return Object.keys(result).length?result:undefined;};
-  }else if(field==="notes"){
-    const label=text("label","포함할 내용");const input=document.createElement("input");input.id="filter-contains";input.maxLength=10000;input.value=state.filters.notes?.contains||"";label.append(input);area.append(label);getCondition=()=>input.value?{contains:input.value}:undefined;
+  }else if(textFields.has(field)){
+    const label=text("label","포함할 내용");const input=document.createElement("input");input.id="filter-contains";input.maxLength=10000;input.value=state.filters[field]?.contains||"";label.append(input);area.append(label);getCondition=()=>input.value?{contains:input.value}:undefined;
   }else{
     const current=state.filters[field];let exclude=current?.exclude??!current, selected=new Set(current?.values??current??[]), page=1, search="", generation=0;
     const searchLabel=text("label","후보값 검색"), input=document.createElement("input");input.type="search";input.maxLength=200;searchLabel.append(input);

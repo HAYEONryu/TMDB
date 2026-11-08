@@ -43,7 +43,7 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
     if feature not in STAFF_FEATURES:
         from .reports import build_report
         return build_report(feature, site=site, employee=employee, start=start, end=end, korean_date=korean_date)
-    query = ConsultationRevision.objects.filter(saved_at__lte=end).select_related("customer")
+    query = ConsultationRevision.objects.filter(saved_at__lte=end).exclude(changed_fields=["admin_notes"]).select_related("customer")
     sources = []
     payload = {"reference_date": korean_date.isoformat(), "period_start": start.isoformat(), "period_end": end.isoformat(), "records": []}
     names = list(User.objects.values_list("name", flat=True))
@@ -71,7 +71,8 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
     for revision in rows:
         names.append(revision.customer.customer_name)
         payload["records"].append({"source_id": str(revision.pk), "saved_at": revision.saved_at.isoformat(), "source": revision.source,
-                                   "version": revision.customer_version, "notes": revision.notes, "fields": revision.after_values,
+                                   "version": revision.customer_version, "notes": revision.notes,
+                                   "fields": {key: value for key, value in revision.after_values.items() if key in {"notes", "call_result", "contract_status", "housing_status", "visit_at", "callback_due_at"}},
                                    "notes_date_anchors":note_date_anchors(revision.saved_at if revision.source in {'MANUAL','AI_APPLIED'} else None)})
         sources.append({"revision_id": revision.pk, "source_version": revision.customer_version})
     payload = sanitize(payload, names)

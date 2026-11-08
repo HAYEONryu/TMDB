@@ -72,8 +72,8 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(page.get_by_role("heading",name="엑셀 업로드",exact=True)).to_be_visible()
         with page.expect_download() as event:page.get_by_role("link",name="빈 입력 양식 다운로드",exact=True).click()
         download=event.value;target=self.evidence/"TM_customer_template.xlsx";download.save_as(target)
-        book=load_workbook(target);self.assertEqual([cell.value for cell in book.worksheets[0][1]],TEMPLATE_HEADERS);self.assertEqual(book.worksheets[0]["C2"].number_format,"@");book.close()
-        data=workbook([row(name=""),row("기존 중복"),row("파일 중복"),row("가상신규2","01090000002",**{"6":"가상 상담"}),row(phone=1090000001),[],row("<img src=x onerror=window.p3Injected=1>","01090000003",**{"7":"2026-11-05 (월) 10:00"})])
+        book=load_workbook(target);self.assertEqual([cell.value for cell in book.worksheets[0][1]],TEMPLATE_HEADERS);self.assertEqual(book.worksheets[0]["B2"].number_format,"@");book.close()
+        data=workbook([row(name=42),row("기존 중복"),row("파일 중복"),row("가상신규2","01090000002",**{"6":"가상 상담"}),row(phone=1090000001),[],row("<img src=x onerror=window.p3Injected=1>","01090000003",**{"7":"2026-11-05 (월) 10:00"})])
         self.upload(data)
         expect(page.locator("#validation-counts")).to_have_text("검증 시 총 6건 · 등록 가능 2 · 파일 내 중복 1 · 기존 중복 1 · 형식 오류 2")
         expect(page.locator("#import-rows tr")).to_have_count(4)
@@ -112,7 +112,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         page=self.page;page.goto(self.live_server_url+"/app/admin/imports")
         page.locator("#upload-file").set_input_files({"name":"wrong.xlsx","mimeType":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","buffer":workbook([row()],headers=HEADERS[::-1])})
         page.get_by_role("button",name="파일 검증",exact=True).click()
-        expect(page.locator("#upload-message")).to_contain_text("9개 열 제목과 순서")
+        expect(page.locator("#upload-message")).to_contain_text("고객명·연락처·고객 거주지·주택상황·비고·관리자 비고 순서")
         self.upload(workbook([row()]));batch_id=self.batch_id();captured=[]
         def lose(route):
             captured.append(route.request.post_data_json);self.assertEqual(route.fetch().status,200);route.abort("failed")

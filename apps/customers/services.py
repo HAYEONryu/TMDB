@@ -12,12 +12,12 @@ from apps.common.http import identifier
 from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
-from apps.customers.queries import KST, enriched, iso, serialize
+from apps.customers.queries import KST, enriched, iso, serialize, visible_values
 from apps.operations.models import IdempotencyRecord, MutationReceipt, OperationEvent
 from apps.sites.models import Site
 from apps.sites.services import locked_actor
 
-EDITABLE_FIELDS = {"call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status"}
+EDITABLE_FIELDS = {"call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"}
 
 
 def digest(value):
@@ -63,12 +63,12 @@ def normalized_changes(customer, changes):
                 invalid("계약여부를 확인해 주세요.")
             result[field] = value or Customer.ContractStatus.UNKNOWN
         else:
-            limit = max(10000, len(customer.notes)) if field == "notes" else 200
+            limit = max(10000, len(customer.notes)) if field == "notes" else 10000 if field in {"memo", "admin_notes"} else 200
             if not isinstance(value, str):
-                invalid("상담내용·주택상황은 문자열로 입력해 주세요.")
-            value = value.replace("\r\n", "\n").replace("\r", "\n") if field == "notes" else value.strip()
+                invalid("텍스트 항목은 문자열로 입력해 주세요.")
+            value = value.replace("\r\n", "\n").replace("\r", "\n") if field in {"notes", "memo", "admin_notes"} else value.strip()
             if len(value) > limit:
-                label = "상담기타내용" if field == "notes" else "주택상황"
+                label = {"notes":"상담기타내용", "memo":"비고", "admin_notes":"관리자 비고", "route":"루트", "residence":"고객 거주지", "housing_status":"주택상황"}[field]
                 invalid(f"{label} 입력은 {limit:,}자까지 가능합니다.")
             result[field] = value
     return result
@@ -77,11 +77,13 @@ def normalized_changes(customer, changes):
 def snapshot(customer, callback):
     return {"call_result": customer.call_result, "visit_at": iso(customer.visit_at),
             "contract_status": customer.contract_status, "notes": customer.notes,
-            "housing_status": customer.housing_status, "callback_due_at": iso(callback.due_at) if callback else None}
+            "housing_status": customer.housing_status, "residence": customer.residence,
+            "route": customer.route, "memo": customer.memo, "admin_notes": customer.admin_notes,
+            "callback_due_at": iso(callback.due_at) if callback else None}
 
 
-def safe_row(customer_id):
-    return serialize(enriched(Customer.objects.filter(pk=customer_id)).get())
+def safe_row(customer_id, actor=None):
+    return serialize(enriched(Customer.objects.filter(pk=customer_id)).get(), admin=bool(actor and actor.role == User.Role.ADMIN))
 
 
 @retry_transient_write
@@ -128,16 +130,18 @@ def update_row(actor, body, *, employee_only=False):
                 raise AccessError("IDEMPOTENCY_CONFLICT", "같은 요청 ID의 내용이 다릅니다.", 409)
             if receipt.expires_at <= timezone.now():
                 raise AccessError("IDEMPOTENCY_EXPIRED", "요청 보관 기간이 지났습니다. 서버 상태를 확인해 주세요.", 409)
-            return receipt.result
+            return visible_values(receipt.result, admin=actor.role == User.Role.ADMIN)
         try:
             if customer.version != body["expected_version"]:
                 raise AccessError("VERSION_CONFLICT", "다른 변경이 저장되었습니다. 서버값과 비교해 주세요.", 409)
+            if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and "admin_notes" in body["changes"]:
+                raise AccessError("FORBIDDEN", "관리자 비고는 관리자만 수정할 수 있습니다.", 403)
             values = normalized_changes(customer, body["changes"])
         except AccessError as exc:
             result = {"customer_id": str(cid), "mutation_id": str(mutation_id), "ok": False,
                       "error": {"code": exc.code, "message": exc.message}}
             if exc.code == "VERSION_CONFLICT":
-                result["server_row"] = safe_row(cid)
+                result["server_row"] = safe_row(cid, actor)
             MutationReceipt.objects.create(actor=actor, customer=customer, mutation_id=mutation_id, body_hash=body_hash,
                 result=result, expires_at=timezone.now()+timedelta(days=7))
             return result
@@ -155,7 +159,7 @@ def update_row(actor, body, *, employee_only=False):
                 source_result=validate_application(actor,customer,source_id,values,actual)
             except AccessError as exc:
                 result={'customer_id':str(cid),'mutation_id':str(mutation_id),'ok':False,'error':{'code':exc.code,'message':exc.message}}
-                if exc.code=='AI_RESULT_STALE':result['server_row']=safe_row(cid)
+                if exc.code=='AI_RESULT_STALE':result['server_row']=safe_row(cid, actor)
                 MutationReceipt.objects.create(actor=actor,customer=customer,mutation_id=mutation_id,body_hash=body_hash,result=result,expires_at=timezone.now()+timedelta(days=7))
                 return result
         now = timezone.now()
@@ -178,7 +182,7 @@ def update_row(actor, body, *, employee_only=False):
                     callback = Callback.objects.create(customer=customer, due_at=due, created_by=actor, updated_by=actor)
             customer.version += 1
             customer.save(update_fields=[*[f for f in actual if f != "callback_due_at"], "version", "updated_at"])
-            if assignment and assignment.first_activity_at is None:
+            if assignment and assignment.first_activity_at is None and set(actual) - {"admin_notes"}:
                 assignment.first_activity_at = now
                 assignment.save(update_fields=["first_activity_at", "updated_at"])
             after = snapshot(customer, callback if callback and callback.status == "PENDING" else None)
@@ -187,7 +191,7 @@ def update_row(actor, body, *, employee_only=False):
                 customer_version=customer.version, changed_fields=sorted(actual), before_values=before, after_values=after,
                 notes=customer.notes, source=ConsultationRevision.Source.AI_APPLIED if source_result else ConsultationRevision.Source.MANUAL,source_ai_result=source_result)
         result = {"ok": True, "customer_id": str(cid), "mutation_id": str(mutation_id), "changed": bool(actual),
-                  "version": customer.version, "row": safe_row(cid)}
+                  "version": customer.version, "row": safe_row(cid, actor)}
         MutationReceipt.objects.create(actor=actor, customer=customer, mutation_id=mutation_id, body_hash=body_hash,
             result=result, expires_at=now+timedelta(days=7))
         return result

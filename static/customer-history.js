@@ -1,6 +1,6 @@
 const text=(tag,value)=>{const node=document.createElement(tag);node.textContent=value??'';return node;};
 const date=value=>value?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(value)):'';
-const labels={notes:'상담기타내용(비고)',call_result:'통화결과',contract_status:'계약여부',visit_at:'방문예약 날짜',callback_due_at:'재콜일정',housing_status:'주택상황'};
+const labels={notes:'상담기타내용(비고)',call_result:'통화결과',contract_status:'계약여부',visit_at:'방문예약 날짜',callback_due_at:'재콜일정',housing_status:'주택상황',residence:'고객 거주지',route:'루트',memo:'비고',admin_notes:'관리자 비고'};
 const sources={MANUAL:'업무 저장',IMPORT:'엑셀 등록',BASELINE:'도입 기준 기록',AI_APPLIED:'AI 추천 적용',SYSTEM_DELETE_NOTE:'삭제 승인 문구'};
 export function installHistory(request){
   const schema=JSON.parse(document.querySelector('#customer-schema').textContent);

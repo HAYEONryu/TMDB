@@ -2,7 +2,7 @@ import {newRequestId} from './request-id.js';
 import {employeeSupportError,lockSupportError} from './browser-environment.js';
 import {QueueStore} from './employee-store.js';
 
-export const fields=['call_result','visit_at','contract_status','notes','callback_due_at','housing_status'];
+export const fields=['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo'];
 const blocked=new Set(['ASSIGNMENT_CHANGED','CUSTOMER_DELETED','SITE_DELETED','FORBIDDEN']);
 const auth=new Set(['UNAUTHENTICATED','ACCOUNT_DISABLED','SESSION_INVALID','PASSWORD_CHANGE_REQUIRED','QUEUE_CONTEXT_MISMATCH','PASSWORD_CHANGE_NEEDED']);
 const day=86400000;
@@ -15,7 +15,7 @@ export function normalized(field,value){
   }
   if(field==='call_result')return value||null;
   if(field==='contract_status')return value||'UNKNOWN';
-  if(field==='housing_status')return (value||'').trim();
+  if(['housing_status','residence','route'].includes(field))return (value||'').trim();
   return (value||'').replace(/\r\n?/g,'\n');
 }
 export const changes=entry=>({...entry.inflight?.changes,...entry.pending});

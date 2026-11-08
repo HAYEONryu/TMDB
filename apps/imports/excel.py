@@ -22,33 +22,26 @@ from apps.common.validation import normalize_phone
 from apps.customers.models import Customer
 from apps.customers.queries import KST
 
-HEADERS = ["담당직원명", "고객명", "고객 연락처", "통화결과", "방문예약 날짜", "계약여부", "상담기타내용", "재콜일정", "주택상황"]
+LEGACY_HEADERS = ["담당직원명", "고객명", "고객 연락처", "통화결과", "방문예약 날짜", "계약여부", "상담기타내용", "재콜일정", "주택상황"]
+HEADERS = ["고객명", "연락처", "고객 거주지", "주택상황", "비고", "관리자 비고"]
 HEADER_HINTS = [
-    "입력 금지\n빈 칸으로 두세요\n등록 후 담당자 분배",
-    "필수 · 문자 1~100자\n예: 가상고객",
+    "선택 · 문자 최대 100자\n빈 칸 가능\n예: 가상고객",
     "필수 · 010 시작 11자리\n텍스트로 입력\n예: 010-0000-0000",
-    "선택 · 목록에서 선택\n부재/거절/관심/재통화\n방문예약/방문/재방\n빈 값: 미입력",
-    "선택 · 날짜와 시각\nYYYY-MM-DD HH:mm\n예: 2026-11-09 14:30\n한국 시각 · 24시간제",
-    "선택 · 목록에서 선택\n미확인/미계약/계약\n빈 값: 미확인",
-    "선택 · 문자 최대 10,000자\n줄바꿈 가능 · 수식 금지\n예: 다음 주 통화 희망",
-    "선택 · 날짜와 시각\nYYYY-MM-DD HH:mm\n예: 2026-11-10 10:00\n한국 시각 · 24시간제",
+    "선택 · 문자 최대 200자\n예: 서울 강서구",
     "선택 · 문자 최대 200자\n예: 자가/전세/월세/기타",
+    "선택 · 문자 최대 10,000자\n기존 상담기타내용과 별도\n줄바꿈 가능 · 수식 금지",
+    "선택 · 문자 최대 10,000자\n관리자만 조회·수정\n직원에게 노출되지 않음",
 ]
 TEMPLATE_HEADERS = [f"{title}\n{hint}" for title, hint in zip(HEADERS, HEADER_HINTS)]
 HEADER_INSTRUCTIONS = [
-    "입력하지 말고 비워 주세요. 모든 고객은 미할당으로 등록하며 담당자는 등록 후 분배합니다.",
-    "필수. 문자 1~100자. 예: 가상고객. 앞뒤 공백은 제거합니다.",
+    "선택. 문자 최대 100자. 빈 칸도 등록할 수 있습니다. 예: 가상고객. 앞뒤 공백은 제거합니다.",
     "필수. 010으로 시작하는 11자리 텍스트. 예: 010-0000-0000 또는 01000000000. "
     "하이픈·공백은 제거해 검사합니다. 숫자로 저장해 앞자리 0이 빠지면 복원하지 않습니다. "
     "같은 현장의 중복 연락처는 등록하지 않습니다(휴지통 포함).",
-    "선택. 허용값: " + ", ".join(Customer.CallResult.labels) + ". 빈 칸은 미입력입니다.",
-    "선택. YYYY-MM-DD HH:mm 형식의 문자 또는 날짜와 시각을 모두 표시하는 Excel 날짜·시각 셀. "
-    "예: 2026-11-09 14:30. 한국 시각, 24시간제. 날짜만 입력할 수 없으며 빈 칸은 예약 없음입니다.",
-    "선택. 허용값: " + ", ".join(Customer.ContractStatus.labels) + ". 빈 칸은 미확인입니다.",
-    "선택. 문자 최대 10,000자. 줄바꿈 가능. 예: 다음 주 통화 희망. 수식은 사용할 수 없습니다.",
-    "선택. YYYY-MM-DD HH:mm 형식의 문자 또는 날짜와 시각을 모두 표시하는 Excel 날짜·시각 셀. "
-    "예: 2026-11-10 10:00. 한국 시각, 24시간제. 날짜만 입력할 수 없으며 빈 칸은 재콜 없음입니다.",
+    "선택. 고객 거주지를 자유 입력하는 문자 최대 200자. 예: 서울 강서구. 앞뒤 공백은 제거합니다.",
     "선택. 자유 입력 문자 최대 200자. 예: 미확인, 자가, 전세, 월세, 기타. 빈 칸도 허용합니다.",
+    "선택. 문자 최대 10,000자. 기존 상담기타내용과 별도인 비고입니다. 줄바꿈 가능. 수식은 사용할 수 없습니다.",
+    "선택. 문자 최대 10,000자. 관리자만 조회·수정합니다. 직원 화면·API·상담 이력·AI 입력에 제공하지 않습니다. 줄바꿈 가능. 수식은 사용할 수 없습니다.",
 ]
 MAX_EXPANDED_BYTES = 128 * 1024 * 1024
 # Invalid dates/links can cause library warnings containing raw cell input.
@@ -66,27 +59,21 @@ def template_bytes():
     sheet.title = "고객 등록"
     sheet.append(TEMPLATE_HEADERS)
     sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = "A1:I1"
-    for cell, width in zip(sheet[1], [18, 18, 23, 18, 26, 18, 55, 26, 28]):
+    sheet.auto_filter.ref = "A1:F1"
+    for cell, width in zip(sheet[1], [26, 30, 30, 30, 42, 42]):
         cell.font = Font(color="FFFFFF", bold=True)
         cell.fill = PatternFill("solid", fgColor="245C4E")
         cell.alignment = Alignment(vertical="center", wrap_text=True)
         sheet.column_dimensions[cell.column_letter].width = width
     sheet.row_dimensions[1].height = 112
-    sheet.column_dimensions["C"].number_format = "@"
-    sheet["C2"].number_format = "@"
-    choices = {"D": Customer.CallResult.labels, "F": Customer.ContractStatus.labels}
+    for column in "ABCDEF":
+        sheet.column_dimensions[column].number_format = "@"
+        sheet[f"{column}2"].number_format = "@"
     for cell, title, instruction in zip(sheet[1], HEADERS, HEADER_INSTRUCTIONS):
         cell.comment = Comment(instruction, "TM 고객관리")
         cell.comment.width, cell.comment.height = 380, 140
         column = cell.column_letter
-        if column in choices:
-            validation = DataValidation(type="list", formula1='"'+",".join(choices[column])+'"', allow_blank=True)
-            validation.errorTitle, validation.error, validation.showErrorMessage = "허용값 확인", "목록에 있는 값을 선택해 주세요.", True
-        else:
-            # Input prompts describe existing server rules without introducing
-            # new Excel-side restrictions or nonblank example customer rows.
-            validation = DataValidation(type="custom", formula1="TRUE", allow_blank=True)
+        validation = DataValidation(type="custom", formula1="TRUE", allow_blank=True)
         validation.promptTitle, validation.prompt = title, instruction
         validation.showInputMessage = True
         sheet.add_data_validation(validation)
@@ -118,7 +105,7 @@ def blank(value):
     return value is None or isinstance(value, str) and not value.strip()
 
 
-def extra_columns(data, sheet_path, shared_strings):
+def extra_columns(data, sheet_path, shared_strings, width):
     """Validate sparse XML bounds without materializing 16,384 cells per row."""
     extra = set()
     previous = 0
@@ -137,7 +124,7 @@ def extra_columns(data, sheet_path, shared_strings):
                     column = column_index_from_string(match[1])
                     if not 1 <= column <= 16384:
                         file_error("INVALID_XLSX", "Excel 열 번호가 올바르지 않습니다.")
-                    if column > 9:
+                    if column > width:
                         for child in cell:
                             if child.tag.endswith("}f"):
                                 extra.add(number)
@@ -186,21 +173,30 @@ def excel_datetime(cell):
     return parsed.isoformat()
 
 
-def parse_row(cells):
+def parse_row(cells, *, legacy=False):
     values = [cell.value for cell in cells]
     if any(cell.data_type == "f" for cell in cells):
         raise ValueError("수식 셀은 사용할 수 없습니다.")
     if any(cell.data_type == "e" for cell in cells):
         raise ValueError("Excel 오류값이 포함되어 있습니다.")
-    if not blank(values[0]):
+    if legacy and not blank(values[0]):
         raise ValueError("담당직원명은 비워 주세요. 등록 고객은 미할당 상태입니다.")
-    name = text_value(values[1], "고객명", 100, required=True)
-    if not isinstance(values[2], str):
+    name = text_value(values[1 if legacy else 0], "고객명", 100)
+    phone_input = values[2 if legacy else 1]
+    if not isinstance(phone_input, str):
         raise ValueError("연락처를 텍스트로 입력해 주세요. 숫자로 소실된 앞자리 0은 복원하지 않습니다.")
     try:
-        phone = normalize_phone(values[2])
+        phone = normalize_phone(phone_input)
     except ValidationError:
         raise ValueError("연락처는 010으로 시작하는 11자리여야 합니다.") from None
+    if not legacy:
+        return {"customer_name":name, "phone_normalized":phone,
+            "residence":text_value(values[2], "고객 거주지", 200),
+            "housing_status":text_value(values[3], "주택상황", 200),
+            "memo":text_value(values[4], "비고", 10000, trim=False),
+            "admin_notes":text_value(values[5], "관리자 비고", 10000, trim=False),
+            "notes":"", "call_result":None, "visit_at":None,
+            "callback_due_at":None, "contract_status":"UNKNOWN"}
     call = text_value(values[3], "통화결과", 20)
     contract = text_value(values[5], "계약여부", 20)
     calls = {label: code for code, label in Customer.CallResult.choices}
@@ -229,7 +225,6 @@ def parse_upload(upload):
         if not book.worksheets:
             file_error("INVALID_HEADER", "첫 워크시트를 확인해 주세요.")
         sheet = book.worksheets[0]
-        extra = extra_columns(data, sheet._worksheet_path, sheet._shared_strings)
         sheet.reset_dimensions()
         rows = sheet.iter_rows(min_col=1,max_col=9)
         header = next(rows, ())
@@ -238,9 +233,12 @@ def parse_upload(upload):
         # The first line is the stable column title. Later lines are guidance,
         # so files remain valid when examples or explanatory text are updated.
         titles = [cell.value.split("\n", 1)[0].rstrip("\r") if isinstance(cell.value, str) else cell.value for cell in header]
-        if (1 in extra or titles != HEADERS
+        legacy = titles == LEGACY_HEADERS
+        width = 9 if legacy else 6
+        extra = extra_columns(data, sheet._worksheet_path, sheet._shared_strings, width)
+        if (1 in extra or titles not in [HEADERS, LEGACY_HEADERS]
                 or any(cell.data_type == "f" for cell in header)):
-            file_error("INVALID_HEADER", "첫 행의 9개 열 제목과 순서가 입력 양식과 같아야 합니다.")
+            file_error("INVALID_HEADER", "첫 행은 고객명·연락처·고객 거주지·주택상황·비고·관리자 비고 순서여야 합니다. 기존 9열 양식도 지원합니다.")
         results, candidates, seen = [], [], set()
         for row_number, cells in enumerate(rows, 2):
             if row_number not in extra and all(blank(cell.value) for cell in cells):
@@ -253,14 +251,15 @@ def parse_upload(upload):
                 from openpyxl.cell.read_only import EMPTY_CELL
                 padded += [EMPTY_CELL] * (9-len(padded))
             values = [cell.value for cell in padded]
-            name, phone = str(values[1] or ""), str(values[2] if values[2] is not None else "")
+            name_index, phone_index = (1, 2) if legacy else (0, 1)
+            name, phone = str(values[name_index] or ""), str(values[phone_index] if values[phone_index] is not None else "")
             if any(isinstance(value, str) and len(value) > 32767 for value in values):
                 file_error("INVALID_XLSX", "Excel 셀의 최대 문자 수를 넘은 파일입니다.")
             result = {"row_number":row_number,"success":False,"customer_name":name,"phone_input":phone,"error_code":"","reason":""}
             try:
                 if row_number in extra:
-                    raise ValueError("입력 양식의 9개 열 밖에 값이 있습니다.")
-                normalized = parse_row(padded[:9])
+                    raise ValueError(f"입력 양식의 {width}개 열 밖에 값이 있습니다.")
+                normalized = parse_row(padded[:width], legacy=legacy)
                 if normalized["phone_normalized"] in seen:
                     result.update(error_code="DUPLICATE_IN_FILE",reason="파일에서 먼저 나온 유효한 연락처 행과 중복됩니다.")
                 else:

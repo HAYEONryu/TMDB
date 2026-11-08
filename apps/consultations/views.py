@@ -6,6 +6,7 @@ from apps.common.http import api_errors,identifier
 from apps.customers.access import current_access
 from apps.customers.employee import optional_queue_identity
 from apps.customers.models import Customer
+from apps.customers.queries import visible_values
 
 
 @require_GET
@@ -30,7 +31,9 @@ def history(request,customer_id):
             'completed_at':row.completed_at.isoformat() if row.completed_at else None,'completed_by':row.completed_by.name if row.completed_by_id else None,'cancelled_at':row.cancelled_at.isoformat() if row.cancelled_at else None}
     else:
         query=customer.consultation_revisions.select_related('actor').order_by('-saved_at','-pk')
+        if request.user.role != User.Role.ADMIN:
+            query=query.exclude(changed_fields=['admin_notes'])
         serialize=lambda row:{'id':str(row.pk),'saved_at':row.saved_at.isoformat(),'actor':row.actor.name if row.actor_id else None,'source':row.source,
             'customer_version':row.customer_version,'assignment_id':str(row.assignment_id) if row.assignment_id else None,'changed_fields':row.changed_fields,'before_values':row.before_values,'after_values':row.after_values,'notes':row.notes}
     total=query.count()
-    return JsonResponse({'kind':kind,'page':page,'page_size':50,'total':total,'has_next':page*50<total,'data':[serialize(row) for row in query[(page-1)*50:page*50]]})
+    return JsonResponse({'kind':kind,'page':page,'page_size':50,'total':total,'has_next':page*50<total,'data':[visible_values(serialize(row), admin=request.user.role==User.Role.ADMIN) for row in query[(page-1)*50:page*50]]})

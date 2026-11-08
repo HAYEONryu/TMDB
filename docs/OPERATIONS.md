@@ -34,6 +34,8 @@ docker compose --env-file /srv/tmdb/secrets/deployment.env -f deploy/compose.pro
 앱/AI 비밀 파일은0600·UID10001 읽기 권한, DB 초기화 비밀은postgres 프로세스 UID의 읽기 권한을 갖춰야 한다. 예시 파일은 빈 값이며 실제 비밀은 채팅으로 받지 않는다. Docker 검수는 별도 가상 DB/볼륨과 내부 네트워크에서만 실행한다. `scripts/verify_docker_release.py --label docker-stage1`은 실제 로컬 엔진이 없으면not_run으로 종료한다. 로컬 검수 오버라이드는공개80/443을 대체해loopback의 임시포트만 열며 공개HTTPS 검증으로 표시하지 않는다.
 
 
+고객 필드는 `customers.0002_customer_metadata`에서 고객 거주지·루트·별도 비고·관리자 비고를 추가하고 고객명을 선택 입력으로 변경한다. [현재 6열 양식·권한·migration 적용 순서와 검증](EXCEL_TEMPLATE_GUIDANCE.md)을 확인한다. 기존 개발·데모/운영 DB에는 이번 수정에서 migration을 실행하지 않았다.
+
 ## 암호화 백업
 
 백업은 웹/예약 프로세스와 별도의 운영 명령이다. 호스트의 PostgreSQL17 `pg_dump`/`pg_restore`와 age가 필요하다. 앱 이미지 안에 이 운영 도구가 준비되어 있다고 가정하지 않는다. age 설치 도구는 공식 배포의 SHA-256을 고정 확인하며 프로젝트 내부에 설치한다.
