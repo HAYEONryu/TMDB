@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
 export class CallbackAction {
   constructor({userId,request,flush,getRow,refresh,notice,changed}){
@@ -15,7 +16,7 @@ export class CallbackAction {
         if(this.pending.value)throw new Error('먼저 이전 재콜 완료 결과를 확인해 주세요.');
         if(!await this.flush(id))throw new Error('해당 행을 저장하지 못했습니다. 재콜은 완료하지 않았습니다.');
         const row=this.getRow(id);if(!row?.callback_id)throw new Error('현재 미완료 일정이 없습니다. 다시 조회해 주세요.');
-        value={endpoint:`/api/customers/${id}/callback-complete`,body:{callback_id:row.callback_id,callback_version:row.callback_version,assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:crypto.randomUUID()}};
+        value={endpoint:`/api/customers/${id}/callback-complete`,body:{callback_id:row.callback_id,callback_version:row.callback_version,assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:newRequestId()}};
       }
       const result=await this.pending.execute(value);await this.refresh(result.row);this.notice('재콜을 완료했습니다.');return true;
     }catch(error){this.notice(error.message);return false;}

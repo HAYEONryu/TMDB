@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {api} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
 const $=selector=>document.querySelector(selector),userId=$("#user-management").dataset.userId,notice=message=>{$("#user-message").textContent=message;};
@@ -48,7 +49,7 @@ async function guarded(action){
 $("#save-users").onclick=()=>{$("#user-save-count").textContent=`${drafts.size}명의 변경을 한 번에 저장합니다. 오류가 있으면 전부 저장하지 않습니다.`;$("#user-save-dialog").showModal();};
 $("#user-save-cancel").onclick=()=>$("#user-save-dialog").close();
 $("#user-save-confirm").onclick=()=>run(async()=>{
-  saveBody ||= {idempotency_key:crypto.randomUUID(),rows:[...drafts.values()].map(person=>({id:person.id,name:person.name,phone:person.phone,role:person.role,is_active:person.is_active,expected_version:records.get(person.id).version}))};
+  saveBody ||= {idempotency_key:newRequestId(),rows:[...drafts.values()].map(person=>({id:person.id,name:person.name,phone:person.phone,role:person.role,is_active:person.is_active,expected_version:records.get(person.id).version}))};
   try{const result=await api("/api/users/batch-update",saveBody);drafts.clear();saveBody=null;$("#user-save-dialog").close();if(result.requires_relogin){leaving=true;location.href="/auth/login";return;}await load();notice(`${result.updated_count}명 저장 · 미진행 ${result.recalled_count}건 회수했습니다.`);}
   catch(error){if(error.status>=400&&error.status<500)saveBody=null;$("#user-save-dialog").close();notice(error.message);}
 });
@@ -60,7 +61,7 @@ $("#transfer-previous").onclick=()=>run(()=>transfers(transferPage-1));$("#trans
 $("#add-user").onclick=()=>guarded(()=>{if(!createUnknown){createBody=null;$("#add-user-form").reset();}$("#add-user-error").textContent="";$("#add-user-dialog").showModal();status();});
 $("#add-user-cancel").onclick=()=>$("#add-user-dialog").close();
 $("#add-user-form").onsubmit=event=>{event.preventDefault();run(async()=>{
-  createBody ||= {name:$("#new-user-name").value,phone:$("#new-user-phone").value,role:$("#new-user-admin").checked?"ADMIN":"EMPLOYEE",idempotency_key:crypto.randomUUID()};
+  createBody ||= {name:$("#new-user-name").value,phone:$("#new-user-phone").value,role:$("#new-user-admin").checked?"ADMIN":"EMPLOYEE",idempotency_key:newRequestId()};
   try{await api("/api/users",createBody);createBody=null;createUnknown=false;$("#add-user-dialog").close();await load(1,"");notice("사용자를 추가했습니다. 첫 로그인에서 비밀번호 변경이 필요합니다.");}
   catch(error){createUnknown=!error.status||error.status>=500;if(!createUnknown)createBody=null;$("#add-user-error").textContent=error.message+(createUnknown?" 입력값을 유지하고 같은 요청으로 다시 확인해 주세요.":"");}
 });};
@@ -68,7 +69,7 @@ async function doReset(value){
   try{const result=await reset.execute(value);$("#reset-dialog").close();if(result.id===userId){leaving=true;location.href="/auth/login";return;}await load();notice("초기 비밀번호로 재설정했습니다. 기존 세션을 종료하고 첫 변경을 요구합니다.");}
   catch(error){$("#reset-dialog").close();notice(error.message);}
 }
-$("#reset-cancel").onclick=()=>$("#reset-dialog").close();$("#reset-confirm").onclick=()=>run(()=>doReset({endpoint:`/api/users/${resetTarget}/reset-password`,body:{idempotency_key:crypto.randomUUID()}}));
+$("#reset-cancel").onclick=()=>$("#reset-dialog").close();$("#reset-confirm").onclick=()=>run(()=>doReset({endpoint:`/api/users/${resetTarget}/reset-password`,body:{idempotency_key:newRequestId()}}));
 $("#reset-retry").onclick=()=>run(()=>doReset());$("#reset-discard").onclick=()=>run(async()=>{reset.clear();await load();notice("대기 정보를 폐기했습니다. 현재 계정 상태를 확인해 주세요.");});
 document.addEventListener("click",event=>{const link=event.target.closest("a[href]");if(!link)return;if(busy){event.preventDefault();return;}if(drafts.size||saveBody){event.preventDefault();guarded(()=>{location.href=link.href;});}},true);
 document.querySelector('form[action="/auth/logout"]')?.addEventListener("submit",event=>{if(busy||drafts.size||saveBody){event.preventDefault();event.stopImmediatePropagation();guarded(()=>event.target.submit());}},true);

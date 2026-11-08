@@ -15,6 +15,21 @@ function fixture(){
   const r=row();q.setRows([r]);return {q,r,records,sends,setNow:n=>{now=n;}};
 }
 
+test('without randomUUID the queue creates UUIDs and retries the same mutation',async()=>{
+  const descriptor=Object.getOwnPropertyDescriptor(globalThis,'crypto'),provider=globalThis.crypto;
+  Object.defineProperty(globalThis,'crypto',{value:{getRandomValues:provider.getRandomValues.bind(provider)},configurable:true});
+  try{
+    const {q,r,sends}=fixture(),request=q.request;let failed=false,captured;
+    q.request=async(url,body)=>{if(url.endsWith('batch-update')&&!failed){captured=structuredClone(body);failed=true;throw new Error('response lost');}return request(url,body);};
+    q.stage(r,'notes','pending fallback UUID');
+    assert.match(q.entry(r.id).key.split(':').at(-1),/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    await q.flush(true);
+    assert.match(captured.rows[0].mutation_id,/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    await q.flush(true);
+    assert.deepEqual(sends[0],captured);
+  }finally{Object.defineProperty(globalThis,'crypto',descriptor);}
+});
+
 test('AI selection stages one atomic row with provenance and keeps other row deadline',async()=>{
   const {q,r,sends,setNow,records}=fixture(),other=row('other');q.setRows([other]);q.stage(other,'notes','manual');setNow(5000);
   assert.equal(q.stageAI(r,{notes:'AI proposal'},'result-id'),true);await q.disk;assert.equal(records.get(q.entry(r.id).key).ai_source_id,'result-id');

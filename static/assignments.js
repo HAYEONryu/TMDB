@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {api,option} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
 const $=selector=>document.querySelector(selector),notice=message=>{$("#assignment-message").textContent=message;};
@@ -35,10 +36,10 @@ async function execute(value){
 $("#assignment-site").onchange=()=>{checked=false;$("#assignment-employee").replaceChildren();$("#assignment-quantity").value="";$("#availability-count").textContent="현장을 확인해 주세요.";$("#assignment-result").replaceChildren();status();};
 $("#check-availability").onclick=()=>run(availability);
 $("#assignment-employee").onchange=status;
-$("#distribute").onclick=()=>run(async()=>{const quantity=Number($("#assignment-quantity").value);if(!Number.isSafeInteger(quantity)||quantity<=0)throw new Error("직원당 수량은 양의 정수로 입력해 주세요.");await execute({endpoint:"/api/assignments/distribute",body:{...body(),quantity,idempotency_key:crypto.randomUUID()}});});
+$("#distribute").onclick=()=>run(async()=>{const quantity=Number($("#assignment-quantity").value);if(!Number.isSafeInteger(quantity)||quantity<=0)throw new Error("직원당 수량은 양의 정수로 입력해 주세요.");await execute({endpoint:"/api/assignments/distribute",body:{...body(),quantity,idempotency_key:newRequestId()}});});
 $("#recall").onclick=()=>run(async()=>{recallBody=body();const preview=await api("/api/assignments/recall-preview",recallBody);$("#recall-preview").textContent=`${preview.business_date} · ${preview.employee_count}명 · 현재 대상 ${preview.target_count}건을 회수하시겠습니까?`;$("#recall-dialog").showModal();});
 $("#recall-cancel").onclick=()=>$("#recall-dialog").close();
-$("#recall-confirm").onclick=()=>run(async()=>{$("#recall-dialog").close();await execute({endpoint:"/api/assignments/recall",body:{...recallBody,idempotency_key:crypto.randomUUID()}});});
+$("#recall-confirm").onclick=()=>run(async()=>{$("#recall-dialog").close();await execute({endpoint:"/api/assignments/recall",body:{...recallBody,idempotency_key:newRequestId()}});});
 $("#assignment-retry").onclick=()=>run(()=>execute());
 $("#assignment-discard").onclick=()=>run(async()=>{operation.clear();checked=false;notice("대기 정보를 폐기했습니다. 현재 잔여 수를 확인한 뒤 작업해 주세요.");});
 window.addEventListener("beforeunload",event=>{if(busy||operation.value){event.preventDefault();event.returnValue="";}});

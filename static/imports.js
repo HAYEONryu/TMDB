@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {api,option} from "./api.js";
 const $=selector=>document.querySelector(selector), message=text=>{$("#upload-message").textContent=text;};
 const statusLabels={VALIDATED:"검증 완료 · 확정 전",COMMITTED:"등록 확정 완료",EXPIRED:"검증 결과 만료",FAILED:"등록 실패 · 재업로드 필요"};
@@ -14,7 +15,7 @@ function url(){const value=new URL(location.href);if(batchId)value.searchParams.
 function requestKey(){
   const name=`tm:import:${userId}:${batchId}`;
   if(!key){try{key=sessionStorage.getItem(name);}catch{}}
-  if(!key){key=crypto.randomUUID();try{sessionStorage.setItem(name,key);}catch{}}
+  if(!key){key=newRequestId();try{sessionStorage.setItem(name,key);}catch{}}
   return key;
 }
 function render(){

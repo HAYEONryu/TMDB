@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
 export class HardDelete {
   constructor({userId,request,refresh,notice,changed}){
@@ -13,7 +14,7 @@ export class HardDelete {
   async confirm(){
     if(this.busy||this.pending.value)return;this.busy=true;this.update();
     try{
-      const key=crypto.randomUUID(),target=this.target;let body;
+      const key=newRequestId(),target=this.target;let body;
       if(target.kind==='sites'){
         const proof=await this.request(`/api/sites/${target.id}/deletion-confirmation`,{confirm_name:document.querySelector('#hard-name').value,idempotency_key:key});
         body={confirmation:proof.confirmation,idempotency_key:key};document.querySelector('#hard-name').value='';

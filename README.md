@@ -115,6 +115,7 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 - [현재 운영 기준·미확인 환경·다음 결정](docs/CURRENT_OPERATING_BASELINE.md)
 - [운영·배포·백업·복원](docs/OPERATIONS.md)
 - [AI 비활성·키 관리](docs/AI_ACTIVATION.md)
+- [crypto.randomUUID 오류 수정·서버 정적 파일 적용](docs/REQUEST_ID_COMPATIBILITY.md)
 - [운영 준비1단계 결과](docs/OPERATIONS_STAGE1.md)
 - [이전 최종 검수](docs/FINAL_VERIFICATION.md)·[당시92문항](docs/FINAL_ACCEPTANCE.md)
 - [이전 시작 안내 원문](docs/history/README.before_operations_stage1_20261108.md)

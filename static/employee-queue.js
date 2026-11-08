@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {QueueStore} from './employee-store.js';
 
 export const fields=['call_result','visit_at','contract_status','notes','callback_due_at','housing_status'];
@@ -69,7 +70,7 @@ export class EmployeeQueue extends EventTarget {
     const actual=normalized(field,value),expected=normalized(field,entry?.inflight&&Object.hasOwn(entry.inflight.changes,field)?entry.inflight.changes[field]:baseline[field]);
     if(!entry&&actual===expected)return true;
     if(!entry){
-      const key=[this.userId,row.site_id,row.id,row.assignment_id,crypto.randomUUID()].join(':');
+      const key=[this.userId,row.site_id,row.id,row.assignment_id,newRequestId()].join(':');
       entry={key,user_id:this.userId,site_id:baseline.site_id,customer_id:row.id,assignment_id:baseline.assignment_id,version:baseline.version,pending:{},inflight:null,first_dirty_at:this.now(),pending_since:this.now(),created_at:this.now(),state:'dirty',error:'',retry_at:0,attempt:0};
       this.entries.set(key,entry);this.claim(key).catch(error=>{this.storageError=error.message;this.emit();});
     }
@@ -85,7 +86,7 @@ export class EmployeeQueue extends EventTarget {
     const baseline=this.rows.get(row.id);if(this.paused||!baseline||this.entry(row.id)||this.invalidRow(row.id)||baseline.version!==row.version||baseline.assignment_id!==row.assignment_id)return false;
     const pending={};for(const [field,value] of Object.entries(values)){if(!fields.includes(field))return false;const actual=normalized(field,value);if(actual!==normalized(field,baseline[field]))pending[field]=actual;}
     if(!Object.keys(pending).length)return true;
-    const key=[this.userId,row.site_id,row.id,row.assignment_id,crypto.randomUUID()].join(':'),entry={key,user_id:this.userId,site_id:baseline.site_id,customer_id:row.id,assignment_id:baseline.assignment_id,version:baseline.version,pending,inflight:null,first_dirty_at:this.now(),pending_since:this.now(),created_at:this.now(),state:navigator.onLine?'dirty':'offline',error:'',retry_at:0,attempt:0,ai_source_id:resultId,ai_fields:Object.fromEntries(Object.keys(pending).map(field=>[field,true]))};
+    const key=[this.userId,row.site_id,row.id,row.assignment_id,newRequestId()].join(':'),entry={key,user_id:this.userId,site_id:baseline.site_id,customer_id:row.id,assignment_id:baseline.assignment_id,version:baseline.version,pending,inflight:null,first_dirty_at:this.now(),pending_since:this.now(),created_at:this.now(),state:navigator.onLine?'dirty':'offline',error:'',retry_at:0,attempt:0,ai_source_id:resultId,ai_fields:Object.fromEntries(Object.keys(pending).map(field=>[field,true]))};
     this.entries.set(key,entry);this.claim(key).catch(error=>{this.storageError=error.message;this.emit();});
     this.persist(entry).then(()=>{if(entry.unsafe&&!this.saving)this.flush(true);});this.emit();return true;
   }
@@ -159,7 +160,7 @@ export class EmployeeQueue extends EventTarget {
         const send=batch.filter(e=>e.checked&&this.entries.has(e.key)&&['dirty','retry','offline'].includes(e.state)&&!this.paused&&!this.invalidRow(e.customer_id));
         if(!send.length)return;
         for(const e of send){
-          if(!e.inflight){e.inflight={customer_id:e.customer_id,assignment_id:e.assignment_id,mutation_id:crypto.randomUUID(),expected_version:e.version,changes:structuredClone(e.pending),...(e.ai_source_id&&Object.keys(e.ai_fields||{}).some(field=>Object.hasOwn(e.pending,field))?{source_ai_result_id:e.ai_source_id}:{})};e.pending={};e.pending_since=null;e.ai_source_id=null;e.ai_fields={};}
+          if(!e.inflight){e.inflight={customer_id:e.customer_id,assignment_id:e.assignment_id,mutation_id:newRequestId(),expected_version:e.version,changes:structuredClone(e.pending),...(e.ai_source_id&&Object.keys(e.ai_fields||{}).some(field=>Object.hasOwn(e.pending,field))?{source_ai_result_id:e.ai_source_id}:{})};e.pending={};e.pending_since=null;e.ai_source_id=null;e.ai_fields={};}
           e.state='saving';await this.persist(e);
         }
         this.emit();

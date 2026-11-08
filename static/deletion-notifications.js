@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {api} from './api.js';
 import {PendingOperation} from './pending-operation.js';
 const $=selector=>document.querySelector(selector),root=$('#deletion-notifications'),userId=document.body.dataset.userId;
@@ -27,7 +28,7 @@ async function approve(item){
   if(busy||stopped||item&&pending.value)return;
   if(item&&!confirm(`${item.customer_name} 고객정보를 휴지통으로 이동하시겠습니까?`))return;
   busy=true;clearTimeout(timer);status();
-  try{await pending.execute(item?{endpoint:`/api/deletion-requests/${item.id}/approve`,body:{idempotency_key:crypto.randomUUID()}}:undefined);await load(1);$('#notification-message').textContent='삭제 요청 승인을 확인했습니다.';}
+  try{await pending.execute(item?{endpoint:`/api/deletion-requests/${item.id}/approve`,body:{idempotency_key:newRequestId()}}:undefined);await load(1);$('#notification-message').textContent='삭제 요청 승인을 확인했습니다.';}
   catch(error){await load(1);$('#notification-message').textContent=error.message;}
   finally{busy=false;status();schedule();}
 }

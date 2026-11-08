@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
 const $=id=>document.getElementById(id),features={CLEANUP:'AI 상담 정리',SUMMARY:'상담 요약',NEXT_QUESTIONS:'다음 질문 제안'},active=new Set(['RESERVED','RUNNING','UNKNOWN']);
 const el=(tag,value)=>{const node=document.createElement(tag);if(value!==undefined)node.textContent=value;return node;};
@@ -36,7 +37,7 @@ export class EmployeeAI {
         if(this.pending.value)throw new Error('먼저 이전 AI 요청의 접수 결과를 확인해 주세요.');
         if(!await this.flush(id))throw new Error('해당 행을 저장하지 못했습니다. AI 요청은 접수하지 않았습니다.');
         const row=this.queue.rows.get(id);if(!row)throw new Error('현재 고객정보를 다시 확인해 주세요.');
-        value={endpoint:'/api/ai/customer-tasks',body:{feature,customer_id:id,assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:crypto.randomUUID()}};
+        value={endpoint:'/api/ai/customer-tasks',body:{feature,customer_id:id,assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:newRequestId()}};
       }
       const data=await this.pending.execute(value);if(this.queue.paused)return false;this.track(data);this.show('task');this.busy=false;this.update();await this.poll();return true;
     }catch(error){this.notice(error.message);return false;}

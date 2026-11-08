@@ -1,3 +1,4 @@
+import {newRequestId} from './request-id.js';
 import {api, option} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
 import {CallbackAction} from './callback-action.js';
@@ -81,10 +82,10 @@ const ready = new Promise(resolve => table.on("tableBuilt",resolve));
 table.on("cellEdited", cell => {
   const data = cell.getRow().getData(), field=cell.getField(), base=rows.get(data.id);
   if (!editableFields.includes(field) || !base) return;
-  let item = pending.get(data.id) || {base:structuredClone(base), changes:{}, mutation:crypto.randomUUID()};
+  let item = pending.get(data.id) || {base:structuredClone(base), changes:{}, mutation:newRequestId()};
   const value = cell.getValue();
   if (normalize(field,value) === normalize(field,item.base[field])) delete item.changes[field]; else item.changes[field]=value;
-  item.mutation=crypto.randomUUID(); item.error=null;
+  item.mutation=newRequestId(); item.error=null;
   if (Object.keys(item.changes).length) pending.set(data.id,item); else pending.delete(data.id);
   refreshRows(); status();
 });
@@ -186,10 +187,10 @@ function openConflict(id) {
   $("#conflict-dialog").showModal();
 }
 $("#conflict-discard").onclick=async()=>{pending.delete(conflictId);$("#conflict-dialog").close();await load().catch(showError);};
-$("#conflict-reapply").onclick=async()=>{const item=pending.get(conflictId);item.base=structuredClone(item.server);item.error=null;item.uncertain=false;item.mutation=crypto.randomUUID();await table.updateData([{...item.base,...item.changes}]);$("#conflict-dialog").close();refreshRows();status();};
+$("#conflict-reapply").onclick=async()=>{const item=pending.get(conflictId);item.base=structuredClone(item.server);item.error=null;item.uncertain=false;item.mutation=newRequestId();await table.updateData([{...item.base,...item.changes}]);$("#conflict-dialog").close();refreshRows();status();};
 $("#bulk").onclick=()=>guarded(()=>{
   const ids=table.getSelectedData().map(row=>row.id);if(!ids.length){notice("현재 페이지에서 고객을 선택해 주세요.");return;}
-  bulkBody={customer_ids:ids,site_id:state.site,idempotency_key:crypto.randomUUID()};
+  bulkBody={customer_ids:ids,site_id:state.site,idempotency_key:newRequestId()};
   $("#bulk-summary").textContent=trash?`현재 페이지에서 선택한 ${ids.length}건을 복구합니다.`:`${ids.length}개의 정보를 삭제하시겠습니까?`;$("#bulk-dialog").showModal();
 }).catch(showError);
 $("#bulk-confirm").onclick=async()=>{
@@ -248,7 +249,7 @@ async function executeAssignee(value){
   catch(error){$("#assignee-dialog").close();notice(error.message);if(!assigneeOperation.value){busy=false;try{await load();}catch{}notice(error.message);}}
   finally{busy=false;status();}
 }
-if(!trash){$("#assignee-cancel").onclick=()=>$("#assignee-dialog").close();$("#assignee-confirm").onclick=()=>executeAssignee({endpoint:`/api/customers/${assigneeRow.id}/assignee`,body:{site_id:state.site,employee_id:$("#assignee-target").value||null,assignment_id:assigneeRow.assignment_id,expected_version:assigneeRow.version,idempotency_key:crypto.randomUUID()}});
+if(!trash){$("#assignee-cancel").onclick=()=>$("#assignee-dialog").close();$("#assignee-confirm").onclick=()=>executeAssignee({endpoint:`/api/customers/${assigneeRow.id}/assignee`,body:{site_id:state.site,employee_id:$("#assignee-target").value||null,assignment_id:assigneeRow.assignment_id,expected_version:assigneeRow.version,idempotency_key:newRequestId()}});
   $("#assignee-retry").onclick=()=>executeAssignee();$("#assignee-discard").onclick=async()=>{assigneeOperation.clear();await load().catch(showError);notice("대기 정보를 폐기했습니다. 현재 담당자를 확인해 주세요.");};}
 await ready;
 callbacks=new CallbackAction({userId:$('#management').dataset.userId,request:actorRequest,flush:async()=>!pending.size||save(),getRow:id=>rows.get(id),refresh:load,notice,changed:status});callbacks.update();
