@@ -6,22 +6,16 @@ from apps.common.transactions import business_write
 from apps.common.validation import normalize_phone
 from apps.operations.models import OperationEvent
 from django.utils import timezone
-from apps.accounts.bootstrap import ensure_initial_admin
 
 
 class Command(BaseCommand):
-    help = "빈 DB의 최초 관리자 admin 생성. --phone/--name을 지정하면 전화번호 관리자 생성. 첫 변경 필수."
+    help = "최초 업무 관리자 생성. 초기 비밀번호 dodream, 첫 변경 필수."
 
     def add_arguments(self, parser):
         parser.add_argument("--phone")
         parser.add_argument("--name")
 
     def handle(self, *args, **options):
-        if not options["phone"] and not options["name"]:
-            created = ensure_initial_admin()
-            self.stdout.write("최초 관리자 생성 완료. 첫 로그인에서 비밀번호를 변경하세요."
-                              if created else "기존 계정이 있어 최초 관리자 생성을 생략했습니다.")
-            return
         phone = options["phone"] or input("관리자 전화번호: ")
         name = options["name"] or input("관리자 이름: ")
         try:

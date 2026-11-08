@@ -9,7 +9,6 @@ from django.core.exceptions import ValidationError
 from apps.accounts.access import AccessError, verify_actor
 from apps.accounts.forms import PasswordChangeForm
 from apps.accounts.models import LoginFailure, User
-from apps.accounts.bootstrap import BOOTSTRAP_ADMIN_ID, BOOTSTRAP_ADMIN_PASSWORD
 from apps.common.transactions import business_write, retry_transient_write
 from apps.common.validation import normalize_phone
 from apps.operations.models import OperationEvent
@@ -22,7 +21,7 @@ def attempt_login(request, phone, password):
     try:
         phone = normalize_phone(phone)
     except ValidationError:
-        phone = phone.strip()[:32]
+        phone = phone[:32]
     account_key = salted_hmac("tm.login.account", phone, algorithm="sha256").hexdigest()
     request_key = salted_hmac("tm.login.request", request.META.get("REMOTE_ADDR", "unknown"), algorithm="sha256").hexdigest()
     since = timezone.now() - timedelta(seconds=settings.LOGIN_FAILURE_WINDOW_SECONDS)
@@ -36,7 +35,7 @@ def attempt_login(request, phone, password):
         user = authenticate(request, phone_normalized=phone, password=password)
         if user is None:
             LoginFailure.objects.create(account_key=account_key, request_key=request_key)
-            return None, AccessError("INVALID_CREDENTIALS", "아이디 또는 전화번호와 비밀번호를 확인해 주세요.", 401)
+            return None, AccessError("INVALID_CREDENTIALS", "전화번호와 비밀번호를 확인해 주세요.", 401)
         LoginFailure.objects.filter(account_key=account_key).delete()
         return user, None
 
@@ -72,7 +71,7 @@ def reset_password(actor, target_id, *, idempotency_key=None):
         target = users.get(target_id)
         if target is None:
             raise AccessError("NOT_FOUND", "사용자를 찾을 수 없습니다.", 404)
-        target.set_password(BOOTSTRAP_ADMIN_PASSWORD if target.phone_normalized == BOOTSTRAP_ADMIN_ID else INITIAL_PASSWORD)
+        target.set_password(INITIAL_PASSWORD)
         target.must_change_password = True
         target.session_version += 1
         target.save(update_fields=["password", "must_change_password", "session_version", "updated_at"])

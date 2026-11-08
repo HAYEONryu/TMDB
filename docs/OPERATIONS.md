@@ -23,7 +23,7 @@ docker compose --env-file /srv/tmdb/secrets/deployment.env -f deploy/compose.pro
 
 1. 동일 소스의 전체 테스트·92문항 결과·운영 사전 검사를 확인한다. 미검증 항목을 숨기지 않는다.
 2. 배포 직전 암호화 백업의 성공 종료·외부 전달·복구용 키 보관을 확인한다.
-3. 검증한 불변 이미지로 DB 준비 → migration → `ensure_initial_admin` → 웹/예약 프로세스를 순서대로 실행한다. 계정이 없는 DB에만 `admin` / `admin123`을 생성하며 첫 비밀번호 변경이 필수다. 새 앱 이미지의 웹 entrypoint도 같은 명령을 호출하지만 migration/flush/기존 비밀번호 초기화를 수행하지 않는다. 운영에서 가상 고객·직원 seed를 사용하지 않는다.
+3. 검증한 불변 이미지로 DB 준비 → migration → 최초 관리자 생성 → 웹/예약 프로세스를 순서대로 실행한다. 운영에서 seed를 사용하지 않는다.
 4. 프록시를 열고 실제 도메인의 인증서/HTTP 리다이렉트/Secure cookie/CSRF·정적 파일/로그인/역할·조회·저장을 확인한다. healthz는 DB 연결도 검사한다. 웹·DB 포트를 외부에서 직접 열지 않는다.
 5. 실패 시 이전 이미지로 복귀한다. DB migration 되돌리기는 데이터/인덱스 영향과 호환성을 따로 판단한다. 복원을 무조건 실행하거나 기존 DB를 자동 덮어쓰지 않는다.
 

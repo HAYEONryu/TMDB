@@ -5,7 +5,7 @@ const reset=new PendingOperation("user-reset",userId,/^\/api\/users\/[0-9a-f-]+\
 let busy=true,leaving=false,page=1,lastPage=1,q="",transferPage=1,transferLast=1,records=new Map(),drafts=new Map(),saveBody=null,createBody=null,createUnknown=false,resetTarget;
 function status(){
   const locked=busy||!!saveBody||!!reset.value;
-  document.querySelectorAll("#user-rows input").forEach(input=>input.disabled=locked||input.dataset.bootstrapProtected==="true");
+  document.querySelectorAll("#user-rows input").forEach(input=>input.disabled=locked);
   document.querySelectorAll("#user-rows button").forEach(button=>button.disabled=locked);
   for(const id of ["add-user","reload-users","user-search","user-search-form button","transfer-previous","transfer-next"]){const button=$("#"+id);if(button)button.disabled=busy||!!reset.value;}
   $("#save-users").disabled=busy||!!reset.value||(!drafts.size&&!saveBody);
@@ -23,7 +23,6 @@ function render(){
     const tr=document.createElement("tr");tr.dataset.id=person.id;
     for(const [field,label,type,value] of [["name","이름","text",person.name],["phone","전화번호","tel",person.phone],["is_active","비활성화","checkbox",!person.is_active],["role","관리자","checkbox",person.role==="ADMIN"]]){
       const td=document.createElement("td"),input=document.createElement("input");input.type=type;input.setAttribute("aria-label",label);input.dataset.field=field;
-      if(person.phone==="admin"&&["phone","role"].includes(field)){input.dataset.bootstrapProtected="true";if(field==="phone"){input.type="text";input.setAttribute("aria-label","최초 관리자 아이디");}}
       if(type==="checkbox"){input.className="form-check-input";input.checked=value;}else{input.className="form-control";input.value=value;input.maxLength=field==="name"?100:20;}
       input.oninput=()=>{const changed={...person,...drafts.get(person.id)};changed[field]=type==="checkbox"?field==="role"?(input.checked?"ADMIN":"EMPLOYEE"):!input.checked:input.value;const base=records.get(person.id);if(["name","phone","is_active","role"].some(key=>changed[key]!==base[key]))drafts.set(person.id,changed);else drafts.delete(person.id);status();};td.append(input);tr.append(td);
     }

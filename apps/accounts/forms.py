@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 
 
 class LoginForm(forms.Form):
-    phone = forms.CharField(label="아이디 또는 전화번호", max_length=32, widget=forms.TextInput(attrs={"autocomplete": "username", "placeholder": "아이디 또는 010-0000-0000", "autocapitalize": "none"}))
+    phone = forms.CharField(label="전화번호", max_length=32, widget=forms.TextInput(attrs={"autocomplete": "username", "inputmode": "tel", "placeholder": "010-0000-0000"}))
     password = forms.CharField(label="비밀번호", max_length=128, strip=False, widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}))
 
 

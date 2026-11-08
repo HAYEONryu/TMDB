@@ -42,7 +42,7 @@ class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
         with ThreadPoolExecutor(max_workers=1) as pool:return pool.submit(run).result()
 
     def login(self,page,person,password=STRONG_PASSWORD):
-        page.goto(self.live_server_url+"/auth/login");page.get_by_label("아이디 또는 전화번호",exact=True).fill(person.phone_normalized);page.get_by_label("비밀번호",exact=True).fill(password);page.get_by_role("button",name="로그인",exact=True).click()
+        page.goto(self.live_server_url+"/auth/login");page.get_by_label("전화번호",exact=True).fill(person.phone_normalized);page.get_by_label("비밀번호",exact=True).fill(password);page.get_by_role("button",name="로그인",exact=True).click()
         expect(page).to_have_url(self.live_server_url+("/auth/password" if password=="dodream" else "/app/admin" if person.role=="ADMIN" else "/app/employee"))
 
     def csrf(self):return next(item["value"] for item in self.context.cookies() if item["name"]=="csrftoken")

@@ -55,7 +55,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         with ThreadPoolExecutor(max_workers=1) as pool:return pool.submit(run).result()
     def login(self,page,person):
         page.context.clear_cookies()
-        page.goto(self.live_server_url+'/auth/login');page.get_by_label('아이디 또는 전화번호',exact=True).fill(person.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.live_server_url+('/app/admin' if person.role=='ADMIN' else '/app/employee'))
+        page.goto(self.live_server_url+'/auth/login');page.get_by_label('전화번호',exact=True).fill(person.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.live_server_url+('/app/admin' if person.role=='ADMIN' else '/app/employee'))
     def open(self,page):
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3건');expect(page.locator('#employee-message')).to_be_empty()
     def cell(self,page=None,field='notes',index=0):return (page or self.page).locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').nth(index)

@@ -66,7 +66,7 @@ class P13HTTPSBrowserTests(Fixtures, StaticLiveServerTestCase):
             context=browser.new_context(**options);page=context.new_page();errors=[];external=[]
             page.on('pageerror',lambda error:errors.append(str(error)))
             page.on('request',lambda request:external.append(request.url) if urlsplit(request.url).hostname not in ['localhost','127.0.0.1'] else None)
-            page.goto(self.origin+'/auth/login');page.get_by_label('아이디 또는 전화번호',exact=True).fill(self.employee.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.origin+'/app/employee')
+            page.goto(self.origin+'/auth/login');page.get_by_label('전화번호',exact=True).fill(self.employee.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.origin+'/app/employee')
             cookies={cookie['name']:cookie for cookie in context.cookies()}
             self.assertTrue(cookies['sessionid']['secure']);self.assertTrue(cookies['sessionid']['httpOnly']);self.assertTrue(cookies['csrftoken']['secure'])
             page.goto(self.origin+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1건')

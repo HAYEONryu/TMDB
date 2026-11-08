@@ -45,7 +45,7 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
 
     def login(self,page,account):
         page.goto(self.live_server_url+"/auth/login")
-        page.get_by_label("아이디 또는 전화번호",exact=True).fill(account.phone_normalized)
+        page.get_by_label("전화번호",exact=True).fill(account.phone_normalized)
         page.get_by_label("비밀번호",exact=True).fill(STRONG_PASSWORD)
         page.get_by_role("button",name="로그인",exact=True).click()
         expect(page).to_have_url(self.live_server_url+("/app/admin" if account.role=="ADMIN" else "/app/employee"))
