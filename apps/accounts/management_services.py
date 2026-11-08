@@ -66,12 +66,26 @@ def locked_users(actor):
     return current,users
 
 
+def check_capacity(before,after):
+    """Called under the shared business lock, including batch handovers.
+
+    Existing oversized installations can still reduce their active population.
+    Inactive accounts retain their history without occupying an active slot.
+    """
+    before=list(before);after=list(after)
+    for role,limit in [(User.Role.EMPLOYEE,20),(User.Role.ADMIN,5)]:
+        count=lambda rows:sum(p['is_active'] and p['role']==role for p in rows)
+        if count(after)>limit and count(after)>count(before):
+            raise AccessError('USER_CAPACITY_LIMIT','활성 직원은 최대 20명, 활성 관리자는 최대 5명입니다.',409)
+
+
 def apply_edits(actor,users,edits):
     """Validate the final batch state before any user or assignment is changed."""
     final={uid:{"role":p.role,"is_active":p.is_active} for uid,p in users.items()}
     for uid,values in edits.items():final[uid].update(role=values["role"],is_active=values["is_active"])
     if not any(v["role"]==User.Role.ADMIN and v["is_active"] for v in final.values()):
         raise AccessError("LAST_ACTIVE_ADMIN","마지막 활성 관리자는 비활성화하거나 직원으로 변경할 수 없습니다.",409)
+    check_capacity([{'role':p.role,'is_active':p.is_active} for p in users.values()],final.values())
     phones=[values["phone_normalized"] for values in edits.values()]
     if len(phones)!=len(set(phones)):raise AccessError("DUPLICATE_PHONE","사용자 전화번호가 중복됩니다.",409)
     for uid,values in edits.items():
@@ -114,6 +128,8 @@ def create_user(actor,body):
         cached=replay(actor,"USER_CREATE",key,body_hash)
         if cached:return cached
         if any(p.phone_normalized==values["phone_normalized"] for p in users.values()):raise AccessError("DUPLICATE_PHONE","이미 사용 중인 사용자 전화번호입니다.",409)
+        current=[{'role':p.role,'is_active':p.is_active} for p in users.values()]
+        check_capacity(current,[*current,values])
         from apps.accounts.services import INITIAL_PASSWORD
         try:
             with transaction.atomic():person=User.objects.create_user(values.pop("phone_normalized"),values.pop("name"),INITIAL_PASSWORD,**values)

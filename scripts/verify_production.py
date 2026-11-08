@@ -24,12 +24,26 @@ def validate(config):
     ai_files = services['ai_worker']['env_file']
     scheduler_files = services['scheduler']['env_file']
     paths = lambda rows: [row['path'] for row in rows]
-    if len(web_files) != 2 or paths(web_files) != paths(ai_files) or paths(scheduler_files) != paths(web_files[:1]):
+    if len(web_files) != 1 or paths(web_files) != paths(ai_files) or paths(scheduler_files) != paths(web_files):
         raise ValueError('PRODUCTION_AI_FILE_SCOPE')
+    ai_paths=[]
+    for name, service in services.items():
+        mounts=[v for v in service.get('volumes',[]) if v.get('target')=='/run/ai/.env.ai']
+        if name in {'web','ai_worker'}:
+            if len(mounts)!=1 or not mounts[0].get('read_only') or service['environment'].get('AI_ENV_FILE')!='/run/ai/.env.ai':
+                raise ValueError('PRODUCTION_AI_FILE_SCOPE')
+            ai_paths.append(mounts[0]['source'])
+        elif mounts:raise ValueError('PRODUCTION_AI_FILE_SCOPE')
+        if any(k in service.get('environment',{}) for k in ['AI_API_KEY','AI_GEMINI_API_KEY']):
+            raise ValueError('PRODUCTION_INLINE_AI_SECRET')
+    if len(set(ai_paths))!=1:raise ValueError('PRODUCTION_AI_FILE_SCOPE')
     for name in ['web','scheduler','ai_worker']:
         if services[name]['environment'].get('DJANGO_SETTINGS_MODULE') != 'config.production_settings':
             raise ValueError('PRODUCTION_SETTINGS_REQUIRED')
-    files = paths(web_files) + [config['secrets']['db_password']['file']]
+    database_files=[config['secrets'][name]['file'] for name in ['db_password','app_db_password']]
+    if Path(database_files[0]).resolve()==Path(database_files[1]).resolve():
+        raise ValueError('PRODUCTION_DATABASE_SECRET_SEPARATION')
+    files = paths(web_files) + ai_paths[:1] + database_files
     for value in files:
         path = Path(value)
         if (not path.is_absolute() or path.is_symlink() or not path.is_file() or

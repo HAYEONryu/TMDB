@@ -1,4 +1,6 @@
 """Operational backup/restore and deployment checks; all data and keys are synthetic."""
+from scripts.verification_evidence import artifact_path
+
 from datetime import datetime, timedelta, timezone as dt_timezone
 import io
 import json
@@ -33,6 +35,7 @@ from apps.operations.backups import (BackupError, FileDestination, SSHDestinatio
     create_backup, destination, digest, restore_backup, tool_environment)
 from tests.helpers import TEST_HASHERS, STRONG_PASSWORD, login
 from tests.test_backup import table_snapshot
+from tests.restored_login import verify_restored_login
 from tests.test_p4 import Fixtures
 from tests.test_p9 import TEST_AI
 
@@ -133,14 +136,16 @@ class P13BackupTests(Fixtures, TransactionTestCase):
                     self.assertEqual(restored.execute("SELECT count(*) FROM ai_assistant_airequest WHERE status='UNKNOWN'").fetchone()[0], 1)
                     self.assertGreater(restored.execute('SELECT count(*) FROM ai_assistant_airesultsource WHERE previous_result_id IS NOT NULL').fetchone()[0], 0)
                     restored.execute('DELETE FROM django_session')
+                    self.assertTrue(verify_restored_login(target,self.employee,self.admin))
                     self.assertEqual(table_snapshot(source), before)
             finally:
                 maintenance.execute(sql.SQL('DROP DATABASE IF EXISTS {} WITH (FORCE)').format(sql.Identifier(target)))
         evidence = {'encryption': 'age 1.3.2', 'ciphertext_bytes': report['ciphertext_bytes'], 'all_tables_match': True,
                     'tables': before, 'populated_ai_tables': [name for name, value in before.items() if name.startswith('ai_assistant_') and value['rows']],
                     'restore_seconds': round(perf_counter() - started, 3),
+                    'restored_login_and_role_routes': True,
                     'source_unchanged_after_replica_write': True, 'offsite_verified': False, 'temporary_database_removed': True}
-        (settings.BASE_DIR / '.local/p13-encrypted-restore.json').write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
+        (artifact_path('p13-encrypted-restore.json')).write_text(json.dumps(evidence, ensure_ascii=False, indent=2))
 
     def test_tampered_or_wrong_key_never_creates_restore_database(self):
         self.customers()
@@ -251,10 +256,14 @@ class P13DeploymentTests(SimpleTestCase):
                 {'APP_DOMAIN': 'https://tm.example.com'}, {'DATABASE_URL': 'postgresql://tm:tm-local-only@localhost/tm'}]:
             self.assertNotEqual(self.production(**values).returncode, 0)
 
+    def test_production_rejects_bootstrap_database_account_with_strong_password(self):
+        self.assertNotEqual(self.production(DATABASE_URL='postgresql://tm:synthetic-strong-database-password@127.0.0.1:55432/not_accessed').returncode,0)
+
     def test_production_compose_has_only_proxy_public_ports_and_ai_file_scope(self):
         env = {**os.environ, 'APP_DOMAIN': 'tm.example.com', 'TM_APP_IMAGE': 'example/tmdb@sha256:' + 'a'*64,
                'TM_APP_ENV_FILE': '/private/tmp/p13-app.env', 'TM_AI_ENV_FILE': '/private/tmp/p13-ai.env',
-               'TM_DB_PASSWORD_FILE': '/private/tmp/p13-db-password'}
+               'TM_DB_PASSWORD_FILE': '/private/tmp/p13-db-password',
+               'TM_APP_DB_PASSWORD_FILE':'/private/tmp/p13-app-db-password'}
         result = subprocess.run([str(settings.BASE_DIR / '.local/bin/docker-compose'), '-f', 'deploy/compose.production.yaml',
             '--profile', 'ai', 'config', '--no-env-resolution', '--format', 'json'], cwd=settings.BASE_DIR, env=env,
             capture_output=True, text=True, timeout=20)
@@ -263,7 +272,10 @@ class P13DeploymentTests(SimpleTestCase):
         self.assertEqual({name for name, value in services.items() if value.get('ports')}, {'proxy'})
         for name, value in services.items():
             files = [Path(row['path']).name for row in value.get('env_file', [])]
-            self.assertEqual('p13-ai.env' in files, name in ['web', 'ai_worker'])
+            self.assertNotIn('p13-ai.env', files)
+            mounts=[v for v in value.get('volumes',[]) if v.get('target')=='/run/ai/.env.ai']
+            self.assertEqual(bool(mounts),name in ['web','ai_worker'])
+            if mounts:self.assertTrue(mounts[0]['read_only'])
         self.assertNotIn('POSTGRES_PASSWORD', services['postgres']['environment'])
 
     def test_production_caddy_adapts_https_and_overwrites_forwarded_protocol(self):
@@ -307,16 +319,22 @@ class P13DeploymentTests(SimpleTestCase):
         with tempfile.TemporaryDirectory(dir='/private/tmp') as directory:
             root=Path(directory)
             files=[]
-            for name in ['app.env','ai.env','db-password']:
+            for name in ['app.env','ai.env','db-password','app-db-password']:
                 path=root/name;path.write_text('synthetic only');path.chmod(0o600);files.append(str(path))
             env={'DJANGO_SETTINGS_MODULE':'config.production_settings'}
             pinned='example/tmdb@sha256:'+'a'*64
             config={'services':{name:{'image':pinned} for name in ['postgres','web','scheduler','ai_worker','proxy']},
-                    'secrets':{'db_password':{'file':files[2]}}}
+                    'secrets':{'db_password':{'file':files[2]},'app_db_password':{'file':files[3]}}}
             for name in ['web','ai_worker','scheduler']:
-                config['services'][name].update(environment=env,env_file=[{'path':value} for value in (files[:1] if name=='scheduler' else files[:2])])
+                config['services'][name].update(environment=env,env_file=[{'path':files[0]}])
+                if name!='scheduler':
+                    config['services'][name]['environment']={**env,'AI_ENV_FILE':'/run/ai/.env.ai'}
+                    config['services'][name]['volumes']=[{'type':'bind','source':files[1],'target':'/run/ai/.env.ai','read_only':True}]
             config['services']['proxy']['ports']=[{'published':'443'}]
             self.assertTrue(validate(config)['backend_ports_private'])
+            config['secrets']['app_db_password']['file']=files[2]
+            with self.assertRaisesRegex(ValueError,'SECRET_SEPARATION'):validate(config)
+            config['secrets']['app_db_password']['file']=files[3]
             config['services']['web']['image']='example/tmdb:latest'
             with self.assertRaisesRegex(ValueError,'DIGEST_REQUIRED'):validate(config)
             config['services']['web']['image']=pinned

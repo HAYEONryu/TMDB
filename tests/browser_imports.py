@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import os
 from pathlib import Path
 from urllib.parse import urlsplit,parse_qs
@@ -23,7 +24,7 @@ from tests.test_imports import Fixtures,workbook,row,HEADERS
 class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
     def setUp(self):
         self.prepare();self.errors=[];self.external=[]
-        self.evidence=Path(settings.BASE_DIR)/".local/qa";self.evidence.mkdir(parents=True,exist_ok=True)
+        self.evidence=artifact_path('qa');self.evidence.mkdir(parents=True,exist_ok=True)
         os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH",str(settings.BASE_DIR/".cache/ms-playwright"))
         self.playwright=sync_playwright().start();self.browser=self.playwright.chromium.launch()
         self.context=self.browser.new_context(viewport={"width":1440,"height":960},accept_downloads=True)

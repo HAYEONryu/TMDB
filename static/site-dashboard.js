@@ -3,9 +3,16 @@ import {renderDashboard} from './dashboard.js';
 const select = document.querySelector("#default-site"), button = document.querySelector("#set-default"), message = document.querySelector("#site-message");
 let version;
 let countRequest=0;
+const graphSite=document.querySelector('#graph-site');
+function syncGraphSite(){
+  if(!graphSite)return;
+  graphSite.replaceChildren(...[...select.options].map(item=>item.cloneNode(true)));
+  graphSite.value=select.value;graphSite.disabled=!select.options.length;
+}
 async function counts() {
   const request=++countRequest;
-  if(!select.value){document.querySelector("#site-counts").textContent="";return;}
+  syncGraphSite();
+  if(!select.value){document.querySelector("#site-counts").textContent="";await renderDashboard('');return;}
   try {const data=await api(`/api/sites/${select.value}/counts`);if(request===countRequest)document.querySelector("#site-counts").textContent=`전체 DB ${data.total} · 미할당 DB ${data.unassigned} · 휴지통 DB ${data.trash}`;}
   catch(error){if(request===countRequest)document.querySelector("#site-counts").textContent=error.message;}
   await renderDashboard(select.value);
@@ -20,6 +27,7 @@ async function load() {
   await counts();
 }
 select.addEventListener("change",counts);
+graphSite?.addEventListener('change',()=>{select.value=graphSite.value;counts();});
 document.querySelector('#dashboard-refresh').onclick=counts;
 button.addEventListener("click", async () => {
   button.disabled = true;

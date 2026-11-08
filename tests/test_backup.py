@@ -1,4 +1,6 @@
 """Actual dump/restore of fictitious test data into a separate disposable DB."""
+from scripts.verification_evidence import artifact_path
+
 import hashlib
 import json
 import os
@@ -23,6 +25,7 @@ from apps.customers.deletions import submit, approve
 from apps.customers.services import update_row
 from tests.helpers import login, STRONG_PASSWORD
 from tests.test_p4 import Fixtures
+from tests.restored_login import verify_restored_login
 
 
 def table_snapshot(db):
@@ -83,10 +86,12 @@ class BasicBackupRestoreTests(Fixtures, TransactionTestCase):
                         self.assertTrue(check_password(STRONG_PASSWORD, account[0]))
                         self.assertEqual(account[1:], (False, True, User.Role.EMPLOYEE))
                         self.assertEqual(replica.execute("SELECT count(*) FROM customers_customer c JOIN assignments_assignment a ON c.current_assignment_id=a.id WHERE c.id=a.customer_id AND a.ended_at IS NULL").fetchone()[0], 1)
+                        restored_login=verify_restored_login(target,self.employee,self.admin)
                         replica.execute("UPDATE customers_customer SET notes=%s WHERE id=%s", ("별도 DB만 변경한 가짜 값", second.pk))
                         self.assertEqual(table_snapshot(original), expected)
                     report = {"separate_database": True, "backup_bytes": size, "backup_mode_0600": backup.stat().st_mode & 0o777 == 0o600,
                               "restore_seconds": round(time.monotonic() - started, 3), "all_tables_match": True, "restored_password_valid": True,
+                              "restored_login_and_role_routes": restored_login,
                               "restored_assignment_relation_valid": True, "replica_write_did_not_change_source": True, "tables": expected}
             finally:
                 if created:
@@ -94,6 +99,6 @@ class BasicBackupRestoreTests(Fixtures, TransactionTestCase):
             self.assertIsNone(maintenance.execute("SELECT 1 FROM pg_database WHERE datname=%s", (target,)).fetchone())
         self.assertFalse(Path(directory).exists())
         report["temporary_database_and_dump_removed"] = True
-        path = Path(settings.BASE_DIR) / ".local/p8-restore.json"
+        path = artifact_path('p8-restore.json')
         path.parent.mkdir(exist_ok=True)
         path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

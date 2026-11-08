@@ -58,7 +58,7 @@ class AIOperatingLimitTests(Fixtures, TransactionTestCase):
         self.assertEqual(AIRequest.objects.count(), 3)
         bucket = AIQuotaBucket.objects.get()
         self.assertEqual(bucket.successful_count, 3)
-        bucket.successful_count = 29
+        bucket.successful_count = 39
         bucket.save()
         Customer.objects.filter(pk=self.customer.pk).update(version=2)
         task, _ = reserve(self.employee, self.body("CLEANUP"))
@@ -68,7 +68,7 @@ class AIOperatingLimitTests(Fixtures, TransactionTestCase):
                 reserve(self.employee, self.body(feature))
             self.assertEqual(error.exception.code, "AI_DAILY_LIMIT")
         bucket.refresh_from_db()
-        self.assertEqual((bucket.successful_count, bucket.reserved_count), (30, 0))
+        self.assertEqual((bucket.successful_count, bucket.reserved_count), (40, 0))
 
     def test_usd5_global_budget_counts_pending_reservations_and_releases_rejection(self):
         self.assertEqual(CONFIG.monthly_budget_usd, Decimal("5"))
@@ -122,8 +122,9 @@ class AIOperatingLimitTests(Fixtures, TransactionTestCase):
             self.assertEqual(self.success(task)["succeeded"], 1)
         self.assertEqual(AIRequest.objects.count(), 6)
 
-    @override_settings(TESTING=False)
     def test_production_failures_cannot_be_replaced_by_fake_success(self):
+        # Legacy OpenAI protocol regression; deployed free-only policy is tested
+        # separately with TESTING=False in test_final_integration.
         for failure in [400, 503, TimeoutError()]:
             task, _ = reserve(self.employee, self.body())
             def transport(*args):
@@ -144,7 +145,9 @@ class AIOperatingLimitTests(Fixtures, TransactionTestCase):
 
     @override_settings(TESTING=False, AI_FOUNDATION_TEST_MODE=True)
     def test_production_cannot_force_fake_adapter_even_with_test_flag(self):
-        task, _ = reserve(self.employee, self.body())
+        with self.assertRaises(AccessError) as error:
+            reserve(self.employee, self.body())
+        self.assertEqual(error.exception.code,'AI_FREE_ONLY')
         with self.assertRaises(RuntimeError):
-            FoundationFakeAdapter().execute_task(task, task.input_payload)
+            FoundationFakeAdapter().execute_task(None, {})
 

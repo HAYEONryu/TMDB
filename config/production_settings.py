@@ -12,6 +12,8 @@ if len(SECRET_KEY) < 50 or 'fake' in SECRET_KEY.lower() or len(set(SECRET_KEY)) 
     raise ImproperlyConfigured('운영 전용 무작위 DJANGO_SECRET_KEY가 필요합니다.')
 if DATABASES['default'].get('PASSWORD') in {'', 'tm-local-only', 'fake'}:
     raise ImproperlyConfigured('운영 전용 DB 자격증명이 필요합니다.')
+if DATABASES['default'].get('USER') in {'tm','postgres'}:
+    raise ImproperlyConfigured('운영 앱은 PostgreSQL 초기화 관리자와 분리한 비관리자 계정을 사용하세요.')
 ALLOWED_HOSTS = [APP_DOMAIN]
 CSRF_TRUSTED_ORIGINS = ['https://' + APP_DOMAIN]
 SESSION_COOKIE_SECURE = True

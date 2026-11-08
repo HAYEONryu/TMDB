@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json,time,resource,sys
 from contextlib import contextmanager
 from pathlib import Path
@@ -35,4 +36,4 @@ class DeletionPerformanceTests(Fixtures,TransactionTestCase):
         with patch('apps.customers.deletions.business_write',measured):result,status=hard_delete_site(self.admin,self.site.pk,{'idempotency_key':key,**proof})
         elapsed=time.monotonic()-started;peak=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/(1024**2 if sys.platform=='darwin' else 1024)
         report={'rows':10000,'site_delete_seconds':round(elapsed,3),'business_lock_hold_seconds':[round(value,3) for value in holds],'peak_process_rss_mib':round(peak,2),'criteria':{'max_seconds':30,'max_lock_seconds':10,'max_rss_mib':512}}
-        Path(settings.BASE_DIR/'.local/p7-performance.json').write_text(json.dumps(report,indent=2));print('P7_PERFORMANCE',json.dumps(report));self.assertEqual((status,result['affected_count']),(200,10000));self.assertFalse(Customer.objects.exists());self.assertFalse(Assignment.objects.exists());self.assertFalse(Callback.objects.exists());self.assertFalse(CustomerDeletionRequest.objects.exists());self.assertLess(elapsed,30);self.assertLess(max(holds),10);self.assertLess(peak,512)
+        Path(artifact_path('p7-performance.json')).write_text(json.dumps(report,indent=2));print('P7_PERFORMANCE',json.dumps(report));self.assertEqual((status,result['affected_count']),(200,10000));self.assertFalse(Customer.objects.exists());self.assertFalse(Assignment.objects.exists());self.assertFalse(Callback.objects.exists());self.assertFalse(CustomerDeletionRequest.objects.exists());self.assertLess(elapsed,30);self.assertLess(max(holds),10);self.assertLess(peak,512)

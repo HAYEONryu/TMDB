@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json,os
 from datetime import timedelta
 from pathlib import Path
@@ -25,7 +26,7 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.prepare();self.rows=self.customers(3)
         for row in self.rows:self.assign(row)
         self.admin2=user('01000000004',role='ADMIN',initial=False,name='가상관리자나');self.errors=[];self.external=[];self.requests=[]
-        self.evidence=Path(settings.BASE_DIR)/'.local/qa';self.evidence.mkdir(exist_ok=True,parents=True)
+        self.evidence=artifact_path('qa');self.evidence.mkdir(exist_ok=True,parents=True)
         os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH',str(settings.BASE_DIR/'.cache/ms-playwright'))
         self.playwright=sync_playwright().start();self.browser=self.playwright.chromium.launch();self.context=self.browser.new_context(viewport={'width':1440,'height':960});self.watch(self.context);self.page=self.context.new_page();self.login(self.page,self.employee)
     def watch(self,context):

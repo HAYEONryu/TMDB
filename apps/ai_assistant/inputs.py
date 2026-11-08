@@ -2,7 +2,9 @@
 import hashlib
 import json
 import re
+from datetime import timedelta
 from django.conf import settings
+from django.utils import timezone
 from apps.accounts.models import User
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer
@@ -10,6 +12,14 @@ from apps.callbacks.models import Callback
 from .models import Feature, SiteKnowledge
 
 STAFF_FEATURES = {Feature.CLEANUP, Feature.SUMMARY, Feature.NEXT_QUESTIONS}
+
+
+def note_date_anchors(saved_at):
+    """Calendar facts from the source timestamp, never inferred from query time."""
+    if saved_at is None:return {}
+    from apps.customers.queries import KST
+    day=timezone.localtime(saved_at,KST).date()
+    return {word:(day+timedelta(days=offset)).isoformat() for word,offset in [('어제',-1),('오늘',0),('내일',1),('모레',2)]}
 
 
 def digest(value):
@@ -49,6 +59,7 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
         note_revision=ConsultationRevision.objects.filter(customer=customer,changed_fields__contains=["notes"],source__in=["MANUAL","AI_APPLIED"]).order_by("-saved_at","-pk").first()
         payload["current"]["source_id"]=str(customer.pk)
         payload["current"]["notes_saved_at"]=note_revision.saved_at.isoformat() if note_revision and note_revision.notes==customer.notes else None
+        payload["current"]["notes_date_anchors"]=note_date_anchors(note_revision.saved_at if note_revision and note_revision.notes==customer.notes else None)
         payload["current"]["information_state"]="저장된 상담내용 있음" if customer.notes else "저장된 상담내용 없음"
         from .employee_schema import INSTRUCTIONS
         payload["instructions"]=INSTRUCTIONS
@@ -60,7 +71,8 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
     for revision in rows:
         names.append(revision.customer.customer_name)
         payload["records"].append({"source_id": str(revision.pk), "saved_at": revision.saved_at.isoformat(), "source": revision.source,
-                                   "version": revision.customer_version, "notes": revision.notes, "fields": revision.after_values})
+                                   "version": revision.customer_version, "notes": revision.notes, "fields": revision.after_values,
+                                   "notes_date_anchors":note_date_anchors(revision.saved_at if revision.source in {'MANUAL','AI_APPLIED'} else None)})
         sources.append({"revision_id": revision.pk, "source_version": revision.customer_version})
     payload = sanitize(payload, names)
     return payload, sources

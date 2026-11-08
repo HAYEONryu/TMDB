@@ -200,9 +200,15 @@ class P12Tests(Fixtures, TransactionTestCase):
 
     def test_generated_secret_never_enters_ai_responses_usage_or_failure_logs(self):
         sentinel = 'TEST_ONLY_SENTINEL_' + uuid4().hex
-        config = load_ai_config('/private/tmp', role='web', environment={
-            'AI_ENV_FILE': '/private/tmp/nonexistent-' + uuid4().hex,
-            'AI_API_KEY': sentinel, 'AI_ENABLED': 'true', 'AI_PROVIDER': 'test-only',
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        directory = TemporaryDirectory(dir='/private/tmp')
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name)/'.env.ai'
+        path.write_text('AI_API_KEY='+sentinel+'\n')
+        path.chmod(0o600)
+        config = load_ai_config(directory.name, role='web', environment={
+            'AI_ENABLED': 'true', 'AI_PROVIDER': 'test-only',
             'AI_MODEL': 'test-model', 'AI_INPUT_USD_PER_MILLION': '.1', 'AI_OUTPUT_USD_PER_MILLION': '.3'})
         with override_settings(AI_CONFIG=config):
             task, _ = reserve(self.employee, self.staff_body())

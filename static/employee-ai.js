@@ -19,7 +19,7 @@ export class EmployeeAI {
   }
   canGenerate(){return !!this.availability?.generation_available&&!this.busy&&!this.pending.value&&!this.queue.paused&&!active.has(this.value?.status);}
   update(){
-    const data=this.availability;$('ai-usage').textContent=data?`AI 하루 합산 · 성공 ${data.successful_count??0}회 · 예약 ${data.reserved_count??0}회 · 남은 ${data.remaining_count??0}회 / 30회`: 'AI 사용 가능 여부 확인 중';
+    const data=this.availability,server=data?.server_limit;$('ai-usage').textContent=data?`AI 하루 합산 · 성공 ${data.successful_count??0}회 · 예약 ${data.reserved_count??0}회 · 남은 ${data.remaining_count??0}회 / ${data.daily_limit??40}회${server?` · 서버 공용 남은 ${server.remaining_count}회 / ${server.daily_limit}회 (대기·진행 포함)` :''}`: 'AI 사용 가능 여부 확인 중';
     $('ai-availability').textContent=data?data.message:'';$('ai-task-open').hidden=!this.value;$('ai-pending').hidden=!this.pending.value||this.queue.paused;
     for(const id of ['ai-retry','ai-discard'])$(id).disabled=this.busy;this.syncApply();this.changed();
   }
@@ -50,7 +50,7 @@ export class EmployeeAI {
       const data=await this.request(`/api/ai/tasks/${this.value.task_id}`);this.track(data);
       if(sequence!==this.sequence||!$('ai-dialog').open||this.queue.paused)return;
       const messages={RESERVED:'AI 작업을 접수했습니다.',RUNNING:'AI 작업을 처리하고 있습니다.',UNKNOWN:'전송 결과가 미확인 상태입니다. 자동으로 다시 생성하지 않습니다. 최대 10분 동안 확인합니다.',FAILED:'AI 작업이 실패했습니다. 횟수 예약은 반환되며 발생 비용은 별도로 기록됩니다.',CANCELLED:'권한 변경 또는 원본 삭제로 작업이 취소되었습니다.'};
-      $('ai-result-message').textContent=messages[data.status]||'';
+      $('ai-result-message').textContent=data.message||messages[data.status]||'';
       if(data.status==='SUCCEEDED'&&data.result_id)await this.loadResult(data.result_id,sequence);
       if(!active.has(data.status))await this.refreshAvailability();
     }catch(error){if(!this.accessError(error)&&!this.queue.paused)$('ai-result-message').textContent=error.message;}

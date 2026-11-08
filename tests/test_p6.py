@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime,timedelta,date,time
 from threading import Event,Barrier
@@ -264,4 +265,4 @@ class P6Tests(Fixtures,TransactionTestCase):
             self.assertEqual(restarted.returncode,0,restarted.stderr)
         job.refresh_from_db();self.assertEqual((job.status,job.attempt_count,job.affected_count),('COMPLETED',2,1));self.assertEqual(OperationEvent.objects.filter(operation=JOB).count(),1)
         evidence={'claim_process_exit_code':23,'state_after_exit':'RUNNING','final_state':job.status,'attempt_count':job.attempt_count,'affected_count':job.affected_count,'completion_events':1,'restart_processes':2,'test_database_only':True}
-        Path(settings.BASE_DIR/'.local/p6-process-restart.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')
+        Path(artifact_path('p6-process-restart.json')).write_text(json.dumps(evidence,ensure_ascii=False,indent=2),encoding='utf-8')

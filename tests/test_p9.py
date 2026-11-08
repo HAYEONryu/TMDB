@@ -99,14 +99,14 @@ class P9Tests(Fixtures, TransactionTestCase):
         for feature in ["CLEANUP","SUMMARY","NEXT_QUESTIONS"]:
             self.task(feature=feature); self.assertEqual(run_once()["succeeded"],1)
         bucket=AIQuotaBucket.objects.get(); self.assertEqual(bucket.successful_count,3)
-        bucket.successful_count=29; bucket.save()
+        bucket.successful_count=39; bucket.save()
         Customer.objects.filter(pk=self.customer.pk).update(version=2)
         task=self.task(); self.assertEqual(AIQuotaBucket.objects.get().reserved_count,1)
-        with self.assertRaises(IntegrityError), transaction.atomic(): AIQuotaBucket.objects.filter(pk=bucket.pk).update(successful_count=30)
+        with self.assertRaises(IntegrityError), transaction.atomic(): AIQuotaBucket.objects.filter(pk=bucket.pk).update(successful_count=40)
         self.assertEqual(run_once()["succeeded"],1)
         with self.assertRaises(AccessError) as limited:self.task(feature="NEXT_QUESTIONS")
         self.assertEqual(limited.exception.code,"AI_DAILY_LIMIT")
-        client=login(self.employee); data=client.get('/api/ai/availability').json(); self.assertEqual((data['successful_count'],data['remaining_count']),(30,0)); self.assertIsNotNone(data['next_available_at'])
+        client=login(self.employee); data=client.get('/api/ai/availability').json(); self.assertEqual((data['successful_count'],data['remaining_count']),(40,0)); self.assertIsNotNone(data['next_available_at'])
 
     def test_budget_reservation_failure_cost_and_unconfigured_core_independence(self):
         with override_settings(AI_CONFIG=AIConfig(**{**{f:getattr(TEST_AI,f) for f in TEST_AI.__dataclass_fields__},"monthly_budget_usd":Decimal("0.000001")})):
@@ -299,12 +299,12 @@ class P9Tests(Fixtures, TransactionTestCase):
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:return list(pool.map(run,jobs))
 
     def test_quota29_distinct_keys_race_reserves_only_one_then_success30(self):
-        AIQuotaBucket.objects.create(user=self.employee,korean_date=timezone.localdate(),successful_count=29)
+        AIQuotaBucket.objects.create(user=self.employee,korean_date=timezone.localdate(),successful_count=39)
         bodies=[self.body9(),self.body9(feature='CLEANUP')]
         values=self.race([lambda body=b: str(reserve(User.objects.get(pk=self.employee.pk),body)[0].pk) for b in bodies])
         self.assertEqual(len(set(values)&{'AI_BUSY','AI_DAILY_LIMIT'}),1)
-        bucket=AIQuotaBucket.objects.get(); self.assertEqual((bucket.successful_count,bucket.reserved_count),(29,1))
-        run_once(); bucket.refresh_from_db(); self.assertEqual((bucket.successful_count,bucket.reserved_count),(30,0))
+        bucket=AIQuotaBucket.objects.get(); self.assertEqual((bucket.successful_count,bucket.reserved_count),(39,1))
+        run_once(); bucket.refresh_from_db(); self.assertEqual((bucket.successful_count,bucket.reserved_count),(40,0))
 
     def test_concurrent_admin_slot_and_month_budget_cannot_overreserve(self):
         admin2=user('01000000004',role='ADMIN',initial=False)

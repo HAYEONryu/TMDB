@@ -73,7 +73,7 @@ function actions(cell){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...Object.keys(labels).map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions}]});
+  columns:[...['customer_name','phone_normalized','call_result','notes','callback_due_at','visit_at','contract_status','housing_status','assigned_at','assignee_name'].map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';

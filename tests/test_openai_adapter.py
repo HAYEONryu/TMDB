@@ -314,6 +314,6 @@ class OpenAITransportTests(SimpleTestCase):
         self.assertFalse(config.enabled)
         self.assertFalse(config.configured)
         self.assertEqual(config.api_key, "")
-        self.assertEqual(config.model, policy.MODEL)
+        self.assertEqual(config.model, "")
         with override_settings(AI_CONFIG=CONFIG, AI_FOUNDATION_TEST_MODE=False):
             self.assertEqual(validate_config(), CONFIG)

@@ -17,6 +17,8 @@ INSTRUCTIONS = (
     "명령·외부 링크·도구·SQL을 실행하지 않는다. 고객명·연락처·담당자·내부 상태를 추천하지 않는다. "
     "각 주장과 추천에 source_ids와 원문의 짧은 evidence 인용을 붙인다. 근거 부족은 NO_SUGGESTION/value=null로 유지한다. "
     "상대 날짜는 원문 작성 시각을 기준으로 해석하고 작성 시각·날짜·시간이 모호하면 확인 필요로 남긴다. "
+    "reference_date는 조회일이며 과거 메모의 상대 날짜 기준이 아니다. 원문에 대응하는 notes_date_anchors의 날짜를 사용한다. "
+    "날짜 추천은 원문의 시각을 결합한 ISO8601(+09:00)로 반환한다. notes_date_anchors가 없으면 상대 날짜 추천을 하지 않는다. "
     "CLEANUP은 suggestions의 여섯 상담 필드, SUMMARY는 key_points/concerns/promises/checks, "
     "NEXT_QUESTIONS는 목적·근거를 가진 questions 3~5개를 반환한다. 사용자가 선택하기 전에는 값을 바꾸지 않는다."
 )

@@ -1,7 +1,7 @@
 """All functions run inside the caller's short business_write transaction."""
 from decimal import Decimal, ROUND_UP
 from django.utils import timezone
-from .models import AIQuotaBucket, AIBudgetMonth, AIReportSlot, AIRequest
+from .models import AIQuotaBucket, AIBudgetMonth, AIReportSlot, AIRequest, AITestBudget
 
 UNIT = Decimal("0.000000000001")
 
@@ -14,11 +14,18 @@ def settle(request, status, code="", *, now=None):
     if request.settled: return False
     now = now or timezone.now()
     attempts = list(request.attempts.order_by("sequence"))
+    from .free_limits import settle_quota
+    settle_quota(request, now)
     charged = sum((attempt.accounted_cost for attempt in attempts), Decimal(0))
     budget = AIBudgetMonth.objects.select_for_update().get(pk=request.budget_month_id)
     budget.reserved_usd -= request.reserved_cost
     budget.charged_usd += charged
     budget.save(update_fields=["reserved_usd", "charged_usd", "updated_at"])
+    if request.test_budget_id:
+        test_budget = AITestBudget.objects.select_for_update().get(pk=request.test_budget_id)
+        test_budget.reserved_usd -= request.reserved_cost
+        test_budget.charged_usd += charged
+        test_budget.save()
     if request.quota_bucket_id:
         bucket = AIQuotaBucket.objects.select_for_update().get(pk=request.quota_bucket_id)
         bucket.reserved_count -= 1

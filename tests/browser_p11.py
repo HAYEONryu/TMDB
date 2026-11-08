@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json,os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -24,7 +25,7 @@ class P11BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.prepare();self.customer=self.customers()[0]
         ConsultationRevision.objects.create(customer=self.customer,actor=self.employee,saved_at=timezone.now(),customer_version=1,changed_fields=['notes'],notes='가격 비교 후 다시 확인 요청',source='MANUAL')
         self.errors=[];self.external=[];self.posts=[];self.polls=[]
-        self.evidence=Path(settings.BASE_DIR)/'.local/qa';self.evidence.mkdir(exist_ok=True,parents=True)
+        self.evidence=artifact_path('qa');self.evidence.mkdir(exist_ok=True,parents=True)
         os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH',str(settings.BASE_DIR/'.cache/ms-playwright'))
         self.pw=sync_playwright().start();self.browser=self.pw.chromium.launch();self.context=self.browser.new_context(viewport={'width':1440,'height':960});self.watch(self.context);self.page=self.context.new_page();self.login(self.page,self.admin);self.page.goto(self.live_server_url+'/app/admin/ai');expect(self.page.locator('#report-message')).to_contain_text('테스트 전용')
     def watch(self,context):
@@ -62,6 +63,12 @@ class P11BrowserTests(Fixtures,StaticLiveServerTestCase):
     def staff(self):
         context=self.browser.new_context(viewport={'width':390,'height':844});self.watch(context);page=context.new_page();self.login(page,self.employee);page.goto(self.live_server_url+'/app/guides');return context,page
     def test_no_auto_generation_weekday_disabled_and_existing_lists(self):
+        # Verify the weekday UI on every calendar day, including a real Sunday.
+        def weekday(route):
+            response=route.fetch();data=response.json();data['weekly_generation_day']=False
+            route.fulfill(response=response,json=data)
+        self.page.route('**/api/ai/availability',weekday)
+        self.page.reload()
         expect(self.page.locator('#report-generate')).to_be_disabled();expect(self.page.locator('#report-rule')).to_contain_text('일요일')
         self.page.locator('#report-refresh').click();self.page.locator('#report-type').select_option('EMPLOYEE_COACHING');expect(self.page.locator('#report-generate')).to_be_enabled()
         self.assertEqual(self.db(lambda:AIRequest.objects.count()),0);self.assertEqual(self.posts,[])

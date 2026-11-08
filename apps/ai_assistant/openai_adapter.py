@@ -4,7 +4,7 @@ import json
 from django.conf import settings
 from . import openai_policy as policy
 from .openai_schema import schema, instructions
-from .worker import ProviderResponse, ProviderFailed, OutcomeUnknown
+from .worker import ProviderResponse, ProviderFailed, OutcomeUnknown, mark_transport_started
 from .inputs import STAFF_FEATURES
 
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -80,6 +80,8 @@ class OpenAIAdapter:
         }, ensure_ascii=False).encode("utf-8")
         # Conservative byte bound includes schema/instructions and framing allowance.
         if len(body) + 1024 > task.input_tokens_cap:
+            raise ProviderFailed(ProviderResponse({}))
+        if not mark_transport_started(task):
             raise ProviderFailed(ProviderResponse({}))
         try:
             status, data, request_id = (self.transport or _post)(body, config.api_key)

@@ -1,24 +1,24 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}{% if trash %}휴지통{% else %}DB 관리{% endif %} · TM 고객관리{% endblock %}
+{% block title %}{% if trash %}휴지통{% else %}DB 관리{% endif %} · 두드림 TM{% endblock %}
 {% block assets %}<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator.min.css' %}"><script src="{% static 'vendor/tabulator/tabulator.min.js' %}" defer></script><script type="module" src="{% static 'customer-grid.js' %}"></script>{% endblock %}
 {% block content %}
 <section id="management" data-trash="{{ trash|yesno:'true,false' }}" data-user-id="{{ user.pk }}">
-  <div class="d-flex flex-wrap justify-content-between gap-3 align-items-start mb-4"><div><p class="eyebrow mb-1">관리자 작업 공간</p><h1 class="h2">{% if trash %}휴지통{% else %}DB 관리{% endif %}</h1><p class="text-secondary mb-0">{% if trash %}복구하면 상담정보를 유지하고 미할당 상태로 돌아갑니다.{% else %}상담 셀을 편집한 뒤 저장해 주세요. 고객명·연락처는 수정할 수 없습니다.{% endif %}</p></div>{% if not trash %}<button id="create-site" class="btn btn-outline-primary">현장 생성</button>{% endif %}</div>
+  <div class="page-heading d-flex flex-wrap justify-content-between gap-3 align-items-start mb-4"><div><p class="eyebrow mb-1">관리자 작업 공간</p><h1 class="h2">{% if trash %}휴지통{% else %}DB 관리{% endif %}</h1><p class="text-secondary mb-0">{% if trash %}복구하면 상담 기록은 유지되고, 담당자는 미할당으로 돌아갑니다.{% else %}현장별 고객을 찾고 상담 기록을 관리하세요. 편집 후 저장을 눌러 주세요.{% endif %}</p></div>{% if not trash %}<button id="create-site" class="btn btn-outline-primary">현장 생성</button>{% endif %}</div>
   <div class="grid-toolbar card card-body mb-3"><div class="d-flex flex-wrap gap-3 align-items-end">
     <label>현장<select id="site" class="form-select mt-1"></select></label>
     <form data-async id="search-form" class="d-flex gap-2 align-items-end"><label>고객명·연락처 검색<input id="search" type="search" maxlength="200" placeholder="이름 또는 전화번호" class="form-control mt-1"></label><button class="btn btn-outline-secondary" type="submit">검색</button></form>
     <label>정렬<select id="sort" class="form-select mt-1"><option value="-created_at">최근 등록순</option><option value="customer_name">고객명순</option><option value="assignee_name">담당직원순</option><option value="callback_due_at">재콜 예정순</option><option value="visit_at">방문 예정순</option><option value="assigned_at">할당 시각순</option></select></label>
   </div><div class="d-flex flex-wrap gap-2 mt-3 align-items-center">
-    {% if not trash %}<a id="open-imports" class="btn btn-outline-primary" href="/app/admin/imports">엑셀 업로드</a>{% endif %}
-    {% if not trash %}<button id="save" class="btn btn-primary">저장</button><button id="delete-site" class="btn btn-outline-danger">현장 삭제</button>{% endif %}
-    <button id="bulk" class="btn btn-outline-secondary">{% if trash %}선택 복구{% else %}선택 휴지통 이동{% endif %}</button><button id="clear-filters" class="btn btn-link">필터 초기화</button><span id="dirty-count" class="small" role="status"></span>
+    {% if not trash %}<button id="save" class="btn btn-primary">저장</button><a id="open-imports" class="btn btn-outline-primary" href="/app/admin/imports">엑셀 업로드</a>{% endif %}
+    <button id="clear-filters" class="btn btn-link">필터 초기화</button><span id="dirty-count" class="small" role="status"></span>
+    <div class="toolbar-secondary"><button id="bulk" class="btn {% if trash %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">{% if trash %}선택 복구{% else %}선택 휴지통 이동{% endif %}</button>{% if not trash %}<button id="delete-site" class="btn btn-outline-danger">현장 삭제</button>{% endif %}</div>
   </div></div>
   <p id="message" class="grid-message" role="alert" aria-live="polite"></p>
   {% if not trash %}<div id="assignee-pending" class="card card-body border-warning mb-3" hidden><p>담당자 변경 결과를 확인하지 못했습니다. 같은 요청을 확인하세요. 대기 정보 폐기는 이미 처리된 변경을 취소하지 않습니다.</p><div class="d-flex flex-wrap gap-2"><button id="assignee-retry" class="btn btn-primary">담당 변경 결과 다시 확인</button><button id="assignee-discard" class="btn btn-outline-secondary">대기 정보 폐기</button></div></div>{% endif %}
   <div id="active-filters" class="d-flex flex-wrap gap-2 mb-2"></div>
-  <div class="d-flex flex-wrap justify-content-between gap-2 mb-2 small"><span id="counts"></span><span>열 제목의 ▾ 버튼으로 필터 · 날짜는 한국 시각</span></div>
-  <div id="customer-grid" aria-label="고객관리 표"></div>
+  <div class="table-caption d-flex flex-wrap justify-content-between gap-2 mb-2 small"><span id="counts"></span><span>{% if not trash %}고객명·연락처는 수정할 수 없습니다. · {% endif %}열 제목의 ▾ 버튼으로 필터</span></div>
+  <p class="table-scroll-hint">표를 좌우로 움직이면 다른 상담 항목과 작업 버튼을 볼 수 있어요. <span aria-hidden="true">↔</span></p><div id="customer-grid" aria-label="고객관리 표"></div>
   <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mt-3"><span id="page-info" role="status"></span><div class="d-flex gap-2 align-items-center"><label for="page-size">페이지당</label><select id="page-size" class="form-select w-auto"><option value="50">50행</option><option value="100">100행</option></select><button id="previous" class="btn btn-outline-secondary">이전</button><button id="next" class="btn btn-outline-secondary">다음</button></div></div>
 </section>
 <dialog id="site-dialog"><form data-async id="site-form"><h2 class="h5">현장 생성</h2><label class="d-block my-3">현장명<input id="site-name" maxlength="100" required></label><p id="site-error" role="alert" class="field-error"></p><div class="dialog-actions"><button type="button" data-close class="btn btn-outline-secondary">취소</button><button type="submit" class="btn btn-primary">생성</button></div></form></dialog>

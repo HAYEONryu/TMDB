@@ -1,4 +1,4 @@
 {% extends 'base.html' %}{% load static %}
-{% block title %}팀 상담 가이드 · TM 고객관리{% endblock %}
+{% block title %}팀 상담 가이드 · 두드림 TM{% endblock %}
 {% block assets %}<script type="module" src="{% static 'published-guide.js' %}"></script>{% endblock %}
 {% block content %}<h1>팀 상담 가이드</h1><p>관리자가 검토하고 게시한 현장별 상담 안내입니다.</p><label for="published-site" class="form-label">현장</label><select id="published-site" class="form-select mb-3"></select><button id="published-refresh" class="btn btn-outline-secondary mb-3">최신 게시본 조회</button><div id="published-message" role="status" class="alert alert-secondary"></div><article id="published-body" class="card card-body" style="white-space:pre-wrap;overflow-wrap:anywhere"></article>{% endblock %}

@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import os
 from datetime import datetime,time,timedelta
 from pathlib import Path
@@ -27,7 +28,7 @@ class P6BrowserTests(Fixtures,StaticLiveServerTestCase):
         Assignment.objects.filter(pk=self.rows[0].current_assignment_id).update(assigned_at=timezone.now()-timedelta(days=1))
         self.callback=Callback.objects.create(customer=self.rows[0],due_at=timezone.now()-timedelta(hours=1),created_by=self.employee,updated_by=self.employee)
         self.errors=[];self.external=[];self.sent=[];self.completions=[]
-        self.evidence=Path(settings.BASE_DIR)/'.local/qa';self.evidence.mkdir(exist_ok=True,parents=True)
+        self.evidence=artifact_path('qa');self.evidence.mkdir(exist_ok=True,parents=True)
         os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH',str(settings.BASE_DIR/'.cache/ms-playwright'))
         self.playwright=sync_playwright().start();self.browser=self.playwright.chromium.launch();self.context=self.browser.new_context(viewport={'width':1440,'height':960})
         self.context.on('page',lambda page:page.on('pageerror',lambda error:self.errors.append(str(error))))

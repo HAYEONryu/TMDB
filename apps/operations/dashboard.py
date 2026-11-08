@@ -37,7 +37,13 @@ def employee_counts(person,site_id,start,end,now):
 def dashboard(request):
     optional_queue_identity(request)
     actor_identity(request)
-    if set(request.GET)-{'site_id'}:raise AccessError('VALIDATION_ERROR','현장만 선택해 주세요.',422)
+    if set(request.GET)-{'site_id','result_period'} or any(len(request.GET.getlist(key))!=1 for key in request.GET):
+        raise AccessError('VALIDATION_ERROR','현장과 상담결과 기간을 확인해 주세요.',422)
+    if 'result_period' in request.GET and request.user.role!=User.Role.ADMIN:
+        raise AccessError('FORBIDDEN','팀장 통계는 관리자만 확인할 수 있습니다.',403)
+    result_period=request.GET.get('result_period','all')
+    if result_period not in {'all','week','today'}:
+        raise AccessError('VALIDATION_ERROR','상담결과 기간을 확인해 주세요.',422)
     selected=request.GET.get('site_id')
     # All metrics in one read snapshot, without the business write lock.
     with transaction.atomic():
@@ -53,5 +59,7 @@ def dashboard(request):
             query=Customer.objects.filter(site_id=site_id)
             data['counts']=query.aggregate(total=Count('pk',filter=Q(deleted_at=None)),unassigned=Count('pk',filter=Q(deleted_at=None,current_assignment=None)),trash=Count('pk',filter=Q(deleted_at__isnull=False)))
             data['transfer_needed']=query.filter(deleted_at=None,current_assignment__employee__is_active=False,current_assignment__first_activity_at__isnull=False).count()
+            from .dashboard_reports import manager_report
+            data['manager']=manager_report(site_id,now,result_period)
         else:data['employee']=employee_counts(request.user,site_id,start,end,now)
     return JsonResponse(data)

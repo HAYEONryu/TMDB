@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json,resource,time
 from contextlib import contextmanager
 from pathlib import Path
@@ -32,4 +33,4 @@ class ReportPerformanceTests(Fixtures,TransactionTestCase):
         elapsed=time.monotonic()-started;rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024/1024;stats=task.report_snapshot.data['statistics'];sample=task.report_snapshot.data['sampling'];size=len(json.dumps(task.input_payload,ensure_ascii=False).encode())
         self.assertEqual(stats['changed_customers'],10000);self.assertEqual(sample['total_note_groups'],10000);self.assertGreater(sample['omitted_groups'],9900);self.assertLessEqual(size,12000);self.assertEqual(AIResultSource.objects.filter(result=task.result).count(),20000)
         evidence={'rows':10000,'report_seconds':round(elapsed,3),'peak_process_rss_mib':round(rss,2),'business_lock_hold_seconds':[round(v,3) for v in locks],'provider_input_bytes':size,'sampling':sample,'criteria':{'max_seconds':30,'max_peak_rss_mib':512,'max_lock_hold_seconds':10}}
-        Path(settings.BASE_DIR/'.local/p11-performance.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2));print('P11_PERFORMANCE',json.dumps(evidence));self.assertLess(elapsed,30);self.assertLess(rss,512);self.assertLess(max(locks),10)
+        Path(artifact_path('p11-performance.json')).write_text(json.dumps(evidence,ensure_ascii=False,indent=2));print('P11_PERFORMANCE',json.dumps(evidence));self.assertLess(elapsed,30);self.assertLess(rss,512);self.assertLess(max(locks),10)

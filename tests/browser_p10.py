@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json,os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -24,7 +25,7 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.prepare();self.rows=self.customers(3)
         for row in self.rows:row.notes='가짜 최초 상담';row.save();self.assign(row)
         self.errors=[];self.external=[];self.posts=[];self.gets=[]
-        self.evidence=Path(settings.BASE_DIR)/'.local/qa';self.evidence.mkdir(exist_ok=True,parents=True)
+        self.evidence=artifact_path('qa');self.evidence.mkdir(exist_ok=True,parents=True)
         os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH',str(settings.BASE_DIR/'.cache/ms-playwright'))
         self.playwright=sync_playwright().start();self.browser=self.playwright.chromium.launch();self.context=self.browser.new_context(viewport={'width':1440,'height':960});self.watch(self.context);self.page=self.context.new_page();self.login();self.open()
     def watch(self,context):

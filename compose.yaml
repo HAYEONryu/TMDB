@@ -15,8 +15,15 @@ services:
   web:
     build: .
     image: tm-customer-manager:v2-p1
-    env_file: [.env, .env.ai]
+    env_file: .env
+    volumes:
+      - type: bind
+        source: ./.env.ai
+        target: /run/ai/.env.ai
+        read_only: true
+        bind: {create_host_path: false}
     environment:
+      AI_ENV_FILE: /run/ai/.env.ai
       DATABASE_URL: postgresql://tm:tm-local-only@postgres:5432/tm_dev
     ports:
       - "127.0.0.1:8000:8000"
@@ -50,8 +57,15 @@ services:
     image: tm-customer-manager:v2-p1
     build: .
     profiles: [ai]
-    env_file: [.env, .env.ai]
+    env_file: .env
+    volumes:
+      - type: bind
+        source: ./.env.ai
+        target: /run/ai/.env.ai
+        read_only: true
+        bind: {create_host_path: false}
     environment:
+      AI_ENV_FILE: /run/ai/.env.ai
       DATABASE_URL: postgresql://tm:tm-local-only@postgres:5432/tm_dev
     command: [python, manage.py, run_ai_worker]
     depends_on:

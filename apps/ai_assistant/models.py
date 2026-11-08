@@ -21,7 +21,23 @@ class AIQuotaBucket(TimestampedModel):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "korean_date"], name="ai_quota_user_date_unique"),
-                       models.CheckConstraint(condition=Q(successful_count__lte=30-F("reserved_count")), name="ai_quota_total_max30")]
+                       models.CheckConstraint(condition=Q(successful_count__lte=40-F("reserved_count")), name="ai_quota_total_max40")]
+
+
+class AIProviderQuota(TimestampedModel):
+    """One shared throttle per Google project/model, independent of key rotation."""
+    scope_key = models.CharField(max_length=64, unique=True)
+    cooldown_until = models.DateTimeField(null=True)
+
+
+class AIProviderQuotaDay(TimestampedModel):
+    quota = models.ForeignKey(AIProviderQuota, on_delete=models.PROTECT)
+    provider_date = models.DateField()
+    reserved_count = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["quota", "provider_date"], name="ai_provider_day_unique")]
 
 
 class AIBudgetMonth(TimestampedModel):
@@ -31,6 +47,15 @@ class AIBudgetMonth(TimestampedModel):
 
     class Meta:
         constraints = [models.CheckConstraint(condition=Q(reserved_usd__gte=0, charged_usd__gte=0), name="ai_budget_nonnegative")]
+
+
+class AITestBudget(TimestampedModel):
+    scope_key = models.CharField(max_length=64, unique=True)
+    reserved_usd = models.DecimalField(max_digits=24, decimal_places=12, default=0)
+    charged_usd = models.DecimalField(max_digits=24, decimal_places=12, default=0)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(reserved_usd__gte=0, charged_usd__gte=0), name="ai_test_budget_nonnegative")]
 
 
 class AIRequest(TimestampedModel):
@@ -65,6 +90,10 @@ class AIRequest(TimestampedModel):
     provider = models.CharField(max_length=64)
     model_version = models.CharField(max_length=128)
     reasoning_effort = models.CharField(max_length=8, blank=True, default="")
+    usage_tier = models.CharField(max_length=8, default="paid")
+    provider_day = models.ForeignKey(AIProviderQuotaDay, null=True, on_delete=models.PROTECT)
+    provider_sent_at = models.DateTimeField(null=True)
+    dispatch_after = models.DateTimeField(null=True)
     pricing_version = models.CharField(max_length=64)
     input_price = models.DecimalField(max_digits=20, decimal_places=10)
     output_price = models.DecimalField(max_digits=20, decimal_places=10)
@@ -72,6 +101,7 @@ class AIRequest(TimestampedModel):
     output_tokens_cap = models.PositiveIntegerField()
     reasoning_tokens_cap = models.PositiveIntegerField()
     budget_month = models.ForeignKey(AIBudgetMonth, on_delete=models.PROTECT)
+    test_budget = models.ForeignKey(AITestBudget, null=True, on_delete=models.PROTECT)
     quota_bucket = models.ForeignKey(AIQuotaBucket, null=True, on_delete=models.PROTECT)
     reserved_cost = models.DecimalField(max_digits=24, decimal_places=12)
     charged_cost = models.DecimalField(max_digits=24, decimal_places=12, default=0)
@@ -116,6 +146,15 @@ class AIResult(TimestampedModel):
                        models.CheckConstraint(condition=Q(guide_reviewed_version__isnull=True)|Q(guide_reviewed_version=F("guide_version"),reviewed_by__isnull=False,reviewed_at__isnull=False), name="ai_guide_review_version_matches")]
 
 
+class AIProviderDispatch(TimestampedModel):
+    """Aggregate throttle receipt survives hard deletion; no customer content."""
+    quota = models.ForeignKey(AIProviderQuota, on_delete=models.PROTECT)
+    request = models.OneToOneField(AIRequest, null=True, on_delete=models.SET_NULL, related_name="provider_dispatch")
+    sent_at = models.DateTimeField(db_index=True)
+    window_ends_at = models.DateTimeField(null=True)
+    input_tokens = models.PositiveIntegerField()
+
+
 class AIRequestKey(TimestampedModel):
     """Also binds new keys that return a cached/shared task, without copying input."""
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -155,6 +194,7 @@ class AIUsageAttempt(TimestampedModel):
     currency = models.CharField(max_length=3, default="USD")
     pricing_version = models.CharField(max_length=64)
     finished_at = models.DateTimeField(null=True)
+    transport_started_at = models.DateTimeField(null=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["request","sequence"], name="ai_attempt_sequence_unique"),

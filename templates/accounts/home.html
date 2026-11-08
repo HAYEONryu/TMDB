@@ -1,23 +1,55 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block assets %}{% if user.role == 'ADMIN' %}<script type="module" src="{% static 'site-dashboard.js' %}"></script><script type="module" src="{% static 'deletion-notifications.js' %}"></script>{% else %}<script type="module" src="{% static 'employee-dashboard.js' %}"></script>{% endif %}{% endblock %}
-{% block title %}{{ role_title }} · TM 고객관리{% endblock %}
+{% block title %}{{ role_title }} · 두드림 TM{% endblock %}
 {% block content %}
-{% if user.role == 'ADMIN' %}<section id="deletion-notifications" class="card card-body mb-4"><div class="d-flex flex-wrap gap-3 justify-content-between"><h2 id="delete-request-count" class="h5">고객정보 삭제 요청 확인 중</h2><button id="requests-refresh" class="btn btn-sm btn-outline-primary">삭제 요청 새로고침</button></div><p class="small text-secondary">선택 현장과 관계없이 전체 현장의 미처리 요청입니다. 승인해야 휴지통으로 이동합니다.</p><p id="notification-message" role="alert"></p><div id="approval-pending" class="mb-3" hidden><p>승인 결과를 확인하지 못했습니다. 같은 요청을 확인하세요.</p><button id="approval-retry" class="btn btn-primary">승인 결과 다시 확인</button><button id="approval-discard" class="btn btn-outline-secondary">승인 대기 정보 폐기</button></div><div class="table-responsive"><table class="table"><thead><tr><th>현장명</th><th>고객명</th><th>연락처</th><th>요청 직원</th><th>요청 시각</th><th>처리</th></tr></thead><tbody id="delete-request-rows"></tbody></table></div><div class="d-flex flex-wrap align-items-center gap-2"><span id="delete-request-page"></span><button id="requests-previous" class="btn btn-sm btn-outline-secondary">이전 요청</button><button id="requests-next" class="btn btn-sm btn-outline-secondary">다음 요청</button></div></section>{% endif %}
-<p class="eyebrow">{{ role_title }} 작업 공간</p>
-<h1 class="h2 mb-3">{{ user.name }}님, 안녕하세요.</h1>
-<div class="card border-0 shadow-sm"><div class="card-body p-4">
-  <h2 class="h5">계정 준비가 완료되었습니다.</h2>
-  <p class="text-secondary">로그인과 비밀번호 변경이 완료되었습니다.{% if user.role != 'ADMIN' %} 오늘 할 일 또는 나의 DB에서 상담정보를 편집하세요. 변경은 자동 저장되며, 이동할 때 먼저 저장을 확인합니다.{% endif %}</p>
-  <p class="small text-secondary">AI 상담 도구는 준비 중입니다.</p>
-  <a class="btn btn-outline-primary" href="/auth/password">비밀번호 변경</a>
-  {% if user.role != 'ADMIN' %}<a class="btn btn-primary" href="/app/employee/today">오늘 할 일 열기</a><a class="btn btn-outline-primary" href="/app/employee/mine">나의 DB 열기</a>{% endif %}
-</div></div>
-{% if user.role == 'ADMIN' %}<section class="card mt-4"><div class="card-body p-4">
-  <h2 class="h5">전역 기본 현장</h2><p class="text-secondary">새 화면에 처음 표시할 현장입니다. 이미 열린 화면의 선택은 유지됩니다.</p>
-  <div id="site-dashboard" class="d-flex flex-wrap gap-2 align-items-end"><label>현장<select id="default-site" class="form-select mt-2"></select></label><button id="set-default" class="btn btn-primary">기본 현장 설정</button><a class="btn btn-outline-primary" href="/app/admin/customers">DB 관리 열기</a></div>
-  <p id="site-message" class="mt-3 mb-0" role="status"></p>
-  <p id="site-counts" class="mt-3 mb-0" role="status"></p>
-</div></section>{% endif %}
-<section class="card mt-4"><div class="card-body p-4"><div class="d-flex flex-wrap gap-3 justify-content-between align-items-end"><div><h2 class="h5">오늘의 업무 현황</h2>{% if user.role != 'ADMIN' %}<label>현장<select id="employee-dashboard-site" class="form-select mt-1"></select></label>{% endif %}</div><button id="dashboard-refresh" class="btn btn-outline-primary">통계 새로고침</button></div><p id="dashboard-message" class="mt-3 text-secondary" role="status"></p><div id="dashboard-statistics" class="table-responsive"></div><p class="small text-secondary mb-0">할당은 한국 날짜의 고유 고객 수입니다. 작업 횟수와 구분하며, 통계는 화면 진입·현장 선택·새로고침 때 조회합니다.</p>{% if user.role == 'ADMIN' %}<a class="btn btn-link mt-2" href="/app/admin/users">이관 필요 목록 열기</a>{% endif %}</div></section>
+<div class="dashboard-home">
+  <section class="welcome-heading">
+    <div><p class="eyebrow">{{ role_title }} 작업 공간</p><h1>{{ user.name }}님, 안녕하세요.</h1><p class="text-secondary mb-0">{% if user.role == 'ADMIN' %}현장의 흐름을 살피고, 팀의 하루를 준비하세요.{% else %}오늘의 고객과 약속을 확인하고, 상담을 이어가세요.{% endif %}</p></div>
+    <span class="today-label"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#calendar"></use></svg>{% now "Y년 n월 j일" %}</span>
+  </section>
+
+  <section class="context-bar card" aria-label="현장 선택">
+    {% if user.role == 'ADMIN' %}
+    <div id="site-dashboard" class="context-controls"><label>현장<select id="default-site" class="form-select mt-1"></select></label><div class="context-copy"><strong>이 현장의 업무를 한눈에</strong><span>현장을 선택하면 아래 현황이 바뀝니다.</span></div><button id="set-default" class="btn btn-outline-secondary">기본 현장 설정</button></div>
+    <p id="site-message" class="context-message" role="status"></p><p id="site-counts" class="context-message" role="status"></p>
+    {% else %}
+    <div class="context-controls"><label>현장<select id="employee-dashboard-site" class="form-select mt-1"></select></label><div class="context-copy"><strong>나에게 배정된 고객 현황</strong><span>현장을 선택하고 오늘의 업무를 확인하세요.</span></div></div>
+    {% endif %}
+  </section>
+
+  <div id="dashboard-summary" aria-label="주요 업무 현황" aria-live="polite"><p class="summary-loading">업무 현황을 불러오고 있습니다…</p></div>
+
+  {% if user.role == 'ADMIN' %}
+  <div id="manager-dashboard" aria-label="팀장 상담 통계">
+    <div class="manager-charts">
+      <section class="card chart-card"><div class="chart-heading"><div><h2>최근 7일 직원별 상담 고객 수</h2><p id="staff-record-range">업무 현황을 불러오고 있습니다.</p></div></div><div id="staff-record-chart" class="chart-scroll" tabindex="0" role="region" aria-label="직원별 상담 고객 수 그래프"></div><p class="chart-footnote">가로축은 직원, 세로축은 상담 내용을 변경해 저장한 고객 수입니다. 같은 고객의 비고·재콜을 여러 번 저장해도 최근 7일 동안 직원별 1명으로 집계하며 시스템 기록은 제외합니다. 좌우로 이동해 전체 직원을 확인할 수 있습니다.</p></section>
+      <section class="card chart-card"><div class="chart-heading result-heading"><div><h2>상담결과 비율</h2><p>선택한 현장 · 고객별 집계</p></div><div class="chart-filters"><label>현장별로 선택<select id="graph-site" class="form-select mt-1" aria-label="그래프 현장 선택" disabled></select></label><label>조회 기간<select id="result-period" class="form-select mt-1" aria-label="상담결과 조회 기간"><option value="all">전체 기간</option><option value="week">금주</option><option value="today">오늘</option></select></label></div></div><div class="distribution-body"><div id="call-result-chart"></div><ul id="call-result-legend" class="result-legend" aria-label="상담결과별 고객 수"></ul></div><p id="result-basis" class="chart-footnote"></p></section>
+    </div>
+    <section class="card staff-workspace"><div class="section-heading"><div class="section-title"><span class="section-marker" aria-hidden="true"></span><h2>직원별 DB 현황</h2></div><span>분배부터 영업 진행까지 한눈에</span></div>
+      <div class="staff-switch" role="group" aria-label="직원별 DB 보기"><button type="button" data-staff-view="allocation" aria-pressed="true" aria-controls="staff-allocation-panel">DB 분배 수량</button><button type="button" data-staff-view="progress" aria-pressed="false" aria-controls="staff-progress-panel">영업 진행 현황</button></div>
+      <div id="staff-allocation-panel"><div id="staff-allocation-table" class="table-responsive"></div><p class="staff-help">분배 DB는 직원별 중복 고객을 제외합니다. 배정 횟수는 재분배를 포함한 이력 수이며, 현재 보유량과 다를 수 있습니다.</p></div>
+      <div id="staff-progress-panel" hidden><div id="staff-progress-table" class="table-responsive"></div><p class="staff-help">진행은 현재 할당에서 상담 변경을 한 번 이상 저장한 고객입니다. 현재 보유 고객의 상담결과·계약 상태를 함께 표시합니다.</p></div>
+    </section>
+  </div>
+  {% endif %}
+
+  <section class="quick-work" aria-labelledby="quick-title"><div class="section-heading"><h2 id="quick-title">자주 쓰는 업무</h2><span>필요한 업무로 바로 이동하세요.</span></div><div class="quick-links">
+    {% if user.role == 'ADMIN' %}
+    <a href="/app/admin/customers" class="quick-link" aria-label="DB 관리 열기"><span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#customers"></use></svg></span><span><strong>고객정보 관리</strong><small>현장별 고객과 상담 기록을 확인해요.</small></span><span class="quick-arrow" aria-hidden="true">↗</span></a>
+    <a href="/app/admin/assignments" class="quick-link" aria-label="DB 분배·회수 열기"><span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#distribute"></use></svg></span><span><strong>직원에게 고객 분배</strong><small>직원별로 배정할 수량을 정해요.</small></span><span class="quick-arrow" aria-hidden="true">↗</span></a>
+    <a href="/app/admin/imports" class="quick-link" aria-label="엑셀 업로드 열기"><span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#upload"></use></svg></span><span><strong>엑셀로 고객 등록</strong><small>중복을 확인하고 새 고객을 등록해요.</small></span><span class="quick-arrow" aria-hidden="true">↗</span></a>
+    {% else %}
+    <a href="/app/employee/today" class="quick-link" aria-label="오늘 할 일 열기"><span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#calendar"></use></svg></span><span><strong>오늘 할 일</strong><small>오늘의 재콜과 새로 받은 고객을 확인해요.</small></span><span class="quick-arrow" aria-hidden="true">↗</span></a>
+    <a href="/app/employee/mine" class="quick-link" aria-label="나의 DB 열기"><span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#customers"></use></svg></span><span><strong>나의 고객정보</strong><small>담당 고객의 상담을 기록하고 관리해요.</small></span><span class="quick-arrow" aria-hidden="true">↗</span></a>
+    <a href="/app/guides" class="quick-link" aria-label="팀 상담 가이드 열기"><span class="quick-icon"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#book"></use></svg></span><span><strong>팀 상담 가이드</strong><small>팀에서 함께 쓰는 상담 안내를 확인해요.</small></span><span class="quick-arrow" aria-hidden="true">↗</span></a>
+    {% endif %}
+  </div></section>
+
+  {% if user.role == 'ADMIN' %}
+  <section id="deletion-notifications" class="card card-body dashboard-section"><div class="section-heading"><div class="section-title"><span class="section-marker marker-amber" aria-hidden="true"></span><h2 id="delete-request-count" class="h5">고객정보 삭제 요청 확인 중</h2></div><button id="requests-refresh" class="btn btn-sm btn-outline-secondary">삭제 요청 새로고침</button></div><p class="small text-secondary request-description">직원이 보낸 요청을 확인해 주세요. 승인한 고객만 휴지통으로 이동합니다.</p><p id="notification-message" role="alert"></p><div id="approval-pending" class="mb-3" hidden><p>승인 결과를 확인하지 못했습니다. 같은 요청을 확인하세요.</p><button id="approval-retry" class="btn btn-primary">승인 결과 다시 확인</button><button id="approval-discard" class="btn btn-outline-secondary">승인 대기 정보 폐기</button></div><p class="request-empty"><span aria-hidden="true">✓</span> 지금은 확인할 삭제 요청이 없습니다.</p><div class="table-responsive request-table"><table class="table"><thead><tr><th>현장명</th><th>고객명</th><th>연락처</th><th>요청 직원</th><th>요청 시각</th><th>처리</th></tr></thead><tbody id="delete-request-rows"></tbody></table></div><div class="request-pagination d-flex flex-wrap align-items-center gap-2"><span id="delete-request-page"></span><button id="requests-previous" class="btn btn-sm btn-outline-secondary">이전 요청</button><button id="requests-next" class="btn btn-sm btn-outline-secondary">다음 요청</button></div></section>
+  {% endif %}
+
+  <section class="card card-body dashboard-section"><div class="section-heading"><div class="section-title"><span class="section-marker" aria-hidden="true"></span><h2 class="h5">오늘의 업무 현황</h2></div><button id="dashboard-refresh" class="btn btn-sm btn-outline-secondary">통계 새로고침</button></div><p id="dashboard-message" class="small text-secondary" role="status"></p><details class="dashboard-detail"><summary>{% if user.role == 'ADMIN' %}추가 할당 이력 보기{% else %}상세 업무 현황 보기{% endif %}</summary><div id="dashboard-statistics" class="table-responsive"></div><p class="small text-secondary mb-0">할당은 한국 날짜의 고유 고객 수입니다. 작업 횟수와 구분하며, 현장 선택이나 새로고침 때 조회합니다.</p>{% if user.role == 'ADMIN' %}<a class="subtle-link mt-3 align-self-start" href="/app/admin/users">이관 필요 목록 열기 <span aria-hidden="true">→</span></a>{% endif %}</details></section>
+</div>
 {% endblock %}

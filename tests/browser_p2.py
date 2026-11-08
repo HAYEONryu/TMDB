@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -25,7 +26,7 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         Customer.objects.bulk_create([Customer(site=self.site,customer_name=f"가상고객{i:03}",phone_normalized=f"0108000{i:04}",housing_status="자가" if i%2 else "전세") for i in range(1,66)])
         self.target=Customer.objects.get(customer_name="가상고객001")
         self.errors=[];self.external=[]
-        self.evidence=Path(settings.BASE_DIR)/".local/qa"
+        self.evidence=artifact_path('qa')
         self.evidence.mkdir(parents=True,exist_ok=True)
         os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH",str(settings.BASE_DIR/".cache/ms-playwright"))
         self.playwright=sync_playwright().start()

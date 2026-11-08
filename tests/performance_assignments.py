@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 from contextlib import contextmanager
 from pathlib import Path
 from time import perf_counter
@@ -37,6 +38,6 @@ class AssignmentPerformanceTests(Fixtures,TransactionTestCase):
             "total_seconds":round(finished-start,3),"peak_process_rss_mib":round(peak,2),"business_lock_hold_seconds":[round(n,3) for n in holds],
             "python":platform.python_version(),"platform":platform.platform(),"postgres_version":connection.pg_version,
             "criteria":{"max_total_seconds":30,"max_peak_rss_mib":512,"max_lock_hold_seconds":10}}
-        path=Path(settings.BASE_DIR)/".local/p4-performance.json";path.parent.mkdir(exist_ok=True);path.write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
+        path=artifact_path('p4-performance.json');path.parent.mkdir(exist_ok=True);path.write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
         print("P4_PERFORMANCE",json.dumps(evidence,ensure_ascii=False))
         self.assertLess(finished-start,30);self.assertLess(peak,512);self.assertLess(max(holds),10)

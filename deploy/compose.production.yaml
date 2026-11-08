@@ -5,8 +5,10 @@ services:
       POSTGRES_USER: tm
       POSTGRES_DB: tm
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
-    secrets: [db_password]
-    volumes: [postgres_data:/var/lib/postgresql/data]
+    secrets: [db_password, app_db_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-tm-app.sh:ro
     restart: unless-stopped
     healthcheck:
       test: [CMD-SHELL, pg_isready -U tm -d tm]
@@ -15,8 +17,15 @@ services:
       retries: 20
   web:
     image: ${TM_APP_IMAGE:?Set an immutable application image digest}
-    env_file: ["${TM_APP_ENV_FILE:?Set the protected application env path}", "${TM_AI_ENV_FILE:?Set the protected AI env path}"]
+    env_file: "${TM_APP_ENV_FILE:?Set the protected application env path}"
+    volumes:
+      - type: bind
+        source: ${TM_AI_ENV_FILE:?Set the protected AI file path}
+        target: /run/ai/.env.ai
+        read_only: true
+        bind: {create_host_path: false}
     environment:
+      AI_ENV_FILE: /run/ai/.env.ai
       DJANGO_SETTINGS_MODULE: config.production_settings
       APP_DOMAIN: ${APP_DOMAIN:?Set the HTTPS domain}
     restart: unless-stopped
@@ -42,8 +51,15 @@ services:
   ai_worker:
     image: ${TM_APP_IMAGE:?Set an immutable application image digest}
     profiles: [ai]
-    env_file: ["${TM_APP_ENV_FILE:?Set the protected application env path}", "${TM_AI_ENV_FILE:?Set the protected AI env path}"]
+    env_file: "${TM_APP_ENV_FILE:?Set the protected application env path}"
+    volumes:
+      - type: bind
+        source: ${TM_AI_ENV_FILE:?Set the protected AI file path}
+        target: /run/ai/.env.ai
+        read_only: true
+        bind: {create_host_path: false}
     environment:
+      AI_ENV_FILE: /run/ai/.env.ai
       DJANGO_SETTINGS_MODULE: config.production_settings
       APP_DOMAIN: ${APP_DOMAIN:?Set the HTTPS domain}
     command: [python, manage.py, run_ai_worker]
@@ -64,6 +80,8 @@ services:
 secrets:
   db_password:
     file: ${TM_DB_PASSWORD_FILE:?Set the protected DB password file}
+  app_db_password:
+    file: ${TM_APP_DB_PASSWORD_FILE:?Set the separate application DB password file}
 volumes:
   postgres_data:
   caddy_data:

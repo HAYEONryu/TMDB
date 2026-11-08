@@ -1,20 +1,21 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %} · TM 고객관리{% endblock %}
+{% block title %}{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %} · 두드림 TM{% endblock %}
 {% block assets %}<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator.min.css' %}"><script src="{% static 'vendor/tabulator/tabulator.min.js' %}" defer></script><script type="module" src="{% static 'employee-grid.js' %}"></script>{% endblock %}
 {% block content %}
 <section id="employee" data-view="{{ employee_view }}" data-user-id="{{ user.pk }}">
-  <p class="eyebrow">직원 작업 공간</p><h1 class="h2">{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %}</h1>
-  <p class="text-secondary">상담 셀을 더블클릭해 편집하세요. 첫 변경부터 약 90초 후 자동 저장합니다. 담당직원·고객명·연락처·할당 시각은 수정할 수 없습니다.</p>
+  <div class="page-heading"><p class="eyebrow">직원 작업 공간</p><h1 class="h2">{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %}</h1>
+  <p class="text-secondary">{% if employee_view == 'today' %}연락할 고객과 새로 받은 고객을 순서대로 확인하세요.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div>
+  <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>상담 칸을 두 번 클릭하면 편집할 수 있어요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요.</span></p>
   <div class="grid-toolbar card card-body mb-3"><div class="d-flex flex-wrap gap-3 align-items-end">
     <label>현장<select id="site" class="form-select mt-1"></select></label>
-    <form data-async id="search-form" class="d-flex gap-2 align-items-end"><label>고객명·연락처 검색<input id="search" type="search" maxlength="200" class="form-control mt-1"></label><button class="btn btn-outline-secondary" type="submit">검색</button></form>
+    <form data-async id="search-form" class="d-flex gap-2 align-items-end"><label>고객명·연락처 검색<input id="search" type="search" maxlength="200" placeholder="이름 또는 전화번호" class="form-control mt-1"></label><button class="btn btn-outline-secondary" type="submit">검색</button></form>
     <label>정렬<select id="sort" class="form-select mt-1">{% if employee_view == 'today' %}<option value="priority">기한 지난 재콜 → 오늘 재콜 → 오늘 할당</option>{% endif %}<option value="-created_at">최근 등록순</option><option value="customer_name">고객명순</option><option value="callback_due_at">재콜 예정순</option><option value="visit_at">방문 예정순</option><option value="assigned_at">할당 시각순</option></select></label>
   </div><div class="d-flex flex-wrap gap-2 mt-3 align-items-center"><button id="save-now" class="btn btn-primary">지금 저장</button><button id="reload-rows" class="btn btn-outline-secondary">새로 확인</button><button id="clear-filters" class="btn btn-link">필터 초기화</button><span id="queue-status" role="status" aria-live="polite"></span></div></div>
   <p id="employee-message" role="alert" class="grid-message"></p><p id="storage-warning" class="field-error" role="alert"></p>
   <section id="ai-toolbar" class="card card-body mb-3"><p id="ai-usage" role="status"></p><p id="ai-availability" class="small text-secondary"></p><button id="ai-task-open" class="btn btn-outline-secondary align-self-start" hidden>AI 작업 확인</button></section>
   <div id="active-filters" class="d-flex flex-wrap gap-2 mb-2"></div>
-  <div id="employee-private"><p class="small text-secondary">열 제목의 ▾ 버튼으로 필터 · 날짜는 한국 시각 · 표 안에서 복사·잘라내기·우클릭 메뉴를 제한합니다.</p><div id="employee-grid" aria-label="직원 고객관리 표"></div></div>
+  <div id="employee-private"><p class="small text-secondary">열 제목의 ▾ 버튼으로 필터 · 날짜는 한국 시각 · 표 안에서 복사·잘라내기·우클릭 메뉴를 제한합니다.</p><p class="table-scroll-hint">표를 좌우로 움직이면 다른 상담 항목과 작업 버튼을 볼 수 있어요. <span aria-hidden="true">↔</span></p><div id="employee-grid" aria-label="직원 고객관리 표"></div></div>
   <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mt-3"><span id="page-info" role="status"></span><div class="d-flex gap-2 align-items-center"><label for="page-size">페이지당</label><select id="page-size" class="form-select w-auto"><option value="50">50행</option><option value="100">100행</option></select><button id="previous" class="btn btn-outline-secondary">이전</button><button id="next" class="btn btn-outline-secondary">다음</button></div></div>
   <section id="pending-panel" class="card card-body mt-4" hidden><h2 class="h5">저장 대기 확인</h2><p class="small text-secondary">다른 페이지·현장의 대기값도 포함합니다. 서버가 저장을 확인한 요청만 제거합니다.</p><div id="pending-rows"></div></section>
 </section>

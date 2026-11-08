@@ -95,6 +95,17 @@ test('local removal failure retains queue and warns; new input during cleanup su
   q.stage(r,'notes','again');q.stage(r,'notes','');await entered.promise;q.stage(r,'notes','latest');hold.resolve();await q.disk;assert.equal(q.entries.size,1);assert.equal(q.entry(r.id).pending.notes,'latest');assert.equal(records.size,1);
 });
 
+test('a concurrent server recheck cannot recreate a discarded local record',async()=>{
+  const {q,r,records}=fixture();q.stage(r,'notes','discard this');await q.disk;
+  const entry=q.entry(r.id),entered=deferred(),release=deferred(),lateWrite=deferred();
+  const remove=q.store.remove;q.store.remove=async key=>{entered.resolve();await release.promise;return remove(key);};
+  const persist=q.persist.bind(q);q.persist=(e,removing=false)=>{const result=persist(e,removing);if(!removing)lateWrite.resolve();return result;};
+  const clearing=q.discardAll();await entered.promise;
+  const rechecking=q.reconcile([entry]);await lateWrite.promise;release.resolve();
+  await Promise.all([clearing,rechecking]);await q.disk;
+  assert.equal(q.entries.size,0);assert.equal(records.size,0);
+});
+
 test('normalization preserves notes whitespace, trims housing, interprets KST, rejects impossible dates',()=>{
   assert.equal(normalized('notes',' a\r\nb '),' a\nb ');assert.equal(normalized('housing_status',' 가상 자가 '),'가상 자가');assert.equal(normalized('visit_at','2026-11-04T09:30'),'2026-11-04T00:30:00.000Z');assert.throws(()=>normalized('visit_at','bad date'));
 });

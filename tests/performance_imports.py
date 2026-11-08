@@ -1,4 +1,6 @@
 """Explicit, isolated 10,000-row performance check; no production data."""
+from scripts.verification_evidence import artifact_path
+
 from contextlib import contextmanager
 from io import BytesIO
 import json
@@ -52,6 +54,6 @@ class ImportPerformanceTests(Fixtures,TransactionTestCase):
             "total_seconds":round(finished-started,3),"peak_process_rss_mib":round(peak,2),"business_lock_hold_seconds":[round(value,3) for value in holds],
             "python":platform.python_version(),"platform":platform.platform(),"postgres_version":connection.pg_version,
             "criteria":{"max_total_seconds":30,"max_peak_rss_mib":512,"max_lock_hold_seconds":10}}
-        target=Path(settings.BASE_DIR)/".local/p3-performance.json";target.parent.mkdir(exist_ok=True);target.write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
+        target=artifact_path('p3-performance.json');target.parent.mkdir(exist_ok=True);target.write_text(json.dumps(evidence,ensure_ascii=False,indent=2)+"\n")
         print("P3_PERFORMANCE",json.dumps(evidence,ensure_ascii=False))
         self.assertLess(finished-started,30);self.assertLess(peak,512);self.assertLess(max(holds),10)

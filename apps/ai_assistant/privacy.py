@@ -4,6 +4,7 @@ from django.db.models import Q
 from django.utils import timezone
 from .models import AIRequest, AIRequestKey, AIResult, AIResultSource, AIQuotaBucket, AIBudgetMonth, AIUsageAttempt, AIReportSlot, SiteKnowledge, AIReportSnapshot, AINoteClassification, GuidePublication
 from .ledger import settle
+from .models import AIProviderQuota, AIProviderQuotaDay, AIProviderDispatch, AITestBudget
 
 
 def invalidate_results(result_ids, *, reason="SOURCE_DELETED"):
@@ -33,7 +34,9 @@ def invalidate_results(result_ids, *, reason="SOURCE_DELETED"):
 
 
 def erase_sources(customer_ids,*,site_id=None):
-    handled = {AIRequest,AIRequestKey,AIResult,AIResultSource,AIQuotaBucket,AIBudgetMonth,AIUsageAttempt,AIReportSlot,SiteKnowledge,AIReportSnapshot,AINoteClassification,GuidePublication}
+    # Provider ledgers contain only project hashes, counts, times and token totals.
+    # Retain them so erasing customer material cannot reset shared rate limits.
+    handled = {AIRequest,AIRequestKey,AIResult,AIResultSource,AIQuotaBucket,AIBudgetMonth,AIUsageAttempt,AIReportSlot,SiteKnowledge,AIReportSnapshot,AINoteClassification,GuidePublication,AIProviderQuota,AIProviderQuotaDay,AIProviderDispatch,AITestBudget}
     if set(apps.get_app_config('ai_assistant').get_models())-handled:
         raise ImproperlyConfigured('AI_PRIVACY_HANDLER_REQUIRED')
     query = Q(customer_id__in=customer_ids)|Q(revision__customer_id__in=customer_ids)

@@ -57,8 +57,8 @@ class AIConfigurationTests(SimpleTestCase):
         self.write_file()
         config = load_ai_config(self.root, role="web", environment={"AI_MODEL": "process-model", "AI_API_KEY": ""})
         self.assertEqual(config.model, "process-model")
-        self.assertEqual(config.api_key, "")
-        self.assertFalse(config.configured)
+        self.assertEqual(config.api_key, self.sentinel)
+        self.assertTrue(config.configured)
 
     def test_external_file_path_supported(self):
         path = self.write_file()
@@ -91,6 +91,7 @@ class AIConfigurationTests(SimpleTestCase):
         self.assertEqual(config.model, "${PRIVATE_REFERENCE}")
 
     def test_repr_and_logs_with_exception_do_not_expose_key(self):
+        self.write_file()
         config = load_ai_config(self.root, role="web", environment=self.complete)
         self.assertNotIn(self.sentinel, repr(config))
         stream = io.StringIO()
@@ -111,6 +112,7 @@ class AIConfigurationTests(SimpleTestCase):
             self.assertTrue(load_ai_config(self.root, role="web", environment={}).configured)
 
     def test_configured_application_and_django_log_handlers_redact(self):
+        self.write_file()
         load_ai_config(self.root, role="web", environment=self.complete)
         for logger_name, owner in [("apps.ai_assistant", logging.getLogger()),
                                    ("django.ai_boundary", logging.getLogger("django"))]:
@@ -167,9 +169,9 @@ class AIApplicationBoundaryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertFalse(data["generation_available"])
-        self.assertEqual(data["daily_limit"], 30)
+        self.assertEqual(data["daily_limit"], 40)
         self.assertEqual(data["successful_count"], 0)
-        self.assertEqual(data["remaining_count"], 30)
+        self.assertEqual(data["remaining_count"], 40)
 
     def test_unconfigured_ai_does_not_block_core_account_functions(self):
         with override_settings(AI_CONFIG=AIConfig()):

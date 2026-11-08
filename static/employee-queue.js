@@ -47,6 +47,9 @@ export class EmployeeQueue extends EventTarget {
   persist(entry,remove=false){
     const snapshot=structuredClone(entry),generation=++this.generation;
     const operation=this.disk.then(async()=>{
+      // An online recheck may finish while removal is queued. A discarded lane
+      // must not be written back after its record and in-memory entry are gone.
+      if(!remove&&this.entries.get(snapshot.key)!==entry)return true;
       try{if(!this.store?.db)throw new Error('브라우저 보관소를 사용할 수 없습니다.');await (remove?this.store.remove(snapshot.key):this.store.put(snapshot));entry.stored=!remove;if(generation===this.generation)this.storageError=null;return true;}
       catch(error){this.storageError='로컬 임시 보관 실패: '+error.message;entry.unsafe=true;return remove&&!entry.stored;}
     });

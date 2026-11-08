@@ -12,6 +12,7 @@ POLICY_VERSION = "openai-luna-standard-20261107-v1"
 def supported(config):
     return (config.enabled and config.configured and bool(config.api_key)
             and config.provider == "openai" and config.model == MODEL
+            and config.usage_tier == "paid"
             and config.input_price == INPUT_PRICE and config.output_price == OUTPUT_PRICE)
 
 

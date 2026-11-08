@@ -1,4 +1,6 @@
 """Opt-in disposable-load diagnosis; never used by a normal app process."""
+from scripts.verification_evidence import artifact_path
+
 from config.test_settings import *  # noqa: F403
 MIDDLEWARE = [*MIDDLEWARE, 'tests.load_settings.QueryProfileMiddleware']
 
@@ -29,5 +31,5 @@ class QueryProfileMiddleware:
                 return {**{key:node[key] for key in keys if key in node},'Plans':[shape(child) for child in node.get('Plans',[])]}
             row={'request_method':request.method,'duration_seconds':duration,'planning_ms':plan.get('Planning Time'),
                  'execution_ms':plan.get('Execution Time'),'jit':plan.get('JIT'),'total_cost':plan['Plan']['Total Cost'],'plan':shape(plan['Plan'])}
-            with (BASE_DIR/'.local/p13-query-profile.jsonl').open('a') as handle:handle.write(json.dumps(row)+'\n')
+            with (artifact_path('p13-query-profile.jsonl')).open('a') as handle:handle.write(json.dumps(row)+'\n')
         return response

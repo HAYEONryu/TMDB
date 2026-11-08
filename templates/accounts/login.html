@@ -1,14 +1,24 @@
 {% extends 'base.html' %}
-{% block title %}로그인 · TM 고객관리{% endblock %}
+{% load static %}
+{% block title %}로그인 · 두드림 TM{% endblock %}
 {% block content %}
-<section class="auth-card card shadow-sm mx-auto"><div class="card-body p-4 p-md-5">
-  <p class="eyebrow">TM 고객관리</p><h1 class="h3 mb-2">로그인</h1><p class="text-secondary mb-4">전화번호와 비밀번호로 시작하세요.</p>
+<div class="login-layout">
+<aside class="login-intro" aria-label="두드림 TM 소개">
+  <p class="eyebrow">고객과의 대화를, 더 편안하게</p>
+  <h2>좋은 상담의 시작,<br><span>두드림과 함께.</span></h2>
+  <p class="login-description">고객 관리부터 상담 기록, 다음 연락까지.<br>오늘의 업무를 한 곳에서 차근차근 이어가세요.</p>
+  <div class="login-journey" aria-label="업무 흐름"><span><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#customers"></use></svg>고객 관리</span><i aria-hidden="true">→</i><span><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#book"></use></svg>상담 기록</span><i aria-hidden="true">→</i><span><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#calendar"></use></svg>다음 연락</span></div>
+  <div class="login-note"><span class="note-dot" aria-hidden="true"></span>오늘도 한 분의 고객에게, 한 걸음 더 가까이.</div>
+</aside>
+<section class="auth-card card"><div class="card-body p-4 p-md-5">
+  <p class="eyebrow">나의 업무 공간</p><h1 class="h3 mb-2">로그인</h1><p class="text-secondary mb-4">전화번호와 비밀번호를 입력해 주세요.</p>
   <form method="post" action="/auth/login">
     {% csrf_token %}
     {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
     {% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% for error in field.errors %}<p class="field-error" role="alert">{{ error }}</p>{% endfor %}</div>{% endfor %}
     <button class="btn btn-primary w-100 mt-2" type="submit">로그인</button>
   </form>
-  <p class="small text-secondary mb-0 mt-4">처음 로그인하면 비밀번호를 변경해야 합니다.</p>
+  <div class="auth-help"><p>처음 로그인하면 비밀번호를 변경해야 합니다.</p><p>계정 이용이 어려우면 관리자에게 문의해 주세요.</p></div>
 </div></section>
+</div>
 {% endblock %}

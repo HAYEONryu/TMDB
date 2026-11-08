@@ -1,4 +1,6 @@
 """Real local Caddy TLS, desktop engines and touch-viewport queue recovery."""
+from scripts.verification_evidence import artifact_path
+
 import json
 import os
 from pathlib import Path
@@ -80,7 +82,7 @@ class P13HTTPSBrowserTests(Fixtures, StaticLiveServerTestCase):
             self.assertEqual(errors,[]);self.assertEqual(external,[])
             evidence={'engine':engine,'mobile_viewport':mobile,'real_device':False,'tls_verified_with_ephemeral_ca':True,
                 'secure_cookies':True,'save_and_offline_recovery':True,'javascript_errors':0}
-            path=settings.BASE_DIR/f'.local/p13-{engine}{"-touch" if mobile else ""}.json';path.write_text(json.dumps(evidence,indent=2))
+            path=artifact_path(f'p13-{engine}{"-touch" if mobile else ""}.json');path.write_text(json.dumps(evidence,indent=2))
             context.close();browser.close()
 
     def test_chromium_https_save_and_offline_recovery(self): self.scenario('chromium')

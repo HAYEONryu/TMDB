@@ -15,12 +15,12 @@ async function load(number=1){
   if(stopped||document.visibilityState!=='visible')return;if(loading){queuedRefresh=true;return;}loading=true;root.setAttribute('aria-busy','true');clearTimeout(timer);status();
   try{
     const data=await request('/api/deletion-requests?'+new URLSearchParams({page:number}));if(stopped)return;
-    page=data.page;hasNext=data.has_next;$('#delete-request-count').textContent=`고객정보 삭제 요청 ${data.total}건`;
+    page=data.page;hasNext=data.has_next;root.dataset.empty=String(data.total===0);$('#delete-request-count').textContent=`고객정보 삭제 요청 ${data.total}건`;
     $('#delete-request-rows').replaceChildren(...data.items.map(item=>{const row=document.createElement('tr');
       for(const value of [item.site_name,item.customer_name,item.phone.replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'),item.requested_by,new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',dateStyle:'short',timeStyle:'short',hourCycle:'h23'}).format(new Date(item.requested_at))])row.append(text('td',value));
       const cell=document.createElement('td'),button=text('button','승인');button.className='approve-request btn btn-sm btn-outline-danger';button.onclick=()=>approve(item);cell.append(button);row.append(cell);return row;}));
     $('#delete-request-page').textContent=`전체 현장 · ${page}페이지`;$('#notification-message').textContent='';
-  }catch(error){$('#notification-message').textContent=error.message;if([401,403].includes(error.status)){stopped=true;$('#delete-request-rows').replaceChildren();$('#delete-request-count').textContent='삭제 요청 알림 확인 불가';}}
+  }catch(error){root.dataset.empty='false';$('#notification-message').textContent=error.message;if([401,403].includes(error.status)){stopped=true;$('#delete-request-rows').replaceChildren();$('#delete-request-count').textContent='삭제 요청 알림 확인 불가';}}
   finally{loading=false;root.setAttribute('aria-busy','false');status();const again=queuedRefresh&&!stopped&&document.visibilityState==='visible';queuedRefresh=false;if(again)load(1);else schedule();}
 }
 async function approve(item){

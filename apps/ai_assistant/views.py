@@ -16,6 +16,7 @@ from apps.sites.services import locked_actor
 from .models import AIRequest, AIResult, AIQuotaBucket, AIUsageAttempt, AIBudgetMonth, SiteKnowledge, AIResultSource, Feature
 from .services import authorize,reserve,test_mode,validate_config,reservation_cost
 from .inputs import STAFF_FEATURES
+from . import free_limits
 
 
 @require_GET
@@ -25,33 +26,58 @@ def availability(request):
     # Explicit allowlist: never serialize the config object or environment.
     from apps.customers.employee import optional_queue_identity
     optional_queue_identity(request)
-    day = timezone.localdate()
+    now = timezone.now()
+    day = timezone.localtime(now, KST).date()
     bucket = AIQuotaBucket.objects.filter(user=request.user, korean_date=day).first()
     staff = request.user.role == "EMPLOYEE"
     successful = bucket.successful_count if bucket else 0
     reserved = bucket.reserved_count if bucket else 0
     active=AIRequest.objects.filter(actor=request.user,status__in=['RESERVED','RUNNING','UNKNOWN']).exists()
     enabled=False
-    try:validate_config();enabled=True
+    try:
+        validate_config()
+        from .provider_policy import reasoning_supported
+        enabled=test_mode() or reasoning_supported(settings.AI_CONFIG, staff)
     except AccessError:pass
     budget_blocked=False
-    if enabled:
-        from .ledger import cost
+    test_budget_blocked=False
+    free = free_limits.is_free(settings.AI_CONFIG)
+    server = free_limits.snapshot(settings.AI_CONFIG, now)
+    if enabled and not free:
         budget=AIBudgetMonth.objects.filter(month=day.replace(day=1)).first()
         budget_blocked=(budget.charged_usd+budget.reserved_usd if budget else 0)+reservation_cost(staff, settings.AI_CONFIG)>settings.AI_CONFIG.monthly_budget_usd
+    if enabled and settings.AI_CONFIG.test_budget_usd is not None:
+        from .models import AITestBudget
+        test_budget=AITestBudget.objects.filter(scope_key=settings.AI_CONFIG.test_budget_scope).first()
+        test_budget_blocked=(test_budget.charged_usd+test_budget.reserved_usd if test_budget else 0)+reservation_cost(staff,settings.AI_CONFIG)>settings.AI_CONFIG.test_budget_usd
     reason=('AI_TEST_ONLY' if test_mode() else 'AI_READY') if enabled else 'AI_NOT_CONFIGURED'
-    if enabled and successful+reserved>=30:reason='AI_DAILY_LIMIT'
+    server_blocked = bool(enabled and server and (server['remaining_count'] == 0 or server['cooldown_until']))
+    personal_blocked = staff and successful+reserved >= free_limits.STAFF_DAILY_LIMIT
+    if server_blocked:reason='AI_SERVER_DAILY_LIMIT' if server['remaining_count'] == 0 else 'AI_SERVER_COOLDOWN'
+    elif test_budget_blocked:reason='AI_TEST_BUDGET_LIMIT'
+    elif enabled and personal_blocked:reason='AI_DAILY_LIMIT'
     elif enabled and active:reason='AI_BUSY'
     elif budget_blocked:reason='AI_BUDGET_LIMIT'
-    return JsonResponse({"generation_available": enabled and successful+reserved<30 and not active and not budget_blocked, "configured": settings.AI_CONFIG.configured,
+    if server_blocked:
+        message=('공용 AI 사용 한도 소진 · 개인 잔여 횟수가 있어도 새 생성은 중단합니다. 기존 결과는 조회할 수 있습니다.'
+                 if server['remaining_count'] == 0 else '공급자 분당 한도로 공용 AI가 대기 중입니다. 기존 결과와 고객관리는 계속 사용할 수 있습니다.')
+    elif test_budget_blocked:
+        message='테스트 누적 AI 예산이 부족합니다. 기존 결과와 고객관리는 계속 사용할 수 있습니다.'
+    elif budget_blocked:
+        message='조직 AI 예산이 부족합니다. 기존 결과와 고객관리는 계속 사용할 수 있습니다.'
+    elif enabled:
+        message='테스트 전용 AI입니다. 운영 결과가 아닙니다.' if test_mode() else '무료 AI · 서버 전체 한도를 먼저 적용하며 분당 한도에 맞춰 대기 후 처리합니다.' if free else 'AI 생성은 유료입니다. 생성 버튼을 누를 때만 요청합니다.'
+    else:
+        message='AI 설정 또는 공급자 연결이 없어 생성할 수 없습니다. 기존 고객관리는 정상 작동합니다.'
+    return JsonResponse({"generation_available": enabled and not personal_blocked and not active and not budget_blocked and not test_budget_blocked and not server_blocked, "configured": settings.AI_CONFIG.configured,
                          "reason": reason,
-                         "message": '조직 AI 예산이 부족합니다. 기존 결과와 고객관리는 계속 사용할 수 있습니다.' if budget_blocked else ('테스트 전용 AI입니다. 운영 결과가 아닙니다.' if test_mode() else 'OpenAI 생성은 유료입니다. 생성 버튼을 누를 때만 요청합니다.') if enabled else 'AI 설정 또는 공급자 연결이 없어 생성할 수 없습니다. 기존 고객관리는 정상 작동합니다.',
-                         "daily_limit": 30 if request.user.role == "EMPLOYEE" else None,
+                         "message": message, "server_limit": server, "usage_tier": settings.AI_CONFIG.usage_tier,
+                         "daily_limit": free_limits.STAFF_DAILY_LIMIT if staff else None,
                          "successful_count": successful if staff else None, "reserved_count": reserved if staff else None,
-                         "remaining_count": max(0, 30-successful-reserved) if staff else None,
+                         "remaining_count": max(0, free_limits.STAFF_DAILY_LIMIT-successful-reserved) if staff else None,
                          "korean_date": day.isoformat(), "features": [feature for feature in Feature.values if (feature in STAFF_FEATURES) == staff], 'is_test':test_mode(), 'active':active,
                          "weekly_generation_day": day.weekday()==6,
-                         "next_available_at": datetime.combine(day+timedelta(days=1),time.min,KST).isoformat() if staff and successful+reserved >= 30 else None})
+                         "next_available_at": server['cooldown_until'] or server['reset_at'] if server_blocked else datetime.combine(day+timedelta(days=1),time.min,KST).isoformat() if personal_blocked else None})
 
 
 def task_payload(task):
@@ -61,9 +87,12 @@ def task_payload(task):
             'customer_id':str(task.customer_id) if task.customer_id else None,'assignment_id':str(task.assignment_id) if task.assignment_id else None,
             'unknown_until':task.unknown_until.isoformat() if task.unknown_until else None,
             "is_test": task.is_test, "test_message": "테스트 전용 결과이며 운영 분석이 아닙니다." if task.is_test else "",
+            "wait_until": task.dispatch_after.isoformat() if task.dispatch_after else None,
             "result_id": str(result.pk) if task.status == "SUCCEEDED" else None}
     if result.invalidation_reason in {"SOURCE_DELETED","SOURCE_CHANGED"}:
         data["message"] = "원본 삭제 또는 변경으로 결과를 더 이상 제공할 수 없습니다."
+    elif task.status == "RESERVED":
+        data["message"] = "분당 요청·입력 토큰 한도에 맞춰 대기 중입니다. 화면을 닫아도 서버에서 순서대로 처리합니다." if task.dispatch_after else "AI 작업을 접수했습니다. 서버 한도에 맞춰 처리합니다."
     return data
 
 
@@ -136,7 +165,7 @@ def customer_results(request):
     customer=Customer.objects.select_related('current_assignment').filter(pk=identifier(request.GET['customer_id'])).first()
     if not customer:raise AccessError('FORBIDDEN','현재 담당 고객만 조회할 수 있습니다.',403)
     current_access(request.user,customer,identifier(request.GET['assignment_id']))
-    tasks=AIRequest.objects.filter(actor=request.user,customer=customer,assignment_id=customer.current_assignment_id,feature__in=STAFF_FEATURES,status='SUCCEEDED').select_related('result').order_by('-created_at','-pk')[:10]
+    tasks=AIRequest.objects.filter(actor=request.user,actor_session_version=request.user.session_version,customer=customer,assignment_id=customer.current_assignment_id,feature__in=STAFF_FEATURES,status='SUCCEEDED').select_related('result').order_by('-created_at','-pk')[:10]
     return JsonResponse({'items':[task_payload(task) for task in tasks],'limit':10})
 
 
@@ -155,9 +184,16 @@ def usage(request):
                     cancelled_count=Count("id",filter=Q(status="CANCELLED")), unknown_count=Count("id",filter=Q(status="UNKNOWN")), charged_usd=Sum("charged_cost")).order_by("feature"))
     attempts = AIUsageAttempt.objects.filter(request__in=tasks).aggregate(attempts=Count("id"), input_tokens=Sum("input_tokens"), output_tokens=Sum("output_tokens"), reasoning_tokens=Sum("reasoning_tokens"), actual_cost=Sum("actual_cost"), accounted_cost=Sum("accounted_cost"))
     budget = AIBudgetMonth.objects.filter(month=month).first()
+    from .models import AITestBudget
+    test_budget = AITestBudget.objects.filter(scope_key=settings.AI_CONFIG.test_budget_scope).first() if settings.AI_CONFIG.test_budget_scope else None
+    sent = AIUsageAttempt.objects.filter(request__budget_month__month=month,transport_started_at__isnull=False)
     return JsonResponse({"month": month.isoformat(), "currency": "USD", "features": features, "attempts": attempts,
+                         "transport_started_count": sent.count(), "retry_started_count": sent.filter(sequence__gt=1).count(),
                          "reserved_usd": str(budget.reserved_usd) if budget else "0", "charged_usd": str(budget.charged_usd) if budget else "0",
-                         "budget_usd": str(settings.AI_CONFIG.monthly_budget_usd), "is_absolute_billing_cap": False})
+                         "budget_usd": str(settings.AI_CONFIG.monthly_budget_usd), "is_absolute_billing_cap": False,
+                         "test_budget": {"limit_usd": str(settings.AI_CONFIG.test_budget_usd),
+                                         "reserved_usd": str(test_budget.reserved_usd) if test_budget else "0",
+                                         "charged_usd": str(test_budget.charged_usd) if test_budget else "0"} if settings.AI_CONFIG.test_budget_usd is not None else None})
 
 
 def knowledge_payload(row):

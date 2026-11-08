@@ -15,3 +15,12 @@ staticfiles
 secrets/
 backups/
 docs/history/
+.aws/
+.codex/
+.agents/
+outputs/
+uploads/
+media/
+*.pem
+*.key
+*.p12

@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,7 +17,7 @@ class LoginBrowserTests(StaticLiveServerTestCase):
     def test_admin_employee_first_change_reset_and_mobile_login(self):
         admin = user(role=User.Role.ADMIN, name="가상관리자")
         employee = user("01000000002", name="가상직원")
-        evidence = Path(settings.BASE_DIR) / ".local/qa"
+        evidence = artifact_path('qa')
         evidence.mkdir(parents=True, exist_ok=True)
         errors, external_requests = [], []
         os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(settings.BASE_DIR / ".cache/ms-playwright"))
@@ -54,7 +55,7 @@ class LoginBrowserTests(StaticLiveServerTestCase):
                 admin_page.screenshot(path=str(evidence / "first-password.png"), full_page=True)
                 change(admin_page)
                 expect(admin_page).to_have_url(self.live_server_url + "/app/admin")
-                expect(admin_page.get_by_text("AI 상담 도구는 준비 중입니다.")).to_be_visible()
+                expect(admin_page.get_by_role("link", name="DB 관리 열기", exact=True)).to_be_visible()
                 self.assertFalse(admin_context.request.get(self.live_server_url + "/api/ai/availability").json()["generation_available"])
                 self.assertEqual(admin_context.request.get(self.live_server_url + "/api/access/admin").status, 200)
                 admin_page.screenshot(path=str(evidence / "admin-home.png"), full_page=True)
@@ -63,11 +64,11 @@ class LoginBrowserTests(StaticLiveServerTestCase):
                 self.assertEqual(employee_context.request.get(self.live_server_url + "/api/access/employee").status, 403)
                 change(employee_page)
                 expect(employee_page).to_have_url(self.live_server_url + "/app/employee")
-                expect(employee_page.get_by_text("AI 상담 도구는 준비 중입니다.")).to_be_visible()
+                expect(employee_page.get_by_role("link", name="오늘 할 일 열기", exact=True)).to_be_visible()
                 ai_status = employee_context.request.get(self.live_server_url + "/api/ai/availability").json()
                 self.assertFalse(ai_status["generation_available"])
-                self.assertEqual(ai_status["daily_limit"], 30)
-                self.assertEqual(ai_status["remaining_count"], 30)
+                self.assertEqual(ai_status["daily_limit"], 40)
+                self.assertEqual(ai_status["remaining_count"], 40)
                 self.assertEqual(employee_context.request.get(self.live_server_url + "/api/access/employee").status, 200)
                 self.assertEqual(employee_context.request.get(self.live_server_url + "/api/access/admin").status, 403)
                 employee_page.screenshot(path=str(evidence / "employee-home.png"), full_page=True)

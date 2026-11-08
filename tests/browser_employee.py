@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json
 import os
 import tempfile
@@ -17,6 +18,7 @@ from apps.customers.models import Customer
 from apps.customers.services import update_row
 from tests.helpers import STRONG_PASSWORD
 from tests.test_p4 import Fixtures
+from tests.browser_observation import BrowserObservation
 
 
 class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
@@ -25,9 +27,17 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         for row in self.rows:self.assign(row)
         self.foreign=self.customers(offset=20)[0];self.assign(self.foreign,self.other)
         self.errors=[];self.external=[];self.sent=[]
-        self.evidence=Path(settings.BASE_DIR)/'.local/qa';self.evidence.mkdir(exist_ok=True,parents=True)
+        self.evidence=artifact_path('qa');self.evidence.mkdir(exist_ok=True,parents=True)
         os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH',str(settings.BASE_DIR/'.cache/ms-playwright'))
-        self.playwright=sync_playwright().start();self.browser=self.playwright.chromium.launch();self.context=self.browser.new_context(viewport={'width':1440,'height':960})
+        self.playwright=sync_playwright().start()
+        # Cleanup must also run when setup/navigation fails. Otherwise the sync
+        # Playwright event loop leaks into Django's DB teardown and masks every
+        # subsequent test with SynchronousOnlyOperation.
+        self.addCleanup(self.playwright.stop)
+        self.browser=self.playwright.chromium.launch();self.addCleanup(self.browser.close)
+        self.context=self.browser.new_context(viewport={'width':1440,'height':960})
+        self.observation=BrowserObservation(self.context,self.live_server_url+'/healthz',self.server_thread)
+        self.addCleanup(self.observation.finish)
         self.watch(self.context);self.page=self.context.new_page();self.login(self.page,self.employee);self.open(self.page)
 
     def watch(self,context):
@@ -36,7 +46,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         context.on('request',lambda request:self.sent.append(request.post_data_json) if request.url.endswith('/api/employee/batch-update') else None)
 
     def tearDown(self):
-        self.browser.close();self.playwright.stop();self.assertEqual(self.errors,[]);self.assertEqual(self.external,[]);super().tearDown()
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[]);super().tearDown()
     def db(self,action):
         def run():
             close_old_connections()
@@ -61,6 +71,20 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         page=page or self.page;page.locator('#save-now').click();self.saved(page)
     def row_id(self,index=0,page=None):return (page or self.page).locator('#employee-grid .tabulator-row').nth(index).get_attribute('tabulator-row-index')
 
+    def test_injected_network_failure_preserves_only_sanitized_observation(self):
+        from playwright.sync_api import Error
+        marker='SYNTHETIC_PRIVATE_QUERY_AND_BODY'
+        self.page.route('**/healthz?*',lambda route:route.abort('connectionreset'))
+        with self.assertRaises(Error):self.page.goto(self.live_server_url+'/healthz?token='+marker)
+        self.observation.finish()
+        content=''.join(p.read_text() for p in self.observation.target.glob('*.json'))
+        for private in [marker,STRONG_PASSWORD,self.employee.phone_normalized]:self.assertNotIn(private,content)
+        failed=json.loads((self.observation.target/'failed-requests.json').read_text())
+        self.assertTrue(any(row['failure']=='net::ERR_CONNECTION_RESET' for row in failed))
+        state=json.loads((self.observation.target/'observation.json').read_text())
+        self.assertEqual(state['root_cause'],'UNCONFIRMED')
+        self.assertEqual(state['trace_status'],'sanitized_projection_saved')
+
     def test_first_dirty_deadline_continuous_typing_noop_and_copy_restrictions(self):
         page=self.page
         self.cell().dblclick();page.locator('h1').click();page.clock.install();page.clock.run_for(95000);self.assertEqual(self.sent,[])
@@ -68,7 +92,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.cell().locator('textarea').fill('가상 최신 입력');page.clock.run_for(29999);self.assertEqual(self.sent,[])
         with page.expect_request('**/api/employee/batch-update') as event:page.clock.run_for(1500)
         self.saved();elapsed=page.evaluate('Date.now()')-first;self.assertLessEqual(elapsed,100000);body=event.value.post_data_json;self.assertEqual(body['rows'][0]['changes'],{'notes':'가상 최신 입력'})
-        (Path(settings.BASE_DIR)/'.local/p5-timing.json').write_text(json.dumps({'target_ms':90000,'typing_again_ms':60000,'clock_elapsed_when_confirmed_ms':elapsed,'within_100000ms':True}),encoding='utf-8')
+        (artifact_path('p5-timing.json')).write_text(json.dumps({'target_ms':90000,'typing_again_ms':60000,'clock_elapsed_when_confirmed_ms':elapsed,'within_100000ms':True}),encoding='utf-8')
         cid=body['rows'][0]['customer_id'];self.assertEqual(self.db(lambda:Customer.objects.get(pk=cid).notes),'가상 최신 입력');self.assertIsNotNone(self.db(lambda:Assignment.objects.get(pk=body['rows'][0]['assignment_id']).first_activity_at))
         page.locator('h1').click();page.clock.run_for(100000);self.assertEqual(len(self.sent),1)
         self.assertEqual(page.locator('#employee-grid input[type=checkbox]').count(),0)

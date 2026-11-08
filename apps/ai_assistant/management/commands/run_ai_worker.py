@@ -6,7 +6,7 @@ from apps.ai_assistant.worker import run_once
 
 
 class Command(BaseCommand):
-    help = "AI DB 큐 처리. 활성화된 OpenAI 설정에서만 유료 요청하며 fake는 격리 테스트만 허용."
+    help = "AI DB 큐 처리. 확인된 무료 Gemini Lite만 허용하며 fake는 격리 테스트 전용."
 
     def add_arguments(self, parser):
         parser.add_argument("--once", action="store_true")

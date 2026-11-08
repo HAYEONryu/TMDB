@@ -70,9 +70,10 @@ function column(field) {
 }
 const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:"표시할 고객정보가 없습니다.", selectableRows:true,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
+    ...['customer_name','phone_normalized','call_result','notes','callback_due_at','assignee_name','visit_at','contract_status','housing_status','assigned_at'].map(column),
     ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
     {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
-    ...Object.keys(labels).map(column), ...(!trash ? [{title:"저장 상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
+    ...(!trash ? [{title:"저장 상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
       const item = pending.get(cell.getRow().getData().id); const wrap = text("span", item ? item.uncertain?"결과 확인 필요 ":item.error?"저장 실패 ":"미저장" : "저장됨");
       if (item?.error) { const button = text("button", "확인"); button.className="btn btn-sm btn-outline-secondary"; button.addEventListener("click",()=>openConflict(cell.getRow().getData().id)); wrap.append(button); } return wrap;
     }}] : [])]});

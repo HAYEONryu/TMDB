@@ -1,3 +1,4 @@
+from scripts.verification_evidence import artifact_path
 import json,resource,time
 from contextlib import contextmanager
 from datetime import datetime,timedelta,time as day_time
@@ -44,4 +45,4 @@ class SchedulerPerformanceTests(Fixtures,TransactionTestCase):
         elapsed=time.monotonic()-started;rss=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss/1024/1024
         self.assertEqual(result,{'completed':1,'failed':0});self.assertEqual(ScheduledJobRun.objects.get().affected_count,10000);self.assertFalse(Customer.objects.exclude(current_assignment=None).exists());self.assertLess(elapsed,30);self.assertLess(rss,512)
         evidence={'rows':10000,'automatic_recall_seconds':round(elapsed,3),'peak_process_rss_mib':round(rss,2),'business_lock_hold_seconds':[round(value,3) for value in locks],'criteria':{'max_seconds':30,'max_peak_rss_mib':512,'max_lock_hold_seconds':10}}
-        Path(settings.BASE_DIR/'.local/p6-performance-profile.json').write_text(json.dumps(queries,ensure_ascii=False,indent=2));Path(settings.BASE_DIR/'.local/p6-performance.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2));print('P6_PERFORMANCE',json.dumps(evidence));self.assertLess(max(locks),10)
+        Path(artifact_path('p6-performance-profile.json')).write_text(json.dumps(queries,ensure_ascii=False,indent=2));Path(artifact_path('p6-performance.json')).write_text(json.dumps(evidence,ensure_ascii=False,indent=2));print('P6_PERFORMANCE',json.dumps(evidence));self.assertLess(max(locks),10)
