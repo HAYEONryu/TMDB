@@ -204,15 +204,17 @@ class RealComposeSecretRecoveryTests(RuntimeSecretRecoveryTests):
         if args[1]=='compose':
             self.calls.append(args)
             environment={k:v for k,v in os.environ.items()
-                         if k not in {'DJANGO_SECRET_KEY','TM_SERVER_SECRET','COMPOSE_ENV_FILES','COMPOSE_DISABLE_ENV_FILE'}}
+                         if k not in {'DJANGO_SECRET_KEY','TM_SERVER_SECRET','TM_DB_PASSWORD','COMPOSE_ENV_FILES','COMPOSE_DISABLE_ENV_FILE'}}
             result=subprocess.run([str(COMPOSE),*args[2:]],cwd=root,env=environment,capture_output=True,text=True)
             if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
             return result.stdout
         if args[1]=='exec':
             self.calls.append(args)
             flag=next((arg for arg in args if arg.startswith('TM_RECOVERY_REFERENCE_VARIABLE=')), 'TM_RECOVERY_REFERENCE_VARIABLE=')
+            db_flag=next((arg for arg in args if arg.startswith('TM_RECOVERY_DB_PASSWORD_VARIABLE=')), 'TM_RECOVERY_DB_PASSWORD_VARIABLE=')
             environment={**os.environ,'PYTHONPATH':str(self.root),'DJANGO_SETTINGS_MODULE':'synthetic_settings',
-                         'PYTHONDONTWRITEBYTECODE':'1','TM_RECOVERY_REFERENCE_VARIABLE':flag.split('=',1)[1]}
+                         'PYTHONDONTWRITEBYTECODE':'1','TM_RECOVERY_REFERENCE_VARIABLE':flag.split('=',1)[1],
+                         'TM_RECOVERY_DB_PASSWORD_VARIABLE':db_flag.split('=',1)[1], 'PGPASSWORD':''}
             result=subprocess.run([sys.executable,'-c',SOURCE_SCRIPT],cwd=root,env=environment,input=input,capture_output=True,text=True)
             if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
             return result.stdout
@@ -267,3 +269,73 @@ class RealComposeSecretRecoveryTests(RuntimeSecretRecoveryTests):
         with self.assertRaisesRegex(RecoveryError,'REFERENCE_VARIABLE_HAS_DIFFERENT_VALUE'):
             recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET')
         self.assertEqual(self.env.read_bytes(),before)
+
+    def set_database_compose(self, password='synthetic-db-pa$$word', host='postgres'):
+        database={'ENGINE':'django.db.backends.postgresql','HOST':host,'PORT':'5432',
+                  'NAME':'tm_dev','USER':'fake','PASSWORD':password}
+        self.settings.write_text('SECRET_KEY = '+repr(KEY)+'\nDATABASES = '+repr({'default':database})+'\n')
+        (self.root/'compose.server.yaml').write_text(json.dumps({'services':{
+            name:{'environment':['DJANGO_SECRET_KEY=${TM_SERVER_SECRET:-}',
+                                 'DATABASE_URL=postgresql://fake:${TM_DB_PASSWORD:-}@postgres:5432/tm_dev']}
+            for name in ('web','scheduler','ai_worker')}}))
+
+    def test_actual_server_secret_and_database_password_recovery_preserves_target(self):
+        self.set_database_compose()
+        result=recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                       database_password_variable='TM_DB_PASSWORD')
+        values=dotenv_values(self.env,interpolate=False)
+        self.assertEqual(result['status'],'restored_existing_secret')
+        self.assertEqual(values['TM_DB_PASSWORD'],'synthetic-db-pa$$word')
+        self.assertEqual(values['DATABASE_URL'],'postgresql://fake:synthetic@postgres/tm_dev')
+        self.assertTrue(result['database_settings_match_source'])
+        self.assertEqual((self.root/result['backup']).read_text(),ORIGINAL)
+        self.assertNotIn('synthetic-db-pa$$word',json.dumps(result))
+        self.assertEqual(recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                                 database_password_variable='TM_DB_PASSWORD')['status'],'already_configured')
+        for args in self.calls:
+            self.assertFalse(set(args)&{'up','down','restart','migrate','psql','pg_dump'})
+            self.assertNotIn('synthetic-db-pa$$word',' '.join(args))
+
+    def test_database_password_is_recovered_even_if_secret_key_already_matches(self):
+        self.set_database_compose()
+        # This is the user's current state: the application key is already fixed.
+        recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET')
+        result=recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                       database_password_variable='TM_DB_PASSWORD')
+        self.assertEqual(result['status'],'restored_existing_secret')
+        self.assertEqual(dotenv_values(self.env,interpolate=False)['TM_DB_PASSWORD'],'synthetic-db-pa$$word')
+
+    def test_database_target_change_is_rejected_without_modifying_env(self):
+        self.set_database_compose(host='different-database-host')
+        with self.assertRaisesRegex(RecoveryError,'DATABASE_TARGET_MISMATCH'):
+            recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                    database_password_variable='TM_DB_PASSWORD')
+        self.assertEqual(self.env.read_text(),ORIGINAL)
+
+    def test_missing_source_password_is_not_guessed_or_reset(self):
+        self.set_database_compose(password='')
+        with self.assertRaisesRegex(RecoveryError,'SOURCE_DATABASE_PASSWORD_UNAVAILABLE'):
+            recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                    database_password_variable='TM_DB_PASSWORD')
+        self.assertEqual(self.env.read_text(),ORIGINAL)
+
+    def test_different_database_password_variable_is_not_overwritten(self):
+        self.set_database_compose()
+        before=ORIGINAL+'TM_DB_PASSWORD=synthetic-other\n';self.env.write_text(before)
+        with self.assertRaisesRegex(RecoveryError,'DATABASE_PASSWORD_VARIABLE_HAS_DIFFERENT_VALUE'):
+            recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                    database_password_variable='TM_DB_PASSWORD')
+        self.assertEqual(self.env.read_text(),before)
+
+    def test_url_reserved_password_failure_rolls_back_and_never_changes_database(self):
+        self.set_database_compose(password='synthetic#not-url-safe')
+        with self.assertRaisesRegex(RecoveryError,'VERIFY_FAILED_ORIGINAL_ENV_RESTORED'):
+            recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET',
+                    database_password_variable='TM_DB_PASSWORD')
+        self.assertEqual(self.env.read_text(),ORIGINAL)
+
+    def test_database_password_reference_must_match_actual_compose(self):
+        self.set_database_compose()
+        with self.assertRaisesRegex(RecoveryError,'DATABASE_PASSWORD_VARIABLE_DOES_NOT_MATCH_COMPOSE'):
+            recover(self.root,'old-scheduler',run=self.fake_run,database_password_variable='OTHER_PASSWORD')
+        self.assertEqual(self.env.read_text(),ORIGINAL)

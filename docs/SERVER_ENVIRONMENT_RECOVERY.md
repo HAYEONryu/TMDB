@@ -22,14 +22,14 @@ python3 scripts/recover_runtime_secret.py --diagnose
 ```sh
 cd /root/TMDB
 git pull --ff-only
-unset TM_SERVER_SECRET
+unset TM_SERVER_SECRET TM_DB_PASSWORD
 python3 scripts/recover_runtime_secret.py --source-container tmdb-scheduler-1 \
-  --reference-variable TM_SERVER_SECRET
+  --reference-variable TM_SERVER_SECRET --database-password-variable TM_DB_PASSWORD
 ```
 
 이 명령은 호스트의 Python 표준 라이브러리만 사용한다. 호스트에 Django나 pip 패키지를 추가하지 않는다. 원래 컨테이너의 Django 설정을 management 역할로 읽으며 DB 연결·AI 요청은 수행하지 않는다. 키와 환경 파일은 subprocess의 비공개 입출력으로만 처리하고 출력에는 상태·설정 확인 대상·백업 위치만 넣는다.
 
-`unset TM_SERVER_SECRET`은 현재 셸의 덮어쓰기만 제거해 프로젝트 `.env`에서 참조 변수를 읽도록 한다. 환경 파일이나 실행 중인 컨테이너의 기존 키를 지우지 않는다.
+`unset TM_SERVER_SECRET TM_DB_PASSWORD`는 현재 셸의 덮어쓰기만 제거해 프로젝트 `.env`에서 참조 변수를 읽도록 한다. 환경 파일이나 실행 중인 컨테이너의 기존 키·DB 비밀번호를 지우지 않는다.
 
 도구는 다음을 수행한다.
 
@@ -85,3 +85,17 @@ docker compose -f compose.yaml -f compose.server.yaml \
 실제 Compose CLI에 동일한 `DJANGO_SECRET_KEY=${TM_SERVER_SECRET:-}` 설정을 구성해 기존 키의 양쪽 이름 복원·세 서비스 전달·기존 기타 설정 보존·재실행·원본 백업을 검증했다. 실제 서버의 환경 복구 및 등록 성공은 사용자 실행 결과로 별도 확인한다. 이 설정 문제의 원인 확인은 최초 고객 등록 실패의 모든 원인을 확정했다는 뜻이 아니다.
 
 참조 변수 보완 후 26개 검사 통과, 건너뛰기 0개다. 최종 실행 ID는 `20261109T134736288187Z-ff664bd3565a43328ac4033a8a7bd874`이며 앞선 실행 `20261109T133813278343Z-83d40162b51349e5a09115d4166a1497`도 별도 보존했다. 실제 서버 데이터·Docker 엔진·외부 AI 요청은 이 가상 검증에 사용하지 않았다.
+
+## DB 비밀번호 참조 복구
+
+앱 키 복구 뒤 사용자 로그에서 `fe_sendauth: no password supplied`를 확인했다. 사용자가 비밀값 없이 확인한 결과 세 서비스의 DATABASE_URL 비밀번호 부분은 모두 TM_DB_PASSWORD를 참조했다. 이 서버의 현재 복구 명령에는 위의 `--database-password-variable TM_DB_PASSWORD`도 포함한다.
+
+도구는 같은 기존 컨테이너의 Django DB 설정에서 이미 사용하는 비밀번호를 비공개 입출력으로 읽는다. 명시한 PASSWORD 계열 변수명이 세 서비스의 URL 비밀번호 참조와 일치해야 한다. `.env`에 기존 비밀번호를 복원하며 PostgreSQL 역할 비밀번호를 바꾸거나 SQL을 실행하지 않는다. 앱 키가 이미 정상이어도 DB 비밀번호 복구는 따로 검사한다.
+
+수정 전후의 유효 DATABASE_URL을 기존 컨테이너의 DB 호스트·포트·DB명·사용자와 비교한다. 연결 대상이 다르거나 다른 비밀번호가 이미 설정되어 있으면 중단한다. 복원 후 해석된 비밀번호까지 기존 설정과 같은지 검사하고 실패하면 원래 `.env`로 돌아간다. URL에 그대로 넣을 수 없는 특수문자로 값이 달라져도 성공으로 처리하지 않는다. `database_settings_match_source=true`는 이 설정 비교를 뜻하며 실제 인증·접속 성공을 뜻하지 않는다. 실제 연결은 다음 읽기 전용 `showmigrations` 실행 결과로 확인한다.
+
+키·비밀번호·DB URL 전체는 화면이나 오류에 출력하지 않는다. 앱 외부 AI 설정은 바꾸지 않으며 서비스·DB를 재시작하거나 migration을 적용하지 않는다. 기존 `.env` 백업은 앞과 같은 고유 디렉터리와 0600 권한으로 보존한다.
+
+실제 Compose 설정 해석을 포함한 33개 가상 검사에서 비밀번호 복원·키가 이미 정상인 상태·대상 변경 거절·다른 값 보존·원래 비밀번호 미확인 시 중단·URL 특수문자 실패 원복을 확인했다. 실제 서버 비밀번호나 DB 연결은 이 검사에 사용하지 않았다.
+
+검증 실행 ID: `20261109T141840324525Z-a4676e390b2c4c1ca3bc099cbe21e552`. 이전 환경 복구 검사 기록은 각각의 실행 디렉터리에 보존한다.
