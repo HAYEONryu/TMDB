@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from dotenv import dotenv_values
 from scripts.recover_runtime_secret import (RecoveryError, SOURCE_SCRIPT, main, diagnose,
-                                           environment_values, private_command, recover)
+                                           environment_values, private_command, recover, reference_variable)
 
 KEY = "synthetic-existing-secret-$literal-quote'and\\slash"
 ORIGINAL = "DATABASE_URL=postgresql://fake:synthetic@postgres/tm_dev\nDJANGO_DEBUG=false\n"
@@ -158,6 +158,8 @@ class RuntimeSecretDiagnosticsTests(TestCase):
                          {'DJANGO_SECRET_KEY':None,'OTHER':'a=b','EMPTY':''})
         self.assertEqual(environment_values(None),{})
         with self.assertRaises(RecoveryError):environment_values([{'unexpected':'shape'}])
+        self.assertEqual(reference_variable('${TM_SERVER_SECRET:-private-fallback-hidden}'),'TM_SERVER_SECRET')
+        self.assertIsNone(reference_variable('private-value-hidden'))
 
     def test_diagnose_cli_does_not_require_source_container_or_invoke_recovery(self):
         output=io.StringIO()
@@ -201,14 +203,16 @@ class RealComposeSecretRecoveryTests(RuntimeSecretRecoveryTests):
     def fake_run(self, args, *, root, input=None):
         if args[1]=='compose':
             self.calls.append(args)
-            environment={k:v for k,v in os.environ.items() if k!='DJANGO_SECRET_KEY'}
+            environment={k:v for k,v in os.environ.items()
+                         if k not in {'DJANGO_SECRET_KEY','TM_SERVER_SECRET','COMPOSE_ENV_FILES','COMPOSE_DISABLE_ENV_FILE'}}
             result=subprocess.run([str(COMPOSE),*args[2:]],cwd=root,env=environment,capture_output=True,text=True)
             if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
             return result.stdout
         if args[1]=='exec':
             self.calls.append(args)
+            flag=next((arg for arg in args if arg.startswith('TM_RECOVERY_REFERENCE_VARIABLE=')), 'TM_RECOVERY_REFERENCE_VARIABLE=')
             environment={**os.environ,'PYTHONPATH':str(self.root),'DJANGO_SETTINGS_MODULE':'synthetic_settings',
-                         'PYTHONDONTWRITEBYTECODE':'1'}
+                         'PYTHONDONTWRITEBYTECODE':'1','TM_RECOVERY_REFERENCE_VARIABLE':flag.split('=',1)[1]}
             result=subprocess.run([sys.executable,'-c',SOURCE_SCRIPT],cwd=root,env=environment,input=input,capture_output=True,text=True)
             if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
             return result.stdout
@@ -231,3 +235,35 @@ class RealComposeSecretRecoveryTests(RuntimeSecretRecoveryTests):
                 result=recover(self.root,'old-scheduler',run=self.fake_run)
                 self.assertEqual(result['status'],'restored_existing_secret')
                 self.assertEqual(dotenv_values(self.env,interpolate=False)['DJANGO_SECRET_KEY'],key)
+
+    def set_alias_compose(self):
+        (self.root/'compose.server.yaml').write_text(json.dumps({'services':{
+            name:{'environment':['DJANGO_SECRET_KEY=${TM_SERVER_SECRET:-}']}
+            for name in ('web','scheduler','ai_worker')}}))
+
+    def test_real_server_reference_restores_both_names_and_preserves_other_settings(self):
+        self.set_alias_compose()
+        result=recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET')
+        self.assertEqual(result['status'],'restored_existing_secret')
+        self.assertEqual(result['reference_variable'],'TM_SERVER_SECRET')
+        values=dotenv_values(self.env,interpolate=False)
+        self.assertEqual((values['DJANGO_SECRET_KEY'],values['TM_SERVER_SECRET']),(KEY,KEY))
+        self.assertEqual(values['DATABASE_URL'],'postgresql://fake:synthetic@postgres/tm_dev')
+        self.assertEqual((self.root/result['backup']).read_text(),ORIGINAL)
+        self.assertNotIn(KEY,json.dumps(result))
+        self.assertEqual(recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET')['status'],'already_configured')
+
+    def test_unmatched_or_unrelated_reference_never_changes_environment(self):
+        self.set_alias_compose()
+        for reference in ['OTHER_SECRET','DATABASE_URL','not valid']:
+            with self.subTest(reference=reference),self.assertRaises(RecoveryError):
+                recover(self.root,'old-scheduler',run=self.fake_run,reference=reference)
+            self.assertEqual(self.env.read_text(),ORIGINAL)
+
+    def test_existing_different_reference_value_is_preserved(self):
+        self.set_alias_compose()
+        self.env.write_text(ORIGINAL+'TM_SERVER_SECRET=synthetic-different-secret\n')
+        before=self.env.read_bytes()
+        with self.assertRaisesRegex(RecoveryError,'REFERENCE_VARIABLE_HAS_DIFFERENT_VALUE'):
+            recover(self.root,'old-scheduler',run=self.fake_run,reference='TM_SERVER_SECRET')
+        self.assertEqual(self.env.read_bytes(),before)

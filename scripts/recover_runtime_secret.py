@@ -8,6 +8,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
@@ -24,7 +25,7 @@ class RecoveryError(Exception):
 # Runs in the OLD container. Django settings resolves exactly the key already
 # used by that application. Neither settings setup nor dotenv performs I/O to DB/AI.
 SOURCE_SCRIPT = r'''
-import io, json, os, sys, tempfile
+import io, json, os, re, sys, tempfile
 from pathlib import Path
 os.environ['TM_PROCESS_ROLE'] = 'management'
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
@@ -35,6 +36,13 @@ if not isinstance(key, str) or not key:
     raise RuntimeError('SOURCE_SECRET_UNAVAILABLE')
 original = sys.stdin.read()
 before = dotenv_values(stream=io.StringIO(original), interpolate=False)
+reference = os.environ.get('TM_RECOVERY_REFERENCE_VARIABLE', '')
+if reference and not re.fullmatch(r'(?:[A-Z][A-Z0-9_]*_)?(?:SECRET|SECRET_KEY)', reference):
+    raise RuntimeError('REFERENCE_VARIABLE_INVALID')
+fields = list(dict.fromkeys(['DJANGO_SECRET_KEY'] + ([reference] if reference else [])))
+if reference and before.get(reference) not in (None, '', key):
+    sys.stdout.write(json.dumps({'error': 'REFERENCE_VARIABLE_HAS_DIFFERENT_VALUE'}))
+    sys.exit(0)
 with tempfile.TemporaryDirectory(prefix='tmdb-secret-') as directory:
     path = Path(directory) / 'app.env'
     path.write_text(original, encoding='utf-8')
@@ -43,15 +51,17 @@ with tempfile.TemporaryDirectory(prefix='tmdb-secret-') as directory:
     # quote writer escapes them for its own parser. Prefer a representation
     # that preserves the key in both parsers, and verify Python's reading too.
     literal = "'" + key.replace("'", "\\'") + "'"
-    set_key(str(path), 'DJANGO_SECRET_KEY', literal, quote_mode='never')
-    if dotenv_values(path, interpolate=False).get('DJANGO_SECRET_KEY') != key:
-        set_key(str(path), 'DJANGO_SECRET_KEY', key, quote_mode='always')
+    for field in fields:
+        set_key(str(path), field, literal, quote_mode='never')
+        if dotenv_values(path, interpolate=False).get(field) != key:
+            set_key(str(path), field, key, quote_mode='always')
     updated = path.read_text(encoding='utf-8')
 after = dotenv_values(stream=io.StringIO(updated), interpolate=False)
-if after.get('DJANGO_SECRET_KEY') != key:
+if any(after.get(field) != key for field in fields):
     raise RuntimeError('ENV_ENCODING_FAILED')
-before.pop('DJANGO_SECRET_KEY', None)
-after.pop('DJANGO_SECRET_KEY', None)
+for field in fields:
+    before.pop(field, None)
+    after.pop(field, None)
 if before != after:
     raise RuntimeError('OTHER_SETTINGS_CHANGED')
 sys.stdout.write(json.dumps({'secret': key, 'updated': updated}))
@@ -83,6 +93,13 @@ def environment_values(raw):
             result[name] = value if separator else None
         return result
     raise RecoveryError('COMPOSE_ENVIRONMENT_FORMAT_INVALID')
+
+
+def reference_variable(value):
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?:[-:+?].*)?\}|\$([A-Za-z_][A-Za-z0-9_]*)', value, re.S)
+    return next((name for name in match.groups() if name), None) if match else None
 
 
 def compose_keys(root, files, run):
@@ -127,7 +144,7 @@ def diagnose(root, *, run=private_command):
                 path = Path(path)
                 resolved = (root / path).resolve()
                 env_files.append({'name': path.name, 'project_env': resolved == root / '.env'})
-            safe[name] = {'key_setting': state, 'env_files': env_files}
+            safe[name] = {'key_setting': state, 'reference_variable': reference_variable(value), 'env_files': env_files}
     except (ValueError, KeyError, TypeError, AttributeError):
         raise RecoveryError('COMPOSE_CONFIG_INVALID') from None
     key = 'DJANGO_SECRET_KEY'
@@ -149,7 +166,9 @@ def replace_private(path, data, owner):
         Path(temporary).unlink(missing_ok=True)
 
 
-def recover(root, source, *, run=private_command):
+def recover(root, source, *, run=private_command, reference=None):
+    if reference and not re.fullmatch(r'(?:[A-Z][A-Z0-9_]*_)?(?:SECRET|SECRET_KEY)', reference):
+        raise RecoveryError('REFERENCE_VARIABLE_INVALID')
     root = Path(root).resolve()
     files = [root / 'compose.yaml', root / 'compose.server.yaml']
     env = root / '.env'
@@ -172,10 +191,18 @@ def recover(root, source, *, run=private_command):
                      '{{ index .Config.Labels "com.docker.compose.project.config_files" }}'], root=root).strip()
         if {str(Path(p).resolve()) for p in label.split(',')} != {str(p) for p in files}:
             raise RecoveryError('SOURCE_COMPOSE_PROJECT_MISMATCH')
+        if reference:
+            config = diagnose(root, run=run)
+            if any(service['reference_variable'] != reference for service in config['services'].values()):
+                raise RecoveryError('REFERENCE_VARIABLE_DOES_NOT_MATCH_COMPOSE')
         original = env.read_bytes()
         try:
-            recovered = json.loads(run(['docker', 'exec', '-i', source, 'python', '-c', SOURCE_SCRIPT],
+            recovered = json.loads(run(['docker', 'exec', '-i', '-e',
+                                       'TM_RECOVERY_REFERENCE_VARIABLE=' + (reference or ''),
+                                       source, 'python', '-c', SOURCE_SCRIPT],
                                        root=root, input=original.decode('utf-8')))
+            if recovered.get('error') == 'REFERENCE_VARIABLE_HAS_DIFFERENT_VALUE':
+                raise RecoveryError('REFERENCE_VARIABLE_HAS_DIFFERENT_VALUE')
             key, updated = recovered['secret'], recovered['updated'].encode('utf-8')
             if not isinstance(key, str) or not key or not updated:
                 raise ValueError()
@@ -210,6 +237,7 @@ def recover(root, source, *, run=private_command):
                                 details=exc.details or {'reason': str(exc)}) from None
         return {'status': 'restored_existing_secret', 'services_verified': list(verified),
                 'backup': str(backup.relative_to(root)), 'env_permissions': '0600',
+                **({'reference_variable': reference} if reference else {}),
                 'database_changed': False, 'services_restarted': False}
 
 
@@ -217,12 +245,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-container')
     parser.add_argument('--diagnose', action='store_true', help='Read-only, value-free Compose diagnostics')
+    parser.add_argument('--reference-variable', help='Explicit secret variable referenced by all three services')
     args = parser.parse_args()
     if not args.diagnose and not args.source_container:
         parser.error('--source-container is required for recovery')
     try:
         root = Path(__file__).resolve().parents[1]
-        result = diagnose(root) if args.diagnose else recover(root, args.source_container)
+        result = diagnose(root) if args.diagnose else recover(root, args.source_container, reference=args.reference_variable)
     except RecoveryError as exc:
         print(json.dumps({'status': 'stopped', 'code': str(exc),
                           **({'details': exc.details} if exc.details else {})}))

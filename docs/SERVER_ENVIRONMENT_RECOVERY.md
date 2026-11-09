@@ -22,17 +22,21 @@ python3 scripts/recover_runtime_secret.py --diagnose
 ```sh
 cd /root/TMDB
 git pull --ff-only
-python3 scripts/recover_runtime_secret.py --source-container tmdb-scheduler-1
+unset TM_SERVER_SECRET
+python3 scripts/recover_runtime_secret.py --source-container tmdb-scheduler-1 \
+  --reference-variable TM_SERVER_SECRET
 ```
 
 이 명령은 호스트의 Python 표준 라이브러리만 사용한다. 호스트에 Django나 pip 패키지를 추가하지 않는다. 원래 컨테이너의 Django 설정을 management 역할로 읽으며 DB 연결·AI 요청은 수행하지 않는다. 키와 환경 파일은 subprocess의 비공개 입출력으로만 처리하고 출력에는 상태·설정 확인 대상·백업 위치만 넣는다.
+
+`unset TM_SERVER_SECRET`은 현재 셸의 덮어쓰기만 제거해 프로젝트 `.env`에서 참조 변수를 읽도록 한다. 환경 파일이나 실행 중인 컨테이너의 기존 키를 지우지 않는다.
 
 도구는 다음을 수행한다.
 
 1. 원본 컨테이너의 Compose 파일 경로가 현재 프로젝트와 같은지 검사한다.
 2. 기존 스케줄러가 실제 사용하는 SECRET_KEY를 읽는다. 키 값은 화면이나 명령 인자에 출력하지 않는다.
 3. 새 `.local/runtime-secret-recovery-<UUID>/` 디렉터리(0700)에 현재 `.env`를 `app.env.before`(0600)로 백업한다. 이 경로는 Git·Docker 빌드 컨텍스트 제외 대상이다.
-4. `.env`의 DJANGO_SECRET_KEY만 기존 키로 설정하고 다른 설정은 유지한다. `.env` 권한은 0600으로 설정한다.
+4. 기본 모드는 `.env`의 DJANGO_SECRET_KEY를 기존 키로 설정한다. `--reference-variable TM_SERVER_SECRET`을 지정하면 실제 Compose 참조가 세 서비스 모두 이 이름과 일치하는지 확인한 뒤 DJANGO_SECRET_KEY와 TM_SERVER_SECRET에 같은 기존 키를 설정한다. 관련 없는 설정은 유지하며 지정한 참조 변수에 다른 값이 이미 있으면 덮어쓰지 않는다. `.env` 권한은 0600으로 설정한다.
 5. 실제 `docker compose ... config`를 내부에서 읽어 web·scheduler·ai_worker에 같은 키가 전달되는지 비교한다. 전체 설정이나 키는 출력하지 않는다. 검사 실패 시 기존 `.env` 내용과 권한을 복원한다.
 
 성공 상태는 `restored_existing_secret`이다. 이미 같은 키가 설정되어 있으면 `already_configured`로 종료하며 기존 백업을 덮어쓰지 않는다. 다른 키가 이미 설정되어 있으면 덮어쓰지 않고 중단한다. 병렬 실행과 작업 중 환경 파일 변경도 검사한다.
@@ -71,3 +75,13 @@ docker compose -f compose.yaml -f compose.server.yaml \
 수정 검증 실행 ID: `20261109T132016414651Z-f0199443af214358a8f55a44644ac3d8`. 기존 실행 산출물을 덮어쓰지 않고 별도 디렉터리에 보존했다.
 
 목록형 환경설정 진단 보완 후에는 실제 Compose 목록형·맵형 해석과 읽기 전용 동작·값 비노출을 포함해 23개 검사 통과, 건너뛰기 0개다. 실행 ID는 `20261109T132845318179Z-b2b28d56f17f4b3fb65b5c06a91a16e3`이며 이전 19개 검사 기록도 보존한다. 실제 서버의 키 누락 원인과 복구 성공은 `--diagnose` 및 서버 재실행 결과로 계속 확인해야 한다.
+
+## 서버에서 확인한 변수명 불일치
+
+추가 사용자 확인 결과 세 서비스의 DJANGO_SECRET_KEY는 모두 TM_SERVER_SECRET을 참조했다. 초기 복구 도구가 `.env`의 DJANGO_SECRET_KEY만 설정해도 이 참조 변수는 채워지지 않으므로, Compose의 inline 환경값이 빈 값으로 덮어쓸 수 있다. 이 서버의 현재 복구 명령은 위의 `--reference-variable TM_SERVER_SECRET` 포함 명령이다. 다른 서버에 같은 변수명을 임의로 적용하지 않는다.
+
+참조 이름은 단순 변수 표현에서 이름만 추출하며 기본값·실제 키는 출력하지 않는다. 복구는 명시한 SECRET 계열 변수명이 세 서비스의 실제 참조와 모두 일치할 때만 진행한다. DATABASE_URL 같은 다른 설정을 복구 대상으로 지정하거나, 다른 키가 이미 설정되어 있으면 중단한다. 새 키를 생성하지 않으며 Docker Compose 파일도 변경하지 않는다.
+
+실제 Compose CLI에 동일한 `DJANGO_SECRET_KEY=${TM_SERVER_SECRET:-}` 설정을 구성해 기존 키의 양쪽 이름 복원·세 서비스 전달·기존 기타 설정 보존·재실행·원본 백업을 검증했다. 실제 서버의 환경 복구 및 등록 성공은 사용자 실행 결과로 별도 확인한다. 이 설정 문제의 원인 확인은 최초 고객 등록 실패의 모든 원인을 확정했다는 뜻이 아니다.
+
+참조 변수 보완 후 26개 검사 통과, 건너뛰기 0개다. 최종 실행 ID는 `20261109T134736288187Z-ff664bd3565a43328ac4033a8a7bd874`이며 앞선 실행 `20261109T133813278343Z-83d40162b51349e5a09115d4166a1497`도 별도 보존했다. 실제 서버 데이터·Docker 엔진·외부 AI 요청은 이 가상 검증에 사용하지 않았다.
