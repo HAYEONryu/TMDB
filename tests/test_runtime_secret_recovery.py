@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
-from unittest import TestCase
+from unittest import TestCase, skipUnless
 from unittest.mock import patch
 
 from dotenv import dotenv_values
@@ -36,7 +36,8 @@ class RuntimeSecretRecoveryTests(TestCase):
             return json.dumps({'secret':KEY,'updated':ORIGINAL+"DJANGO_SECRET_KEY='"+KEY.replace('\\','\\\\').replace("'","\\'")+"'\n"})
         if args[1]=='compose':
             key=dotenv_values(self.env,interpolate=False).get('DJANGO_SECRET_KEY')
-            return json.dumps({'services':{name:{'environment':{'DJANGO_SECRET_KEY':'' if self.override else key}}
+            serialized=key.replace('$','$$') if key else key
+            return json.dumps({'services':{name:{'environment':{'DJANGO_SECRET_KEY':'' if self.override else serialized}}
                                          for name in ('web','scheduler','ai_worker')}})
         self.fail('Unexpected command')
 
@@ -66,10 +67,12 @@ class RuntimeSecretRecoveryTests(TestCase):
 
     def test_blank_compose_override_rolls_back_original_content_and_mode(self):
         self.override=True
-        with self.assertRaisesRegex(RecoveryError,'VERIFY_FAILED_ORIGINAL_ENV_RESTORED'):
+        with self.assertRaisesRegex(RecoveryError,'VERIFY_FAILED_ORIGINAL_ENV_RESTORED') as caught:
             recover(self.root,'old-scheduler',run=self.fake_run)
         self.assertEqual(self.env.read_text(),ORIGINAL)
         self.assertEqual(stat.S_IMODE(self.env.stat().st_mode),0o640)
+        self.assertEqual(caught.exception.details,{'services':{name:'missing' for name in ('web','scheduler','ai_worker')}})
+        self.assertNotIn(KEY,json.dumps(caught.exception.details))
 
     def test_different_configured_key_is_never_overwritten(self):
         self.env.write_text(ORIGINAL+'DJANGO_SECRET_KEY=synthetic-different\n')
@@ -119,3 +122,53 @@ class RuntimeSecretRecoveryTests(TestCase):
         with self.assertRaisesRegex(RecoveryError,'PROJECT_ENV_OR_COMPOSE_FILE_MISSING'):
             recover(self.root,'old-scheduler',run=self.fake_run)
         self.assertEqual((self.root/'actual.env').read_text(),ORIGINAL)
+
+
+COMPOSE = Path(__file__).resolve().parents[1]/'.local/bin/docker-compose'
+
+
+@skipUnless(COMPOSE.is_file(),'Standalone Compose CLI not installed; no Docker engine needed')
+class RealComposeSecretRecoveryTests(RuntimeSecretRecoveryTests):
+    """Use the real CLI dotenv parser and serializer, not a Python approximation."""
+    def setUp(self):
+        super().setUp()
+        (self.root/'compose.yaml').write_text(json.dumps({'services':{
+            name:{'image':'synthetic-no-engine-required','env_file':str(self.env)}
+            for name in ('web','scheduler','ai_worker')}}))
+        (self.root/'compose.server.yaml').write_text('services: {}\n')
+        self.settings=self.root/'synthetic_settings.py'
+        self.settings.write_text('SECRET_KEY = '+repr(KEY)+'\n')
+
+    def fake_run(self, args, *, root, input=None):
+        if args[1]=='compose':
+            self.calls.append(args)
+            environment={k:v for k,v in os.environ.items() if k!='DJANGO_SECRET_KEY'}
+            result=subprocess.run([str(COMPOSE),*args[2:]],cwd=root,env=environment,capture_output=True,text=True)
+            if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
+            return result.stdout
+        if args[1]=='exec':
+            self.calls.append(args)
+            environment={**os.environ,'PYTHONPATH':str(self.root),'DJANGO_SETTINGS_MODULE':'synthetic_settings',
+                         'PYTHONDONTWRITEBYTECODE':'1'}
+            result=subprocess.run([sys.executable,'-c',SOURCE_SCRIPT],cwd=root,env=environment,input=input,capture_output=True,text=True)
+            if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
+            return result.stdout
+        return super().fake_run(args,root=root,input=input)
+
+    def test_blank_compose_override_rolls_back_original_content_and_mode(self):
+        (self.root/'compose.server.yaml').write_text(json.dumps({'services':{
+            name:{'environment':{'DJANGO_SECRET_KEY':''}} for name in ('web','scheduler','ai_worker')}}))
+        super().test_blank_compose_override_rolls_back_original_content_and_mode()
+
+    def test_different_configured_key_is_never_overwritten(self):
+        # Existing unrelated key is tested before any new .env is written.
+        super().test_different_configured_key_is_never_overwritten()
+
+    def test_real_compose_preserves_single_paired_and_adjacent_literal_dollars(self):
+        for key in ['synthetic-$literal','synthetic-$$pair','synthetic-$$$adjacent',KEY]:
+            with self.subTest(kind='synthetic-literal-key'):
+                self.env.write_text(ORIGINAL)
+                self.settings.write_text('SECRET_KEY = '+repr(key)+'\n')
+                result=recover(self.root,'old-scheduler',run=self.fake_run)
+                self.assertEqual(result['status'],'restored_existing_secret')
+                self.assertEqual(dotenv_values(self.env,interpolate=False)['DJANGO_SECRET_KEY'],key)

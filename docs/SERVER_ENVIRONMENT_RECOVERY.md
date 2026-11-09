@@ -24,7 +24,7 @@ python3 scripts/recover_runtime_secret.py --source-container tmdb-scheduler-1
 
 성공 상태는 `restored_existing_secret`이다. 이미 같은 키가 설정되어 있으면 `already_configured`로 종료하며 기존 백업을 덮어쓰지 않는다. 다른 키가 이미 설정되어 있으면 덮어쓰지 않고 중단한다. 병렬 실행과 작업 중 환경 파일 변경도 검사한다.
 
-`VERIFY_FAILED_ORIGINAL_ENV_RESTORED`이면 기존 `.env`로 돌아간 상태다. `compose.server.yaml`이나 셸 환경에서 키를 빈 값으로 덮어쓰는지 확인해야 한다. `SOURCE_COMPOSE_PROJECT_MISMATCH`이면 원본 컨테이너를 잘못 지정했을 수 있다. `DOCKER_COMMAND_FAILED`이면 원본 컨테이너 실행 상태나 Docker 접근을 확인한다. 원본 컨테이너·이미지·볼륨을 삭제하거나 임의의 새 키로 대체하지 않는다. 원시 `.env`·Compose 전체 설정·컨테이너 환경값을 채팅에 보내지 않는다.
+`VERIFY_FAILED_ORIGINAL_ENV_RESTORED`이면 기존 `.env`로 돌아간 상태다. 아래 수정 이력의 검증 오류가 수정된 최신 도구를 사용한다. 여전히 실패하면 `details.services`의 `missing`·`different`·`matches_existing`만 확인한다. 실제 키는 출력하지 않는다. `compose.server.yaml`이나 셸 환경에서 키를 빈 값으로 덮어쓰는 경우에도 같은 상위 오류 코드가 발생할 수 있으므로, 이 코드만으로 서버 설정 오류를 확정하지 않는다. `SOURCE_COMPOSE_PROJECT_MISMATCH`이면 원본 컨테이너를 잘못 지정했을 수 있다. `DOCKER_COMMAND_FAILED`이면 원본 컨테이너 실행 상태나 Docker 접근을 확인한다. 원본 컨테이너·이미지·볼륨을 삭제하거나 임의의 새 키로 대체하지 않는다. 원시 `.env`·Compose 전체 설정·컨테이너 환경값을 채팅에 보내지 않는다.
 
 ## 복원 후 확인
 
@@ -48,3 +48,11 @@ docker compose -f compose.yaml -f compose.server.yaml \
 로컬 Docker 엔진이나 실제 우분투 서버에서 이 도구를 실행한 결과는 아직 없다. 실제 서버 복원 성공과 DB 등록 성공은 사용자 실행 결과로 별도 확인한다. 기존 고객 기능 검수 결과를 이 환경 복구의 성공 증거로 재사용하지 않는다.
 
 가상 검증 실행 ID: `20261109T120912772801Z-87ed3e43327d407e8d0559d11f61b546`. 결과는 `.local/verification-runs/<실행ID>/`에 보존한다.
+
+## 실제 Compose 출력 검증 보완
+
+최초 도구 실행에서 서버는 `VERIFY_FAILED_ORIGINAL_ENV_RESTORED`를 반환했다. 이후 실제 Compose CLI로 가상 키를 검사해 도구의 비교 오류를 재현했다. `docker compose config --format json`은 리터럴 `$`를 `$$`로 표시한다. 최초 도구는 이 출력 표현을 실제 키와 그대로 비교해 잘못 실패할 수 있었다. 비교 전에 이 표현을 한 번 해석하도록 수정했다. Python-dotenv와 Compose가 역슬래시를 처리하는 차이도 검사해 양쪽에서 기존 값을 유지하는 단일 인용 표현을 우선 사용한다. 유효한 표현을 확인할 수 없으면 성공으로 처리하지 않고 원래 환경 파일을 보존한다.
+
+수정본은 가상 단위 검사와 실제 Compose CLI 5.7.0의 환경 파일 해석·JSON 출력을 포함해 **19개 검사 통과, 건너뛰기 0개**다. `$`·`$$`·`$$$`·따옴표·역슬래시가 있는 가상 키의 보존, 빈 inline 환경값에 의한 진짜 실패와 원복, 비밀값 없는 진단을 포함한다. 실제 Compose 검사는 Docker 엔진이나 컨테이너 실행 없이 수행했다. 서버의 이번 실패가 같은 원인인지는 서버 키를 보지 않았으므로 확정하지 않으며, 수정본 재실행 결과로 확인한다. 앞선 9개 가상 검사 기록은 당시 결과로 보존한다.
+
+수정 검증 실행 ID: `20261109T132016414651Z-f0199443af214358a8f55a44644ac3d8`. 기존 실행 산출물을 덮어쓰지 않고 별도 디렉터리에 보존했다.

@@ -16,7 +16,9 @@ from uuid import uuid4
 
 
 class RecoveryError(Exception):
-    pass
+    def __init__(self, code, *, details=None):
+        super().__init__(code)
+        self.details = details
 
 
 # Runs in the OLD container. Django settings resolves exactly the key already
@@ -37,7 +39,13 @@ with tempfile.TemporaryDirectory(prefix='tmdb-secret-') as directory:
     path = Path(directory) / 'app.env'
     path.write_text(original, encoding='utf-8')
     path.chmod(0o600)
-    set_key(str(path), 'DJANGO_SECRET_KEY', key, quote_mode='always')
+    # Compose treats backslashes in single quotes literally; python-dotenv's
+    # quote writer escapes them for its own parser. Prefer a representation
+    # that preserves the key in both parsers, and verify Python's reading too.
+    literal = "'" + key.replace("'", "\\'") + "'"
+    set_key(str(path), 'DJANGO_SECRET_KEY', literal, quote_mode='never')
+    if dotenv_values(path, interpolate=False).get('DJANGO_SECRET_KEY') != key:
+        set_key(str(path), 'DJANGO_SECRET_KEY', key, quote_mode='always')
     updated = path.read_text(encoding='utf-8')
 after = dotenv_values(stream=io.StringIO(updated), interpolate=False)
 if after.get('DJANGO_SECRET_KEY') != key:
@@ -67,8 +75,12 @@ def compose_keys(root, files, run):
                   '--profile', 'ai', 'config', '--format', 'json'], root=root)
     try:
         services = json.loads(output)['services']
-        return {name: services[name].get('environment', {}).get('DJANGO_SECRET_KEY')
-                for name in ('web', 'scheduler', 'ai_worker')}
+        values = {name: services[name].get('environment', {}).get('DJANGO_SECRET_KEY')
+                  for name in ('web', 'scheduler', 'ai_worker')}
+        # Compose serializes literal dollars as $$ so its config can be loaded
+        # again. Compare the decoded value, never the serialized representation.
+        return {name: value.replace('$$', '$') if isinstance(value, str) else value
+                for name, value in values.items()}
     except (ValueError, KeyError, TypeError, AttributeError):
         raise RecoveryError('COMPOSE_CONFIG_INVALID') from None
 
@@ -133,13 +145,16 @@ def recover(root, source, *, run=private_command):
         try:
             verified = compose_keys(root, files, run)
             if not all(value == key for value in verified.values()):
-                raise RecoveryError('COMPOSE_SECRET_OVERRIDE_CHECK_FAILED')
-        except RecoveryError:
+                states = {name: 'matches_existing' if value == key else 'missing' if not value else 'different'
+                          for name, value in verified.items()}
+                raise RecoveryError('COMPOSE_SECRET_OVERRIDE_CHECK_FAILED', details={'services': states})
+        except RecoveryError as exc:
             if env.read_bytes() != updated:
                 raise RecoveryError('ENV_CHANGED_RESTORE_BACKUP_MANUALLY') from None
             replace_private(env, original, owner)
             env.chmod(stat.S_IMODE(owner.st_mode))
-            raise RecoveryError('VERIFY_FAILED_ORIGINAL_ENV_RESTORED') from None
+            raise RecoveryError('VERIFY_FAILED_ORIGINAL_ENV_RESTORED',
+                                details=exc.details or {'reason': str(exc)}) from None
         return {'status': 'restored_existing_secret', 'services_verified': list(verified),
                 'backup': str(backup.relative_to(root)), 'env_permissions': '0600',
                 'database_changed': False, 'services_restarted': False}
@@ -152,7 +167,8 @@ def main():
     try:
         result = recover(Path(__file__).resolve().parents[1], args.source_container)
     except RecoveryError as exc:
-        print(json.dumps({'status': 'stopped', 'code': str(exc)}))
+        print(json.dumps({'status': 'stopped', 'code': str(exc),
+                          **({'details': exc.details} if exc.details else {})}))
         return 1
     except Exception:
         print(json.dumps({'status': 'stopped', 'code': 'RECOVERY_FAILED_NO_DETAILS'}))
