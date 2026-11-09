@@ -38,6 +38,8 @@ docker compose --env-file /srv/tmdb/secrets/deployment.env -f deploy/compose.pro
 
 ## 암호화 백업
 
+사용자 정의 `compose.yaml`·`compose.server.yaml` 조합에서 새 이미지의 SECRET_KEY가 누락되면 [기존 키 복원 안내](SERVER_ENVIRONMENT_RECOVERY.md)를 먼저 확인한다. 이 환경 복구는 DB migration·백업이나 운영 서버 검증을 대신하지 않는다.
+
 백업은 웹/예약 프로세스와 별도의 운영 명령이다. 호스트의 PostgreSQL17 `pg_dump`/`pg_restore`와 age가 필요하다. 앱 이미지 안에 이 운영 도구가 준비되어 있다고 가정하지 않는다. age 설치 도구는 공식 배포의 SHA-256을 고정 확인하며 프로젝트 내부에 설치한다.
 
 ```sh

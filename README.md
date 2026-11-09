@@ -114,6 +114,7 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 
 - [현재 운영 기준·미확인 환경·다음 결정](docs/CURRENT_OPERATING_BASELINE.md)
 - [운영·배포·백업·복원](docs/OPERATIONS.md)
+- [Docker SECRET_KEY 누락 시 기존 키 복원](docs/SERVER_ENVIRONMENT_RECOVERY.md)
 - [AI 비활성·키 관리](docs/AI_ACTIVATION.md)
 - [crypto.randomUUID 오류 수정·서버 정적 파일 적용](docs/REQUEST_ID_COMPATIBILITY.md)
 - [HTTP 환경 전체 점검·직원 HTTPS 조건·도메인 없는 접속 방법](docs/HTTP_ENVIRONMENT_AUDIT.md)
