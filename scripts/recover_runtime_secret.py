@@ -70,12 +70,27 @@ def private_command(args, *, root, input=None):
     return result.stdout
 
 
+def environment_values(raw):
+    """Compose preserves KEY=value lists when interpolation is disabled."""
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+        result = {}
+        for item in raw:
+            name, separator, value = item.partition('=')
+            result[name] = value if separator else None
+        return result
+    raise RecoveryError('COMPOSE_ENVIRONMENT_FORMAT_INVALID')
+
+
 def compose_keys(root, files, run):
     output = run(['docker', 'compose', *sum((['-f', str(p)] for p in files), []),
                   '--profile', 'ai', 'config', '--format', 'json'], root=root)
     try:
         services = json.loads(output)['services']
-        values = {name: services[name].get('environment', {}).get('DJANGO_SECRET_KEY')
+        values = {name: environment_values(services[name].get('environment')).get('DJANGO_SECRET_KEY')
                   for name in ('web', 'scheduler', 'ai_worker')}
         # Compose serializes literal dollars as $$ so its config can be loaded
         # again. Compare the decoded value, never the serialized representation.
@@ -83,6 +98,44 @@ def compose_keys(root, files, run):
                 for name, value in values.items()}
     except (ValueError, KeyError, TypeError, AttributeError):
         raise RecoveryError('COMPOSE_CONFIG_INVALID') from None
+
+
+def diagnose(root, *, run=private_command):
+    """Read config shape only; never extract a key or change any file."""
+    root = Path(root).resolve()
+    files = [root / 'compose.yaml', root / 'compose.server.yaml']
+    if any(not path.is_file() for path in files):
+        raise RecoveryError('PROJECT_COMPOSE_FILE_MISSING')
+    output = run(['docker', 'compose', *sum((['-f', str(p)] for p in files), []),
+                  '--profile', 'ai', 'config', '--format', 'json',
+                  '--no-env-resolution', '--no-interpolate'], root=root)
+    try:
+        services = json.loads(output)['services']
+        safe = {}
+        for name in ('web', 'scheduler', 'ai_worker'):
+            service = services[name]
+            values = environment_values(service.get('environment'))
+            key = 'DJANGO_SECRET_KEY'
+            value = values.get(key)
+            state = ('absent' if key not in values else 'empty_or_inherited' if not value
+                     else 'variable_expression' if '$' in str(value) else 'value_hidden')
+            paths = service.get('env_file') or []
+            paths = paths if isinstance(paths, list) else [paths]
+            env_files = []
+            for item in paths:
+                path = item if isinstance(item, str) else item['path']
+                path = Path(path)
+                resolved = (root / path).resolve()
+                env_files.append({'name': path.name, 'project_env': resolved == root / '.env'})
+            safe[name] = {'key_setting': state, 'env_files': env_files}
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise RecoveryError('COMPOSE_CONFIG_INVALID') from None
+    key = 'DJANGO_SECRET_KEY'
+    shell = 'unset' if key not in os.environ else 'empty' if not os.environ[key] else 'set_hidden'
+    return {'status': 'diagnostic_only', 'shell_key': shell,
+            'custom_compose_env_files': bool(os.environ.get('COMPOSE_ENV_FILES')),
+            'default_env_disabled': os.environ.get('COMPOSE_DISABLE_ENV_FILE', '').lower() in {'1', 'true'},
+            'services': safe, 'writes_performed': False}
 
 
 def replace_private(path, data, owner):
@@ -162,10 +215,14 @@ def recover(root, source, *, run=private_command):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source-container', required=True)
+    parser.add_argument('--source-container')
+    parser.add_argument('--diagnose', action='store_true', help='Read-only, value-free Compose diagnostics')
     args = parser.parse_args()
+    if not args.diagnose and not args.source_container:
+        parser.error('--source-container is required for recovery')
     try:
-        result = recover(Path(__file__).resolve().parents[1], args.source_container)
+        root = Path(__file__).resolve().parents[1]
+        result = diagnose(root) if args.diagnose else recover(root, args.source_container)
     except RecoveryError as exc:
         print(json.dumps({'status': 'stopped', 'code': str(exc),
                           **({'details': exc.details} if exc.details else {})}))

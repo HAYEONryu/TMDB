@@ -12,8 +12,8 @@ from unittest import TestCase, skipUnless
 from unittest.mock import patch
 
 from dotenv import dotenv_values
-from scripts.recover_runtime_secret import (RecoveryError, SOURCE_SCRIPT, main,
-                                           private_command, recover)
+from scripts.recover_runtime_secret import (RecoveryError, SOURCE_SCRIPT, main, diagnose,
+                                           environment_values, private_command, recover)
 
 KEY = "synthetic-existing-secret-$literal-quote'and\\slash"
 ORIGINAL = "DATABASE_URL=postgresql://fake:synthetic@postgres/tm_dev\nDJANGO_DEBUG=false\n"
@@ -125,6 +125,65 @@ class RuntimeSecretRecoveryTests(TestCase):
 
 
 COMPOSE = Path(__file__).resolve().parents[1]/'.local/bin/docker-compose'
+
+
+class RuntimeSecretDiagnosticsTests(TestCase):
+    def setUp(self):
+        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)
+        for name in ('compose.yaml','compose.server.yaml'):(self.root/name).write_text('services: {}\n')
+
+    def test_list_mapping_and_empty_environment_shapes_do_not_expose_values_or_write(self):
+        payload={'services':{
+            'web':{'environment':['DJANGO_SECRET_KEY=','OTHER='+KEY],'env_file':['.env']},
+            'scheduler':{'environment':{'DJANGO_SECRET_KEY':'${DJANGO_SECRET_KEY:-'+KEY+'}'},'env_file':[{'path':'.env.server'}]},
+            'ai_worker':{'environment':['OTHER='+KEY,'DJANGO_SECRET_KEY='+KEY],'env_file':'.env'}}}
+        calls=[]
+        before={p.name:p.read_bytes() for p in self.root.iterdir()}
+        def run(args,**kwargs):calls.append(args);return json.dumps(payload)
+        with patch.dict(os.environ,{},clear=True):result=diagnose(self.root,run=run)
+        self.assertEqual(result['shell_key'],'unset')
+        self.assertEqual(result['services']['web']['key_setting'],'empty_or_inherited')
+        self.assertEqual(result['services']['scheduler']['key_setting'],'variable_expression')
+        self.assertEqual(result['services']['ai_worker']['key_setting'],'variable_expression')
+        self.assertTrue(result['services']['web']['env_files'][0]['project_env'])
+        self.assertFalse(result['services']['scheduler']['env_files'][0]['project_env'])
+        self.assertNotIn(KEY,json.dumps(result))
+        self.assertEqual({p.name:p.read_bytes() for p in self.root.iterdir()},before)
+        self.assertEqual(len(calls),1)
+        self.assertEqual(calls[0][1],'compose')
+
+    def test_unset_and_equals_inside_values_are_preserved(self):
+        self.assertEqual(environment_values(['DJANGO_SECRET_KEY','OTHER=a=b','EMPTY=']),
+                         {'DJANGO_SECRET_KEY':None,'OTHER':'a=b','EMPTY':''})
+        self.assertEqual(environment_values(None),{})
+        with self.assertRaises(RecoveryError):environment_values([{'unexpected':'shape'}])
+
+    def test_diagnose_cli_does_not_require_source_container_or_invoke_recovery(self):
+        output=io.StringIO()
+        with patch.object(sys,'argv',['recover_runtime_secret.py','--diagnose']),patch('scripts.recover_runtime_secret.diagnose',return_value={'status':'diagnostic_only'}) as check,patch('scripts.recover_runtime_secret.recover') as recovery,patch('sys.stdout',output):
+            self.assertEqual(main(),0)
+        check.assert_called_once();recovery.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())['status'],'diagnostic_only')
+
+    @skipUnless(COMPOSE.is_file(),'Standalone Compose CLI not installed')
+    def test_actual_compose_list_style_and_mapping_style_are_both_readable(self):
+        (self.root/'.env').write_text('OTHER=synthetic\n')
+        (self.root/'compose.yaml').write_text(json.dumps({'services':{
+            name:{'image':'synthetic-no-engine-required','env_file':'.env'}
+            for name in ('web','scheduler','ai_worker')}}))
+        (self.root/'compose.server.yaml').write_text(json.dumps({'services':{
+            'web':{'environment':['DJANGO_SECRET_KEY=']},
+            'scheduler':{'environment':['DJANGO_SECRET_KEY']},
+            'ai_worker':{'environment':{'DJANGO_SECRET_KEY':'${DJANGO_SECRET_KEY}'}}}}))
+        def run(args,**kwargs):
+            result=subprocess.run([str(COMPOSE),*args[2:]],cwd=self.root,capture_output=True,text=True)
+            if result.returncode:raise RecoveryError('DOCKER_COMMAND_FAILED')
+            return result.stdout
+        result=diagnose(self.root,run=run)
+        self.assertEqual(result['services']['web']['key_setting'],'empty_or_inherited')
+        self.assertEqual(result['services']['scheduler']['key_setting'],'empty_or_inherited')
+        self.assertEqual(result['services']['ai_worker']['key_setting'],'variable_expression')
 
 
 @skipUnless(COMPOSE.is_file(),'Standalone Compose CLI not installed; no Docker engine needed')
