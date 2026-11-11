@@ -91,6 +91,31 @@ class AuthenticationTests(TestCase):
         self.employee.refresh_from_db()
         self.assertEqual(login(self.employee).get("/api/access/employee").status_code, 200)
 
+    def test_employee_second_and_third_login_do_not_require_password_change_again(self):
+        client = login(self.employee)
+        self.assertEqual(client.post('/auth/password', password_data(), content_type='application/json').status_code, 200)
+        for _ in range(3):
+            self.assertEqual(client.post('/auth/logout', {}, content_type='application/json').status_code, 200)
+            client = Client()
+            result = client.post('/auth/login', {'phone': self.employee.phone_normalized, 'password': STRONG_PASSWORD}, content_type='application/json')
+            self.assertEqual(result.status_code, 200)
+            self.assertEqual(result.json()['redirect'], '/app/employee')
+            self.assertFalse(result.json()['must_change_password'])
+            self.assertFalse(client.get('/api/me').json()['must_change_password'])
+            self.assertEqual(client.get('/app/employee/today').status_code, 200)
+        self.employee.refresh_from_db()
+        self.assertFalse(self.employee.must_change_password)
+        self.assertEqual(self.employee.session_version, 2)
+
+    def test_completed_password_gate_skips_old_url_but_allows_explicit_change(self):
+        client = login(self.employee)
+        self.assertEqual(client.get('/auth/password').status_code, 200)
+        client.post('/auth/password', password_data(), content_type='application/json')
+        self.assertRedirects(client.get('/auth/password'), '/app/employee', fetch_redirect_response=False)
+        self.assertContains(client.get('/auth/password?change=1'), '비밀번호 변경을 완료한 계정입니다.')
+        self.employee.refresh_from_db()
+        self.assertFalse(self.employee.must_change_password)
+
     def test_reset_invalidates_all_sessions_and_requires_initial_change_again(self):
         self.admin.must_change_password = False
         self.admin.set_password(STRONG_PASSWORD)

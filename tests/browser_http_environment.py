@@ -1,10 +1,12 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.test import override_settings
+from django.db import close_old_connections
 from django.utils.functional import classproperty
 from playwright.sync_api import sync_playwright, expect
 
@@ -48,16 +50,32 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page).to_have_url(origin + ("/app/admin" if admin else "/app/employee"))
         return page, origin
 
-    def assert_blocked(self, page, message, *, context_requested=False):
+    def db(self, action):
+        def run():
+            close_old_connections()
+            try:return action()
+            finally:close_old_connections()
+        with ThreadPoolExecutor(max_workers=1) as pool:return pool.submit(run).result()
+
+    def assert_blocked(self, page, message, *, context_requested=False, browse=True):
         expect(page.locator("#employee-message")).to_contain_text(message)
         expect(page.locator("#save-now")).to_be_disabled()
-        expect(page.locator("#employee-private")).not_to_be_visible()
+        if browse:
+            expect(page.locator('#employee-private')).to_be_visible()
+            expect(page.locator('#site')).to_be_enabled()
+            expect(page.locator('#queue-status')).to_have_text('조회 전용')
+            expect(page.locator('#page-info')).to_contain_text('검색 1건')
+            cell=page.locator('.tabulator-row [tabulator-field="notes"]').first
+            cell.dblclick();expect(cell.locator('input,textarea')).to_have_count(0)
+            expect(page.get_by_role('button',name='삭제 요청',exact=True)).to_be_disabled()
+        else:
+            expect(page.locator('#employee-private')).not_to_be_visible()
         expect(page.locator("#ai-toolbar")).not_to_be_visible()
         self.assertEqual(("GET", "/api/employee/context") in self.requests, context_requested)
         self.assertNotIn(("POST", "/api/employee/batch-update"), self.requests)
         self.assertEqual(self.errors, [])
 
-    def test_http_employee_stops_before_encryption_key_or_editing(self):
+    def test_http_employee_can_browse_without_encryption_key_or_editing(self):
         page, origin = self.open(insecure=True)
         page.goto(origin + f"/app/employee/mine?site_id={self.site.pk}")
         self.assertFalse(page.evaluate("isSecureContext"))
@@ -68,10 +86,51 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.get_by_role("button", name="로그아웃", exact=True).click()
         expect(page).to_have_url(origin + "/auth/login")
 
+    def test_http_today_site_selection_filters_and_session_end(self):
+        def more_rows():
+            row=self.customers(site=self.second,offset=31)[0];self.assign(row)
+            foreign=self.customers(site=self.second,offset=41)[0];self.assign(foreign,self.other)
+        self.db(more_rows)
+        page,origin=self.open(insecure=True)
+        page.goto(origin+'/app/employee/today')
+        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#site')).to_be_enabled()
+        page.locator('#site').select_option(str(self.second.pk))
+        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('.tabulator-row [tabulator-field="customer_name"]').first).to_have_text('가상고객0031')
+        page.locator('#search').fill('없는가상고객');page.locator('#search-form').get_by_role('button',name='검색',exact=True).click()
+        expect(page.locator('#page-info')).to_contain_text('검색 0건')
+        page.locator('#search').fill('');page.locator('#search-form').get_by_role('button',name='검색',exact=True).click()
+        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        page.get_by_role('button',name='상담·재콜 이력',exact=True).click()
+        expect(page.locator('#history-dialog')).to_be_visible()
+        page.locator('#history-dialog').get_by_role('button',name='닫기',exact=True).click()
+        self.assertNotIn(('GET','/api/employee/context'),self.requests)
+        self.assertFalse(any(method=='POST' and path.startswith('/api/') for method,path in self.requests))
+        self.db(lambda:type(self.employee).objects.filter(pk=self.employee.pk).update(is_active=False))
+        page.locator('#reload-rows').click()
+        expect(page.locator('#employee-private')).not_to_be_visible()
+        expect(page.locator('#employee-message')).to_contain_text('다시 로그인')
+
     def test_missing_locks_has_clear_message_before_editing(self):
         page, origin = self.open(script="Object.defineProperty(navigator,'locks',{value:undefined,configurable:true});")
         page.goto(origin + f"/app/employee/mine?site_id={self.site.pk}")
         self.assert_blocked(page, "다중 탭 저장")
+
+    def test_http_old_identity_response_cannot_reopen_hidden_customer_grid(self):
+        page,origin=self.open(insecure=True)
+        page.goto(origin+'/app/employee/today')
+        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        def stale_me(route):
+            page.evaluate("window.dispatchEvent(new CustomEvent('tm-auth-context',{detail:{user:'other-synthetic-user',role:'EMPLOYEE',initial:false}}))")
+            route.fulfill(status=200,json={'id':str(self.employee.pk),'role':'EMPLOYEE','must_change_password':False})
+        page.route('**/api/me',stale_me)
+        with page.expect_response('**/api/me'):
+            page.evaluate("window.dispatchEvent(new Event('focus'))")
+        expect(page.locator('#employee-private')).not_to_be_visible()
+        expect(page.locator('#employee-message')).to_contain_text('다른 탭에서 로그인 정보가 변경')
+        self.assertNotIn(('GET','/api/employee/context'),self.requests)
+        self.assertEqual(self.errors,[])
 
     def test_missing_crypto_subtle_has_clear_message_before_editing(self):
         page, origin = self.open(script="Object.defineProperty(crypto,'subtle',{value:undefined,configurable:true});")
@@ -101,7 +160,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
     def test_storage_opening_denied_prevents_editing(self):
         page, origin = self.open(script="Object.defineProperty(indexedDB,'open',{value(){throw new DOMException('blocked','SecurityError');},configurable:true});")
         page.goto(origin + f"/app/employee/mine?site_id={self.site.pk}")
-        self.assert_blocked(page, "보관소를 열 수 없습니다", context_requested=True)
+        self.assert_blocked(page, "보관소를 열 수 없습니다", context_requested=True, browse=False)
 
     def test_http_excel_validation_and_commit(self):
         page, origin = self.open(insecure=True, admin=True)

@@ -99,6 +99,8 @@ def logout_view(request):
 @database_write_errors
 def password_view(request):
     if request.method == "GET":
+        if not request.user.must_change_password and request.GET.get('change') != '1':
+            return redirect(destination(request.user))
         return render(request, "accounts/password.html", {"form": PasswordChangeForm(request.user)})
     try:
         data = input_data(request)

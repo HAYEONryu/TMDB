@@ -16,14 +16,15 @@ const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=val
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
 const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):schema[field]?.[value??'']??(value==null||value===''?'(빈 값)':String(value));
-let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false;
+let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
 async function request(url,body){
+  if(environmentProblem&&body!==undefined)throw new Error('현재 조회 전용입니다. 상담 편집·저장은 HTTPS와 지원되는 브라우저에서 이용해 주세요.');
   return withRequestTimeout(async signal=>{
   const csrf=document.cookie.split('; ').find(v=>v.startsWith('csrftoken='))?.split('=').slice(1).join('=');
   const response=await fetch(url,{method:body===undefined?'GET':'POST',credentials:'same-origin',cache:'no-store',signal,headers:{'X-TM-Queue-User':userId,...(body===undefined?{}:{'Content-Type':'application/json','X-CSRFToken':csrf||''})},...(body===undefined?{}:{body:JSON.stringify(body)})});
   const data=await response.json().catch(()=>({}));
   if(!response.ok){const error=new Error(data.error?.message||`요청 실패 (${response.status})`);error.code=data.error?.code;error.status=response.status;error.data=data;
-    if(response.status===401||response.status===403)queue.pause(error.message+' 다시 로그인해 주세요. 암호화된 대기값은 보관합니다.');throw error;}
+    if(response.status===401||response.status===403){accessRevoked=true;readOnly=false;queue.pause(error.message+' 다시 로그인해 주세요. 암호화된 대기값은 보관합니다.');}throw error;}
   return data;
   });
 }
@@ -82,12 +83,12 @@ function actions(cell){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...customerFields().map(column),{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
+  columns:[...customerFields().map(column),{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
-  const entries=queue.all();$('#queue-status').textContent=queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
+  const entries=queue.all();$('#queue-status').textContent=readOnly?'조회 전용':queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
   $('#storage-warning').textContent=[queue.storageError,queue.recoveryErrors?`복구하지 못한 암호화 기록 ${queue.recoveryErrors}건이 있습니다. 기록을 지우지 않았습니다.`:'',queue.otherTabs?`다른 탭에서 보관 중인 대기값 ${queue.otherTabs}건은 해당 탭에서 확인하세요.`:''].filter(Boolean).join(' ');
-  if(queue.paused){notice(queue.pauseMessage);$('#employee-private').hidden=true;$('#callback-pending').hidden=true;$('#deletion-pending').hidden=true;document.querySelectorAll('dialog[open]').forEach(d=>d.close());}
+  if(queue.paused){notice(readOnly?`조회 전용 · ${queue.pauseMessage} 현장 선택과 담당 고객 조회는 가능합니다.`:queue.pauseMessage);$('#employee-private').hidden=!readOnly;$('#callback-pending').hidden=true;$('#deletion-pending').hidden=true;if(!readOnly)document.querySelectorAll('dialog[open]').forEach(d=>d.close());}
   $('#ai-toolbar').hidden=queue.paused;if(queue.paused)ai?.hidePrivate();ai?.syncApply();
   $('#save-now').disabled=queue.paused||!entries.length;$('#pending-panel').hidden=queue.paused||!entries.length;
   $('#pending-rows').replaceChildren(...entries.map(e=>{
@@ -107,7 +108,6 @@ function renderStatus(){
 const eState=e=>[e.state,e.version,Object.keys(e.pending).length,e.error].join(':');
 queue.addEventListener('change',renderStatus);
 async function load(){
-  if(environmentProblem){queue.pause(environmentProblem.message);return;}
   loading=true;notice('');
   try{
     const query=params();query.set('page',state.page);query.set('page_size',state.size);query.set('sort',state.sort);
@@ -171,9 +171,9 @@ for(const name of ['copy','cut','contextmenu'])$('#employee-grid').addEventListe
 $('#employee-grid').addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&['c','x'].includes(event.key.toLowerCase()))event.preventDefault();});
 window.addEventListener('beforeunload',event=>{if(queue.entries.size||queue.invalid.size||callbacks?.pending.value||deletions?.pending.value||ai?.pending.value){event.preventDefault();event.returnValue='';}});
 window.addEventListener('offline',()=>{for(const entry of queue.all())if(['dirty','retry'].includes(entry.state))entry.state='offline';renderStatus();});
-async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}await queue.resume();}catch(e){error(e);}}
+async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){accessRevoked=true;readOnly=false;queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}if(environmentProblem){if(!accessRevoked){readOnly=true;renderStatus();}return;}await queue.resume();}catch(e){error(e);}}
 window.addEventListener('online',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});window.addEventListener('focus',resume);
-window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial)queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');});
+window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial){accessRevoked=true;readOnly=false;queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');}});
 async function openFilter(field){
   const dialog=$('#filter-dialog'),area=$('#filter-content');$('#filter-title').textContent=labels[field]+' 필터';$('#filter-error').textContent='';area.replaceChildren();let condition;
   if(dates.has(field)){
@@ -198,11 +198,16 @@ await ready;
 callbacks=new CallbackAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:async row=>{if(row)queue.setRows([row]);await load();},notice,changed:renderStatus});callbacks.update();
 deletions=new DeletionAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:load,notice,changed:renderStatus});deletions.update();
 ai=new EmployeeAI({userId,request,queue,flush:async id=>{commitEditor();return queue.flush(true,id);},notice,changed:renderStatus,labels,display,validate});
-if(environmentProblem){
-  queue.pause(environmentProblem.message);loading=false;
-  for(const control of document.querySelectorAll('#site,#sort,#page-size,#reload-rows,#search,#search-form button,#clear-filters,#previous,#next,#save-now'))control.disabled=true;
-}else try{
+try{
+  if(environmentProblem){
+    document.querySelector('.editing-guide').textContent='현재 조회 전용입니다. 현장 선택·검색·담당 고객 조회는 가능합니다. 상담 편집·저장은 HTTPS와 지원되는 브라우저에서 이용해 주세요.';
+    queue.pause(environmentProblem.message);
+    const me=await request('/api/me');
+    if(accessRevoked||me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password)throw new Error('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');
+    readOnly=true;renderStatus();table.redraw(true);
+  }else{
   const context=await request('/api/employee/context'),receivedAt=Date.now();await queue.start(context);queueReady=!queue.paused;renderStatus();if(queue.paused)throw new Error(queue.pauseMessage);installPreRecall({serverTime:context.server_time,receivedAt,commit:commitEditor,flush:()=>queue.flush(true),notice});
+  }
   const sites=await request('/api/sites');$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||sites.default_site_id||'';$('#site').value=state.site;
   await load();await ai.refreshAvailability();queue.tick();
 }catch(e){error(e);loading=false;}
