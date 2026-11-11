@@ -66,7 +66,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_template_validate_recheck_results_without_file_mobile_and_employee_denial(self):
         page=self.page
-        existing=self.db(lambda:Customer.objects.create(site=self.site,customer_name="보존가상",phone_normalized="01090000001",notes="휴지통 상담 보존",deleted_at=timezone.now(),deleted_by=self.admin))
+        existing=self.db(lambda:Customer.objects.create(site=self.other_site,customer_name="보존가상",phone_normalized="01090000001",notes="다른 현장 상담 보존"))
         page.get_by_role("link",name="DB 관리",exact=True).click()
         page.get_by_role("link",name="엑셀 업로드",exact=True).click()
         expect(page.get_by_role("heading",name="엑셀 업로드",exact=True)).to_be_visible()
@@ -90,7 +90,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.confirm()
         expect(page.locator("#batch-status")).to_have_text("등록 확정 완료")
         expect(page.locator("#commit-summary")).to_contain_text("1개 업로드를 성공했습니다. 5개는")
-        self.assertEqual(self.db(lambda:Customer.objects.get(pk=existing.pk).notes),"휴지통 상담 보존")
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=existing.pk).notes),"다른 현장 상담 보존")
         self.assertEqual(self.db(lambda:Customer.objects.get(site=self.site,phone_normalized="01090000002").notes),"새로 등록된 상담 보존")
         page.locator("#result-kind").select_option("all")
         expect(page.locator("#import-rows tr")).to_have_count(6)
@@ -107,6 +107,19 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.assertEqual(staff.request.get(self.live_server_url+"/api/imports/template").status,403)
         self.assertEqual(staff.request.get(self.live_server_url+f"/api/imports/{batch_id}").status,403)
         staff.close()
+
+    def test_trash_contact_reupload_keeps_old_row_and_excludes_file_duplicate(self):
+        old=self.db(lambda:Customer.objects.create(site=self.site,customer_name='가상 휴지통',
+            phone_normalized='01094000001',deleted_at=timezone.now(),deleted_by=self.admin,notes='이전 상담 보존'))
+        self.page.goto(self.live_server_url+'/app/admin/imports')
+        self.upload(workbook([row('가상 재등록','010-9400-0001'),row('파일 중복','01094000001')]))
+        expect(self.page.locator('#validation-counts')).to_have_text('검증 시 총 2건 · 등록 가능 1 · 파일 내 중복 1 · 기존 중복 0 · 형식 오류 0')
+        self.confirm()
+        expect(self.page.locator('#commit-summary')).to_contain_text('1개 업로드를 성공했습니다.')
+        current=self.db(lambda:Customer.objects.get(site=self.site,phone_normalized='01094000001',deleted_at=None))
+        self.assertNotEqual(current.pk,old.pk)
+        previous=self.db(lambda:Customer.objects.get(pk=old.pk))
+        self.assertIsNotNone(previous.deleted_at);self.assertEqual(previous.notes,'이전 상담 보존')
 
     def test_lost_response_expiry_fatal_rollback_and_transient_retry(self):
         page=self.page;page.goto(self.live_server_url+"/app/admin/imports")

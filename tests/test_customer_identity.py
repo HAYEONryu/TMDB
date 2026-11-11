@@ -1,4 +1,4 @@
-"""Admin correction permissions and site-local contact uniqueness, synthetic data only."""
+"""Admin correction permissions and global live contact checks, synthetic data only."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 import json
@@ -63,17 +63,16 @@ class CustomerIdentityTests(Fixtures,TestCase):
         result=update_row(self.admin,self.mutation({'customer_name':'  '}))
         self.assertTrue(result['ok']);self.assertEqual(result['row']['customer_name'],'')
 
-    def test_site_duplicate_including_trash_rejects_entire_row_and_other_site_is_allowed(self):
+    def test_global_live_duplicate_rejects_entire_row_but_trash_is_allowed(self):
         other=Customer.objects.create(site=self.site,phone_normalized='01093000002')
-        for deleted in [False,True]:
-            if deleted:
-                other.deleted_at=timezone.now();other.deleted_by=self.admin;other.save()
-            result=update_row(self.admin,self.mutation({'phone_normalized':'010-9300-0002','notes':'must not save'}))
-            self.assertEqual(result['error']['code'],'DUPLICATE_PHONE')
-            self.customer.refresh_from_db();self.assertEqual(self.customer.version,1)
-            self.assertEqual(self.customer.notes,'이전가상고객은 다음 연락을 희망합니다.')
+        result=update_row(self.admin,self.mutation({'phone_normalized':'010-9300-0002','notes':'must not save'}))
+        self.assertEqual(result['error']['code'],'DUPLICATE_PHONE')
+        self.customer.refresh_from_db();self.assertEqual(self.customer.version,1)
+        self.assertEqual(self.customer.notes,'이전가상고객은 다음 연락을 희망합니다.')
+        other.deleted_at=timezone.now();other.deleted_by=self.admin;other.save()
+        self.assertTrue(update_row(self.admin,self.mutation({'phone_normalized':'01093000002'}))['ok'])
         Customer.objects.create(site=self.second,phone_normalized='01093000003')
-        self.assertTrue(update_row(self.admin,self.mutation({'phone_normalized':'01093000003'}))['ok'])
+        self.assertEqual(update_row(self.admin,self.mutation({'phone_normalized':'01093000003'}))['error']['code'],'DUPLICATE_PHONE')
 
     def test_stale_employee_save_after_admin_correction_requires_review(self):
         stale=self.mutation({'notes':'old draft'})

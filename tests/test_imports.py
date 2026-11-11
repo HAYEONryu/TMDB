@@ -192,7 +192,7 @@ class ImportTests(Fixtures,TestCase):
         self.assertEqual(candidate["visit_at"],"2026-11-04T14:30:00+09:00")
         self.assertEqual(candidate["callback_due_at"],"2026-11-04T16:20:00+09:00")
 
-    def test_existing_duplicates_include_trash_but_different_site_allowed(self):
+    def test_existing_duplicates_exclude_trash_and_include_other_sites(self):
         existing=Customer.objects.create(site=self.site,customer_name="보존가상",phone_normalized="01090000001",notes="기존 상담 보존",deleted_at=timezone.now(),deleted_by=self.admin)
         Customer.objects.create(site=self.other_site,customer_name="타현장",phone_normalized="01090000002")
         batch=self.validate([row(),row("신규","01090000002")])
@@ -201,6 +201,8 @@ class ImportTests(Fixtures,TestCase):
         result,status=commit_upload(self.admin,batch.pk,self.body())
         self.assertEqual((status,result["success_count"]),(200,1))
         existing.refresh_from_db();self.assertEqual(existing.notes,"기존 상담 보존");self.assertIsNotNone(existing.deleted_at)
+        self.assertTrue(Customer.objects.filter(site=self.site,phone_normalized='01090000001',deleted_at=None).exists())
+        self.assertFalse(Customer.objects.filter(site=self.site,phone_normalized='01090000002').exists())
 
     def test_commit_creates_import_revision_callback_unassigned_and_atomic_idempotency(self):
         batch=self.validate([row(**{"3":"관심","4":"2026-11-04 14:30","5":"계약","6":"가짜 상담","7":"2026-11-05 16:00","8":" 자가 "})])

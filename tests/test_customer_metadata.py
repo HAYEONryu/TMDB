@@ -168,7 +168,7 @@ class CustomerMetadataMigrationTests(Fixtures,TransactionTestCase):
     def test_previous_schema_synthetic_upgrade_preserves_existing_data(self):
         self.prepare()
         executor=MigrationExecutor(connection)
-        target=[("customers","0002_customer_metadata")]
+        target=[("customers","0003_live_phone_unique")]
         try:
             executor.migrate([("customers","0001_initial")])
             old=executor.loader.project_state([("customers","0001_initial")]).apps.get_model("customers","Customer")

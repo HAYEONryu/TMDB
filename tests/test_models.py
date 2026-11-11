@@ -41,10 +41,14 @@ class DatabaseConstraintTests(TestCase):
         self.assert_database_rejects(lambda: Site.objects.create(name="가상a현장", created_by=self.admin))
         self.assert_database_rejects(lambda: Site.objects.create(name="  ", created_by=self.admin))
 
-    def test_phone_unique_including_trash_but_not_across_sites(self):
+    def test_database_unique_for_live_site_rows_allows_trash_reuse(self):
+        self.assert_database_rejects(lambda: Customer.objects.create(site=self.site, phone_normalized=self.customer.phone_normalized))
         self.customer.deleted_at = timezone.now()
         self.customer.save()
-        self.assert_database_rejects(lambda: Customer.objects.create(site=self.site, customer_name="다른가상고객", phone_normalized=self.customer.phone_normalized))
+        Customer.objects.create(site=self.site, customer_name="다른가상고객", phone_normalized=self.customer.phone_normalized)
+        self.assert_database_rejects(lambda: Customer.objects.filter(pk=self.customer.pk).update(deleted_at=None))
+        # Existing cross-site records are preserved by migration. Global new
+        # duplicates are prevented by all domain write paths under business_write.
         other_site = Site.objects.create(name="가상B현장", created_by=self.admin)
         Customer.objects.create(site=other_site, customer_name="가상고객", phone_normalized=self.customer.phone_normalized)
 

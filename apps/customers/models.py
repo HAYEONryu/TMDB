@@ -41,7 +41,7 @@ class Customer(TimestampedModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["site", "phone_normalized"], name="customer_site_phone_unique"),
+            models.UniqueConstraint(fields=["site", "phone_normalized"], condition=Q(deleted_at__isnull=True), name="customer_site_live_phone_unique"),
             models.CheckConstraint(condition=Q(phone_normalized__regex=r"^010[0-9]{8}$"), name="customer_phone_format"),
             models.CheckConstraint(condition=Q(customer_name="") | Q(customer_name__regex=r"\S"), name="customer_name_valid"),
             models.CheckConstraint(condition=Q(version__gte=1), name="customer_version_positive"),
@@ -49,7 +49,8 @@ class Customer(TimestampedModel):
             models.CheckConstraint(condition=Q(contract_status__in=["UNKNOWN", "NO_CONTRACT", "CONTRACTED"]), name="customer_contract_valid"),
             models.CheckConstraint(condition=Q(deleted_at__isnull=True) | Q(current_assignment__isnull=True), name="deleted_customer_unassigned"),
         ]
-        indexes = [models.Index(fields=["site", "deleted_at", "created_at", "id"], name="customer_site_list_idx")]
+        indexes = [models.Index(fields=["site", "deleted_at", "created_at", "id"], name="customer_site_list_idx"),
+            models.Index(fields=["phone_normalized"], condition=Q(deleted_at__isnull=True), name="customer_live_phone_idx")]
 
     def clean(self):
         super().clean()

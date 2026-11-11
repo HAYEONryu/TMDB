@@ -150,9 +150,9 @@ def update_row(actor, body, *, employee_only=False):
             if customer.version != body["expected_version"]:
                 raise AccessError("VERSION_CONFLICT", "다른 변경이 저장되었습니다. 서버값과 비교해 주세요.", 409)
             values = normalized_changes(customer, body["changes"])
-            if "phone_normalized" in values and Customer.objects.filter(site_id=customer.site_id,
+            if "phone_normalized" in values and values["phone_normalized"] != customer.phone_normalized and Customer.objects.filter(deleted_at=None,
                     phone_normalized=values["phone_normalized"]).exclude(pk=customer.pk).exists():
-                raise AccessError("DUPLICATE_PHONE", "이 현장에 같은 연락처가 있습니다. 휴지통도 중복에 포함됩니다.", 409)
+                raise AccessError("DUPLICATE_PHONE", "전체 현장의 휴지통 제외 고객 중 같은 연락처가 있습니다.", 409)
         except AccessError as exc:
             result = {"customer_id": str(cid), "mutation_id": str(mutation_id), "ok": False,
                       "error": {"code": exc.code, "message": exc.message}}
@@ -245,6 +245,10 @@ def trash_operation(actor, body, *, restore=False):
         customers = list(Customer.objects.select_for_update().filter(pk__in=ids).order_by("pk"))
         if len(customers) != len(ids):
             raise AccessError("CUSTOMER_DELETED", "일부 고객정보가 없어 작업하지 않았습니다.", 409)
+        if restore:
+            phones = [c.phone_normalized for c in customers if c.deleted_at is not None]
+            if len(phones) != len(set(phones)) or Customer.objects.filter(deleted_at=None, phone_normalized__in=phones).exists():
+                raise AccessError("DUPLICATE_PHONE", "전체 현장에 같은 연락처의 고객이 있거나 복구 대상끼리 중복되어 전체 복구를 취소했습니다. 중복 고객을 확인해 주세요.", 409)
         assignment_ids = [c.current_assignment_id for c in customers if c.current_assignment_id]
         assignments = {a.pk: a for a in Assignment.objects.select_for_update().filter(pk__in=assignment_ids).order_by("pk")}
         now, affected = timezone.now(), 0

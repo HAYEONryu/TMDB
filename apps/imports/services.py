@@ -52,12 +52,12 @@ def store_validation(actor, site_id, results, candidates):
     with business_write():
         actor = locked_actor(actor, admin=True)
         site = site_lock(site_id)
-        existing = set(Customer.objects.filter(site=site,phone_normalized__in=[values["phone_normalized"] for _,values in candidates]).values_list("phone_normalized",flat=True))
+        existing = set(Customer.objects.filter(deleted_at=None,phone_normalized__in=[values["phone_normalized"] for _,values in candidates]).values_list("phone_normalized",flat=True))
         good = []
         by_row = {row["row_number"]:row.copy() for row in results}
         for number, values in candidates:
             if values["phone_normalized"] in existing:
-                by_row[number].update(success=False,error_code="DUPLICATE_PHONE",reason="이 현장에 같은 연락처가 있습니다. 휴지통도 중복에 포함됩니다.")
+                by_row[number].update(success=False,error_code="DUPLICATE_PHONE",reason="전체 현장의 휴지통 제외 고객 중 같은 연락처가 있어 등록에서 제외합니다.")
             else:
                 good.append((number,values))
         rows = list(by_row.values())
@@ -151,7 +151,7 @@ def commit_once(actor,batch_id,site_id,key,body_hash):
         if batch.status=="COMMITTED":return save_receipt(actor,batch,key,body_hash,completed_result(batch))
         if batch.status=="FAILED":reject("IMPORT_FAILED","확정에 실패한 업로드입니다. 파일을 다시 업로드해 주세요.")
         candidates=list(batch.candidates.order_by("row_number"))
-        existing=set(Customer.objects.filter(site=site,phone_normalized__in=[row.normalized_values["phone_normalized"] for row in candidates]).values_list("phone_normalized",flat=True))
+        existing=set(Customer.objects.filter(deleted_at=None,phone_normalized__in=[row.normalized_values["phone_normalized"] for row in candidates]).values_list("phone_normalized",flat=True))
         customers,callbacks,revisions,changed_results=[],[],[],[]
         result_rows={row.row_number:row for row in batch.row_results.filter(success=True)}
         now=timezone.now()
@@ -159,7 +159,7 @@ def commit_once(actor,batch_id,site_id,key,body_hash):
             values=candidate.normalized_values.copy()
             row=result_rows[candidate.row_number]
             if values["phone_normalized"] in existing:
-                row.success=False;row.error_code="DUPLICATE_PHONE";row.reason="검증 후 같은 연락처가 등록되었습니다. 기존 상담정보는 변경하지 않았습니다."
+                row.success=False;row.error_code="DUPLICATE_PHONE";row.reason="검증 후 전체 현장의 휴지통 제외 고객 중 같은 연락처가 등록·복구되었습니다. 기존 상담정보는 변경하지 않았습니다."
                 changed_results.append(row)
                 continue
             callback_value=values.pop("callback_due_at")
