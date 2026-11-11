@@ -4,12 +4,12 @@ import {PendingOperation} from "./pending-operation.js";
 import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
+import {customerLabels as labels,customerFields} from './customer-columns.js';
 
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
 const schema = JSON.parse($("#customer-schema").textContent);
-const labels = {assignee_name:"담당직원명", customer_name:"고객명", phone_normalized:"고객 연락처", call_result:"통화결과", visit_at:"방문예약 날짜", contract_status:"계약여부", notes:"상담기타내용(비고)", callback_due_at:"재콜일정", housing_status:"주택상황", assigned_at:"할당 시각", residence:"고객 거주지", route:"루트", memo:"비고", admin_notes:"관리자 비고"};
-const editableFields = ["call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"];
+const editableFields = ["customer_name", "phone_normalized", "call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"];
 const textFields = new Set(['notes','memo','admin_notes','route','residence']);
 const multiline = new Set(['notes','memo','admin_notes']);
 const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
@@ -73,10 +73,10 @@ function column(field) {
 }
 const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:"표시할 고객정보가 없습니다.", selectableRows:true,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
-    ...['customer_name','phone_normalized','call_result','notes','callback_due_at','assignee_name','visit_at','contract_status','residence','housing_status','route','memo','admin_notes','assigned_at'].map(column),
+    ...customerFields({admin:true}).map(column),
     ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
     {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
-    ...(!trash ? [{title:"저장 상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
+    ...(!trash ? [{title:"저장상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
       const item = pending.get(cell.getRow().getData().id); const wrap = text("span", item ? item.uncertain?"결과 확인 필요 ":item.error?"저장 실패 ":"미저장" : "저장됨");
       if (item?.error) { const button = text("button", "확인"); button.className="btn btn-sm btn-outline-secondary"; button.addEventListener("click",()=>openConflict(cell.getRow().getData().id)); wrap.append(button); } return wrap;
     }}] : [])]});
@@ -183,6 +183,7 @@ $("#site-form").onsubmit=async event=>{
 function openConflict(id) {
   const item=pending.get(id);if(!item)return;conflictId=id;
   const content=[item.error.message];
+  if(item.server)content.push(`현재 고객: ${display('customer_name',item.server.customer_name)} · ${display('phone_normalized',item.server.phone_normalized)}`);
   for(const [field,value] of Object.entries(item.changes))content.push(`${labels[field]}\n${item.server?"서버":"편집 시작값 (최신 서버값 미확인)"}: ${display(field,(item.server||item.base)[field])}\n내 변경: ${display(field,value)}`);
   $("#conflict-values").textContent=content.join("\n\n");
   $("#conflict-reapply").disabled=!item.server || item.server.assignment_id!==item.base.assignment_id || item.server.deleted_at;

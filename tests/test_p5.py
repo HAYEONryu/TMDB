@@ -100,7 +100,7 @@ class EmployeeTests(Fixtures,TestCase):
         for body in [{'entries':[]},{'entries':[self.item()]*101},{'entries':[self.item(key=1)]},{'entries':[self.item(expected_version=True)]}]:
             self.assertEqual(self.post('/api/employee/queue-check',body).status_code,422)
         row=self.mutation(self.customer);row['changes']={'customer_name':'금지'}
-        self.assertEqual(self.post('/api/employee/batch-update',{'rows':[row]}).json()['results'][0]['error']['code'],'VALIDATION_ERROR')
+        self.assertEqual(self.post('/api/employee/batch-update',{'rows':[row]}).json()['results'][0]['error']['code'],'FORBIDDEN')
         self.assertEqual(self.post('/api/employee/batch-update',{'rows':[row]*101}).status_code,422)
 
     def test_password_reset_stops_queue_requests(self):

@@ -181,7 +181,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         second=self.context.new_page();self.login(second,self.other);second.goto(self.live_server_url+'/app/employee/mine');expect(page.locator('#employee-private')).to_be_hidden();self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),0);second.close()
 
     def test_filters_mobile_dates_and_visual_evidence(self):
-        page=self.page;self.edit('가상 필터용 상담');self.save();page.get_by_role('button',name='상담기타내용(비고) 필터',exact=True).click();page.locator('#filter-contains').fill('필터용');page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        page=self.page;self.edit('가상 필터용 상담');self.save();page.get_by_role('button',name='상담내용 필터',exact=True).click();page.locator('#filter-contains').fill('필터용');page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 1건')
         page.locator('#clear-filters').click();expect(page.locator('#page-info')).to_contain_text('검색 3건')
         page.get_by_role('button',name='통화결과 필터',exact=True).click();expect(page.locator('#filter-options')).to_contain_text('(빈 값)');page.get_by_role('button',name='전체 해제',exact=True).click();page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 0건');page.locator('#clear-filters').click();expect(page.locator('#page-info')).to_contain_text('검색 3건')
         page.screenshot(path=str(self.evidence/'p5-employee-desktop.png'),full_page=True);page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);page.screenshot(path=str(self.evidence/'p5-employee-mobile.png'),full_page=True)

@@ -85,8 +85,8 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
             page.locator("#page-size").select_option("100")
         self.assertEqual(len(response.value.json()["data"]),65)
         expect(page.locator("#page-info")).to_contain_text("1 / 1페이지")
-        name=page.locator('.tabulator-row [tabulator-field="customer_name"]').first
-        name.dblclick();expect(name.locator("input")).to_have_count(0)
+        assigned=page.locator('.tabulator-row [tabulator-field="assigned_at"]').first
+        assigned.dblclick();expect(assigned.locator("input")).to_have_count(0)
         self.edit("notes","<img src=x onerror=window.p2Injected=1> 가상 상담")
         self.db(self.target.refresh_from_db);self.assertEqual(self.target.notes,"")
         page.get_by_role("button",name="저장",exact=True).click()

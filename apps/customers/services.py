@@ -2,6 +2,7 @@ from datetime import timedelta, timezone as datetime_timezone
 import hashlib
 import json
 from django.db import transaction
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from apps.accounts.access import AccessError
@@ -9,6 +10,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.callbacks.models import Callback
 from apps.common.http import identifier
+from apps.common.validation import normalize_phone
 from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
@@ -17,7 +19,9 @@ from apps.operations.models import IdempotencyRecord, MutationReceipt, Operation
 from apps.sites.models import Site
 from apps.sites.services import locked_actor
 
-EDITABLE_FIELDS = {"call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"}
+IDENTITY_FIELDS = {"customer_name", "phone_normalized"}
+ADMIN_ONLY_FIELDS = IDENTITY_FIELDS | {"admin_notes"}
+EDITABLE_FIELDS = {"call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo"} | ADMIN_ONLY_FIELDS
 
 
 def digest(value):
@@ -52,7 +56,16 @@ def normalized_changes(customer, changes):
         invalid("수정할 수 없는 필드가 포함되었거나 변경값이 없습니다.")
     result = {}
     for field, value in changes.items():
-        if field in {"visit_at", "callback_due_at"}:
+        if field == "customer_name":
+            if not isinstance(value, str) or len(value.strip()) > 100:
+                invalid("고객명은 100자 이내의 문자열로 입력해 주세요. 빈 값도 허용합니다.")
+            result[field] = value.strip()
+        elif field == "phone_normalized":
+            try:
+                result[field] = normalize_phone(value)
+            except ValidationError:
+                invalid("연락처는 010으로 시작하는 11자리 텍스트로 입력해 주세요.")
+        elif field in {"visit_at", "callback_due_at"}:
             result[field] = datetime_value(value)
         elif field == "call_result":
             if value not in [None, "", *Customer.CallResult.values]:
@@ -132,11 +145,14 @@ def update_row(actor, body, *, employee_only=False):
                 raise AccessError("IDEMPOTENCY_EXPIRED", "요청 보관 기간이 지났습니다. 서버 상태를 확인해 주세요.", 409)
             return visible_values(receipt.result, admin=actor.role == User.Role.ADMIN)
         try:
+            if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and set(body["changes"]) & ADMIN_ONLY_FIELDS:
+                raise AccessError("FORBIDDEN", "고객명·연락처·관리자 비고는 관리자만 수정할 수 있습니다.", 403)
             if customer.version != body["expected_version"]:
                 raise AccessError("VERSION_CONFLICT", "다른 변경이 저장되었습니다. 서버값과 비교해 주세요.", 409)
-            if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and "admin_notes" in body["changes"]:
-                raise AccessError("FORBIDDEN", "관리자 비고는 관리자만 수정할 수 있습니다.", 403)
             values = normalized_changes(customer, body["changes"])
+            if "phone_normalized" in values and Customer.objects.filter(site_id=customer.site_id,
+                    phone_normalized=values["phone_normalized"]).exclude(pk=customer.pk).exists():
+                raise AccessError("DUPLICATE_PHONE", "이 현장에 같은 연락처가 있습니다. 휴지통도 중복에 포함됩니다.", 409)
         except AccessError as exc:
             result = {"customer_id": str(cid), "mutation_id": str(mutation_id), "ok": False,
                       "error": {"code": exc.code, "message": exc.message}}
@@ -147,6 +163,8 @@ def update_row(actor, body, *, employee_only=False):
             return result
         callback = Callback.objects.select_for_update().filter(customer=customer, status="PENDING").first()
         before = snapshot(customer, callback)
+        identity_fields = set(values) & IDENTITY_FIELDS
+        before.update({field: getattr(customer, field) for field in identity_fields})
         actual = {}
         for field, value in values.items():
             current = callback.due_at if field == "callback_due_at" and callback else (None if field == "callback_due_at" else getattr(customer, field))
@@ -182,10 +200,11 @@ def update_row(actor, body, *, employee_only=False):
                     callback = Callback.objects.create(customer=customer, due_at=due, created_by=actor, updated_by=actor)
             customer.version += 1
             customer.save(update_fields=[*[f for f in actual if f != "callback_due_at"], "version", "updated_at"])
-            if assignment and assignment.first_activity_at is None and set(actual) - {"admin_notes"}:
+            if assignment and assignment.first_activity_at is None and set(actual) - ADMIN_ONLY_FIELDS:
                 assignment.first_activity_at = now
                 assignment.save(update_fields=["first_activity_at", "updated_at"])
             after = snapshot(customer, callback if callback and callback.status == "PENDING" else None)
+            after.update({field: getattr(customer, field) for field in identity_fields})
             CustomerChangeEvent.objects.create(customer=customer, assignment=assignment, changed_by=actor, changed_at=now, changed_fields=sorted(actual))
             ConsultationRevision.objects.create(customer=customer, assignment=assignment, actor=actor, saved_at=now,
                 customer_version=customer.version, changed_fields=sorted(actual), before_values=before, after_values=after,

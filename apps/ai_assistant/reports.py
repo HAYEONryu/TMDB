@@ -13,7 +13,7 @@ from apps.customers.models import Customer, CustomerDeletionRequest
 from apps.customers.queries import KST
 from apps.operations.models import OperationEvent
 from .models import AIResult, AINoteClassification, Feature, SiteKnowledge
-from .inputs import digest, sanitize
+from .inputs import digest, sanitize, historical_customer_names
 
 LABELS = {'PRICE': ('가격', '금액', '비싸', '비용'), 'LOCATION': ('위치', '거리', '교통'),
           'TIMING': ('시기', '나중', '일정', '시간'), 'COMPARISON': ('비교', '다른'), 'OTHER': (), 'UNSPECIFIED': ()}
@@ -114,6 +114,7 @@ def build_report(feature, *, site, employee, start, end, korean_date):
     known_ids={r['source_id'] for r in cached}
     selected.extend([r for r in metadata if str(r['id']) in known_ids][:max(0,12-len(selected))])
     names=list(User.objects.values_list('name',flat=True))+list(Customer.objects.filter(pk__in=source_customers).values_list('customer_name',flat=True))
+    names.extend(historical_customer_names(source_customers))
     records=[];checks=[]
     pending_customers=set(callbacks.filter(Q(completed_at__isnull=True)|Q(completed_at__gt=end)).filter(Q(cancelled_at__isnull=True)|Q(cancelled_at__gt=end)).values_list('customer_id',flat=True))
     selected_rows=ConsultationRevision.objects.in_bulk([m['id'] for m in selected])

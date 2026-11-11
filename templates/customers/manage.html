@@ -17,7 +17,7 @@
   <p id="message" class="grid-message" role="alert" aria-live="polite"></p>
   {% if not trash %}<div id="assignee-pending" class="card card-body border-warning mb-3" hidden><p>담당자 변경 결과를 확인하지 못했습니다. 같은 요청을 확인하세요. 대기 정보 폐기는 이미 처리된 변경을 취소하지 않습니다.</p><div class="d-flex flex-wrap gap-2"><button id="assignee-retry" class="btn btn-primary">담당 변경 결과 다시 확인</button><button id="assignee-discard" class="btn btn-outline-secondary">대기 정보 폐기</button></div></div>{% endif %}
   <div id="active-filters" class="d-flex flex-wrap gap-2 mb-2"></div>
-  <div class="table-caption d-flex flex-wrap justify-content-between gap-2 mb-2 small"><span id="counts"></span><span>{% if not trash %}고객명·연락처는 수정할 수 없습니다. · {% endif %}열 제목의 ▾ 버튼으로 필터</span></div>
+  <div class="table-caption d-flex flex-wrap justify-content-between gap-2 mb-2 small"><span id="counts"></span><span>{% if not trash %}수정할 셀을 클릭한 뒤 저장하세요. 고객명·연락처·관리자 비고는 관리자만 수정할 수 있습니다. · {% endif %}열 제목의 ▾ 버튼으로 필터</span></div>
   <p class="table-scroll-hint">표를 좌우로 움직이면 다른 상담 항목과 작업 버튼을 볼 수 있어요. <span aria-hidden="true">↔</span></p><div id="customer-grid" aria-label="고객관리 표"></div>
   <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mt-3"><span id="page-info" role="status"></span><div class="d-flex gap-2 align-items-center"><label for="page-size">페이지당</label><select id="page-size" class="form-select w-auto"><option value="50">50행</option><option value="100">100행</option></select><button id="previous" class="btn btn-outline-secondary">이전</button><button id="next" class="btn btn-outline-secondary">다음</button></div></div>
 </section>

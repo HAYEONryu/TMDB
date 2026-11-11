@@ -7,8 +7,9 @@ import {installHistory} from './customer-history.js';
 import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
+import {customerLabels as labels,customerFields} from './customer-columns.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
-const schema=JSON.parse($('#customer-schema').textContent),labels={assignee_name:'담당직원명',customer_name:'고객명',phone_normalized:'고객 연락처',call_result:'통화결과',visit_at:'방문예약 날짜',contract_status:'계약여부',notes:'상담기타내용(비고)',callback_due_at:'재콜일정',housing_status:'주택상황',assigned_at:'할당 시각',residence:'고객 거주지',route:'루트',memo:'비고'};
+const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']),textFields=new Set(['notes','memo','route','residence']);
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
@@ -81,7 +82,7 @@ function actions(cell){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...['customer_name','phone_normalized','call_result','notes','callback_due_at','visit_at','contract_status','residence','housing_status','route','memo','assigned_at','assignee_name'].map(column),{title:'저장 상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')},{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions}]});
+  columns:[...customerFields().map(column),{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
@@ -148,6 +149,7 @@ async function openConflict(entry){
 }
 function drawConflict(){
   const {entry}=comparison;comparison.version=entry.server?.version;$('#conflict-message').textContent=entry.error||'저장 전 서버 값과 내 대기값을 확인하세요.';
+  if(entry.state!=='blocked'&&entry.server)$('#conflict-message').textContent+=` · 현재 고객: ${display('customer_name',entry.server.customer_name)} · ${display('phone_normalized',entry.server.phone_normalized)}`;
   $('#employee-compare').replaceChildren();
   if(entry.state!=='blocked'&&entry.server)for(const [field,value] of Object.entries(changes(entry))){const tr=document.createElement('tr');tr.append(text('th',labels[field]),text('td',display(field,entry.server[field])),text('td',display(field,value)));$('#employee-compare').append(tr);}
   $('#employee-reapply').disabled=entry.state==='blocked'||!entry.server;

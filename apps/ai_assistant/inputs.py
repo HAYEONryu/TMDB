@@ -14,6 +14,16 @@ from .models import Feature, SiteKnowledge
 STAFF_FEATURES = {Feature.CLEANUP, Feature.SUMMARY, Feature.NEXT_QUESTIONS}
 
 
+def historical_customer_names(customer_ids):
+    """Retain redaction after an administrator corrects a customer's name."""
+    rows = ConsultationRevision.objects.filter(customer_id__in=customer_ids,
+        changed_fields__contains=['customer_name']).values_list('before_values__customer_name', 'after_values__customer_name')
+    for before, after in rows.iterator(chunk_size=1000):
+        for name in (before, after):
+            if isinstance(name, str) and name:
+                yield name
+
+
 def note_date_anchors(saved_at):
     """Calendar facts from the source timestamp, never inferred from query time."""
     if saved_at is None:return {}
@@ -52,6 +62,7 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
         payload.pop("period_end")
         query = query.filter(customer=customer)
         names.append(customer.customer_name)
+        names.extend(historical_customer_names([customer.pk]))
         callback = Callback.objects.filter(customer=customer, status="PENDING").first()
         payload["current"] = {"notes": customer.notes, "call_result": customer.call_result, "contract_status": customer.contract_status,
                               "housing_status": customer.housing_status, "visit_at": customer.visit_at.isoformat() if customer.visit_at else None,

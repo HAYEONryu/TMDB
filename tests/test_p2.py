@@ -163,12 +163,12 @@ class P2ApiTests(Fixtures, TestCase):
 
     def test_save_batch_partial_success_and_whole_row_validation(self):
         other=Customer.objects.create(site=self.site,customer_name="가상다른고객",phone_normalized="01090000002")
-        result=self.post("/api/customers/batch-update",{"rows":[self.body({"notes":"적용되면 안 됨","customer_name":"변경금지"}),self.body({"notes":"성공"},customer=other)]}).json()["results"]
+        result=self.post("/api/customers/batch-update",{"rows":[self.body({"notes":"적용되면 안 됨","customer_name":42}),self.body({"notes":"성공"},customer=other)]}).json()["results"]
         self.assertEqual([r["ok"] for r in result],[False,True])
         self.customer.refresh_from_db();other.refresh_from_db()
         self.assertEqual(self.customer.notes,"");self.assertEqual(other.notes,"성공")
         self.assertEqual(ConsultationRevision.objects.count(),1)
-        for field,value in [("phone_normalized","01011111111"),("current_assignment",None),("deleted_at",None),("first_activity_at",None),("version",99)]:
+        for field,value in [("phone_normalized",42),("current_assignment",None),("deleted_at",None),("first_activity_at",None),("version",99)]:
             response=self.post("/api/customers/batch-update",{"rows":[self.body({field:value})]})
             self.assertFalse(response.json()["results"][0]["ok"])
 
