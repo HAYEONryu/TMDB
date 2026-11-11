@@ -62,6 +62,7 @@ urlpatterns = [
     path("api/imports/<uuid:batch_id>", import_views.results),
     path("api/imports/<uuid:batch_id>/commit", import_views.commit),
     path("api/sites", site_views.sites),
+    path("api/sites/<uuid:site_id>", site_views.rename),
     path("api/sites/<uuid:site_id>/counts", site_views.counts),
     path("api/settings/default-site", site_views.default_site),
     path("api/customers", customer_views.customers),

@@ -16,7 +16,7 @@ const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
 const pending = new Map();
 const assigneeOperation=new PendingOperation("assignee",$("#management").dataset.userId,/^\/api\/customers\/[0-9a-f-]+\/assignee$/);
 let state = {site:"", page:1, size:50, q:"", sort:"-created_at", filters:{},assignee:new URL(location.href).searchParams.get("assignee_id")||""}, busy = false, lastPage = 1,assigneeRow;
-let siteInfo, rows = new Map(), conflictId, bulkBody, loadedState,callbacks,hard;
+let siteInfo, rows = new Map(), conflictId, bulkBody, loadedState,callbacks,hard,renameTarget;
 const actorRequest=(url,body)=>api(url,body,'POST',{'X-TM-Actor':$('#management').dataset.userId});
 const openHistory=installHistory(actorRequest);
 const notice = message => { $("#message").textContent = message; };
@@ -35,6 +35,7 @@ function status() {
   $("#site").disabled = blocked; $("#page-size").disabled = blocked; $("#sort").disabled = blocked;
   $("#filter-apply").disabled=busy;$("#filter-reset").disabled=busy;
   for(const selector of ["#create-site","#clear-filters","#search-form button"]){const button=$(selector);if(button)button.disabled=blocked;}
+  if($('#rename-site'))$('#rename-site').disabled=blocked||!siteInfo?.items.some(site=>site.id===state.site);
   document.querySelectorAll(".assignee-action").forEach(button=>button.disabled=blocked);
   document.querySelectorAll('.callback-action').forEach(button=>{const row=table.getRow(button.dataset.customerId);button.disabled=blocked||!row||!row.getData().callback_id;});
   document.querySelectorAll('.hard-customer').forEach(button=>button.disabled=blocked);if($('#delete-site'))$('#delete-site').disabled=blocked||!state.site;
@@ -179,6 +180,24 @@ $("#site-form").onsubmit=async event=>{
   event.preventDefault(); const button=event.submitter;button.disabled=true;
   try { const site=await api("/api/sites",{name:$("#site-name").value}); await loadSites(site.id); state.page=1;state.filters={};state.q="";$("#search").value="";await load();$("#site-dialog").close(); }
   catch(error){$("#site-error").textContent=error.message;}finally{button.disabled=false;}
+};
+$('#rename-site')?.addEventListener('click',()=>guarded(()=>{
+  renameTarget=siteInfo.items.find(site=>site.id===state.site);
+  if(!renameTarget){notice('변경할 현장을 선택해 주세요.');return;}
+  $('#rename-site-error').textContent='';$('#rename-site-name').value=renameTarget.name;
+  $('#rename-site-dialog').showModal();$('#rename-site-name').focus();
+}).catch(showError));
+$('#rename-site-dialog')?.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
+if($('#rename-site-form'))$('#rename-site-form').onsubmit=async event=>{
+  event.preventDefault();if(busy||!renameTarget)return;
+  const body={name:$('#rename-site-name').value,expected_version:renameTarget.version};
+  busy=true;status();const controls=[...$('#rename-site-form').querySelectorAll('input,button')];controls.forEach(control=>control.disabled=true);
+  try{
+    const result=await api(`/api/sites/${renameTarget.id}`,body,'PATCH',{'X-TM-Actor':$('#management').dataset.userId});
+    await loadSites(result.id);await load();$('#rename-site-dialog').close();
+    notice(result.changed?'현장명을 변경했습니다.':'현장명이 이미 반영되어 있습니다.');
+  }catch(error){$('#rename-site-error').textContent=error.message;}
+  finally{busy=false;controls.forEach(control=>control.disabled=false);status();}
 };
 function openConflict(id) {
   const item=pending.get(id);if(!item)return;conflictId=id;

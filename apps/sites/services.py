@@ -36,13 +36,18 @@ def change_default(settings, site, actor, now):
     return True
 
 
-@retry_transient_write
-def create_site(actor, name):
+def validated_site_name(name):
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
         raise AccessError("VALIDATION_ERROR", "현장명은 1~100자로 입력해 주세요.", 422, {"name": ["현장명을 확인해 주세요."]})
     name = name.strip()
     if len(site_name_key(name)) > 100:
         raise AccessError("VALIDATION_ERROR", "현장명 정규화 결과가 너무 깁니다.", 422)
+    return name
+
+
+@retry_transient_write
+def create_site(actor, name):
+    name = validated_site_name(name)
     with business_write():
         actor = locked_actor(actor, admin=True)
         settings = locked_settings()
@@ -57,6 +62,31 @@ def create_site(actor, name):
             change_default(settings, site, actor, now)
         OperationEvent.objects.create(actor=actor, operation="SITE_CREATED", occurred_at=now, affected_count=1)
         return site, settings
+
+
+@retry_transient_write
+def rename_site(actor, site_id, name, expected_version):
+    name = validated_site_name(name)
+    if not isinstance(expected_version, str) or not 1 <= len(expected_version) <= 100:
+        raise AccessError("VALIDATION_ERROR", "현장 버전을 확인해 주세요.", 422)
+    with business_write():
+        actor = locked_actor(actor, admin=True)
+        site = Site.objects.select_for_update().filter(pk=site_id).first()
+        if not site:
+            raise AccessError("SITE_DELETED", "현장이 삭제되었거나 존재하지 않습니다.", 409)
+        # Repeating the same desired name after a lost response is a no-op.
+        if site.name == name:
+            return site, False
+        if site.updated_at.isoformat() != expected_version:
+            raise AccessError("VERSION_CONFLICT", "다른 관리자가 현장명을 변경했습니다. 새로고침 후 다시 확인해 주세요.", 409)
+        try:
+            with transaction.atomic():
+                site.name = name
+                site.save(update_fields=["name", "updated_at"])
+        except IntegrityError:
+            raise AccessError("DUPLICATE_SITE", "이미 존재하는 현장명입니다.", 409)
+        OperationEvent.objects.create(actor=actor, operation="SITE_RENAMED", occurred_at=timezone.now(), affected_count=1)
+        return site, True
 
 
 @retry_transient_write

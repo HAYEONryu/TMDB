@@ -1,11 +1,11 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods, require_POST
 from django.db.models import Count, Q
-from apps.accounts.access import require_role, AccessError
+from apps.accounts.access import require_role, AccessError, actor_identity
 from apps.accounts.models import User
 from apps.common.http import api_errors, identifier, json_object
 from apps.sites.models import GlobalSettings, Site
-from apps.sites.services import create_site, set_default_site
+from apps.sites.services import create_site, rename_site, set_default_site
 from apps.customers.models import Customer
 
 
@@ -22,9 +22,21 @@ def sites(request):
         site, settings = create_site(request.user, body["name"])
         return JsonResponse({"id": str(site.pk), "name": site.name, "default_site_id": str(settings.default_site_id) if settings.default_site_id else None, "settings_version": settings.version}, status=201)
     settings = GlobalSettings.objects.filter(pk=1).first()
-    return JsonResponse({"items": [{"id": str(s.pk), "name": s.name} for s in Site.objects.order_by("created_at", "id")],
+    return JsonResponse({"items": [{"id": str(s.pk), "name": s.name, "version": s.updated_at.isoformat()} for s in Site.objects.order_by("created_at", "id")],
                          "default_site_id": str(settings.default_site_id) if settings and settings.default_site_id else None,
                          "settings_version": settings.version if settings else 1})
+
+
+@require_http_methods(["PATCH"])
+@require_role(User.Role.ADMIN)
+@api_errors
+def rename(request, site_id):
+    actor_identity(request)
+    body = json_object(request)
+    if set(body) != {"name", "expected_version"}:
+        raise AccessError("VALIDATION_ERROR", "새 현장명과 현장 버전이 필요합니다.", 422)
+    site, changed = rename_site(request.user, site_id, body["name"], body["expected_version"])
+    return JsonResponse({"id": str(site.pk), "name": site.name, "version": site.updated_at.isoformat(), "changed": changed})
 
 
 @require_http_methods(["PATCH"])
