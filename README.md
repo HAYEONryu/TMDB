@@ -119,6 +119,7 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 - [crypto.randomUUID 오류 수정·서버 정적 파일 적용](docs/REQUEST_ID_COMPATIBILITY.md)
 - [HTTP 환경 전체 점검·직원 HTTPS 조건·도메인 없는 접속 방법](docs/HTTP_ENVIRONMENT_AUDIT.md)
 - [현재 6열 엑셀 양식·고객명 선택·루트/비고/관리자 비고·migration 적용](docs/EXCEL_TEMPLATE_GUIDANCE.md)
+- [관리자 상담결과 비율의 계약 건수·계약률](docs/DASHBOARD_CONTRACT_COUNTS.md)
 - [운영 준비1단계 결과](docs/OPERATIONS_STAGE1.md)
 - [이전 최종 검수](docs/FINAL_VERIFICATION.md)·[당시92문항](docs/FINAL_ACCEPTANCE.md)
 - [이전 시작 안내 원문](docs/history/README.before_operations_stage1_20261108.md)

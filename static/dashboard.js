@@ -49,7 +49,14 @@ function resultChart(distribution){
   drawing.append(svg('text',{x:110,y:108,'text-anchor':'middle','class':'donut-total'},format(distribution.total)+'건'),svg('text',{x:110,y:133,'text-anchor':'middle','class':'donut-caption'},distribution.total?'집계 고객':'상담결과 없음'));
   area.replaceChildren(drawing);
   legend.replaceChildren(...rows.map(row=>{const item=document.createElement('li'),dot=text('span','','result-dot');dot.style.backgroundColor=colors[row.value];item.append(dot,text('span',row.label),text('strong',format(row.count)+'건'),text('small',distribution.total?(row.count/distribution.total*100).toFixed(1)+'%':'0%'));return item;}));
+  const contracts=document.createElement('dl');contracts.className='contract-summary';
+  const contractRate=distribution.total?(distribution.contracted_total/distribution.total*100).toFixed(1)+'%':'0%';
+  for(const [label,value,id] of [['계약 건수',format(distribution.contracted_total)+'건','contract-count'],['계약률',contractRate,'contract-rate']]){
+    const item=document.createElement('div'),number=text('dd',value);number.id=id;item.append(text('dt',label),number);contracts.append(item);
+  }
+  $('contract-summary').replaceChildren(contracts);
   $('result-basis').textContent=distribution.period==='all'?'선택한 현장의 현재 고객 상태':`${distribution.period==='week'?'금주 월요일부터 일요일':'오늘'} · 현재까지 저장한 고객별 마지막 결과`;
+  $('result-basis').textContent+=' · 계약은 같은 집계 고객의 계약 상태 기준';
 }
 function table(headers){const node=document.createElement('table');node.className='table';const head=document.createElement('thead'),row=document.createElement('tr');for(const label of headers){const cell=text('th',label);cell.scope='col';row.append(cell);}head.append(row);const body=document.createElement('tbody');node.append(head,body);return {node,body};}
 function staffTables(data){
@@ -73,7 +80,7 @@ function legacyStatistics(data,area){
 export async function renderDashboard(site){
   const current=++generation,area=$('dashboard-statistics'),message=$('dashboard-message'),target=$('dashboard-summary');
   if(target){target.setAttribute('aria-busy','true');target.replaceChildren(text('p','업무 현황을 불러오고 있습니다…','summary-loading'));}
-  const manager=$('manager-dashboard');if(manager){manager.setAttribute('aria-busy','true');for(const id of ['staff-record-chart','call-result-chart','staff-allocation-table','staff-progress-table'])$(id).replaceChildren(text('p','조회 중…','chart-empty'));$('call-result-legend').replaceChildren();$('staff-record-range').textContent='조회 중';$('result-basis').textContent='조회 중';}
+  const manager=$('manager-dashboard');if(manager){manager.setAttribute('aria-busy','true');for(const id of ['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table'])$(id).replaceChildren(text('p','조회 중…','chart-empty'));$('call-result-legend').replaceChildren();$('staff-record-range').textContent='조회 중';$('result-basis').textContent='조회 중';}
   message.textContent='조회 중…';area.replaceChildren();
   try{
     const params=new URLSearchParams();if(site)params.set('site_id',site);if($('result-period'))params.set('result_period',$('result-period').value);
@@ -81,7 +88,7 @@ export async function renderDashboard(site){
     summary(data);message.textContent=`${data.business_date} · 한국 시각 기준 · 조회 시점 ${new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',timeStyle:'short',hourCycle:'h23'}).format(new Date(data.as_of))}`;
     if(data.manager){staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);manager?.setAttribute('aria-busy','false');}
     legacyStatistics(data,area);
-  }catch(error){if(current!==generation)return;area.replaceChildren();message.textContent=error.message;if(target){target.replaceChildren(text('p','업무 현황을 불러오지 못했습니다. 통계 새로고침으로 다시 확인해 주세요.','summary-loading'));target.setAttribute('aria-busy','false');}if(manager){for(const id of ['staff-record-chart','call-result-chart','staff-allocation-table','staff-progress-table'])$(id).replaceChildren(text('p','현황을 불러오지 못했습니다. 새로고침해 주세요.','chart-empty'));manager.setAttribute('aria-busy','false');}}
+  }catch(error){if(current!==generation)return;area.replaceChildren();message.textContent=error.message;if(target){target.replaceChildren(text('p','업무 현황을 불러오지 못했습니다. 통계 새로고침으로 다시 확인해 주세요.','summary-loading'));target.setAttribute('aria-busy','false');}if(manager){for(const id of ['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table'])$(id).replaceChildren(text('p','현황을 불러오지 못했습니다. 새로고침해 주세요.','chart-empty'));manager.setAttribute('aria-busy','false');}}
 }
 $('result-period')?.addEventListener('change',()=>renderDashboard($('default-site').value));
 for(const button of document.querySelectorAll('[data-staff-view]'))button.addEventListener('click',()=>{for(const item of document.querySelectorAll('[data-staff-view]'))item.setAttribute('aria-pressed',String(item===button));$('staff-allocation-panel').hidden=button.dataset.staffView!=='allocation';$('staff-progress-panel').hidden=button.dataset.staffView!=='progress';});

@@ -8,6 +8,8 @@ from playwright.sync_api import sync_playwright, expect
 
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
+from apps.customers.models import Customer
+from scripts.verification_evidence import artifact_path
 from django.utils import timezone
 from datetime import timedelta
 from tests.helpers import STRONG_PASSWORD
@@ -19,13 +21,14 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.prepare()
         self.rows = self.customers(3)
         for row in self.rows[:2]: self.assign(row)
+        Customer.objects.filter(pk=self.rows[0].pk).update(contract_status='CONTRACTED')
         Callback.objects.create(customer=self.rows[0], due_at=timezone.now()-timedelta(hours=1),
                                 created_by=self.employee, updated_by=self.employee)
         ConsultationRevision.objects.create(customer=self.rows[0],assignment=self.rows[0].current_assignment,actor=self.employee,
-            saved_at=timezone.now(),customer_version=1,changed_fields=['call_result'],after_values={'call_result':'INTERESTED'},source='MANUAL')
+            saved_at=timezone.now(),customer_version=1,changed_fields=['call_result'],after_values={'call_result':'INTERESTED','contract_status':'CONTRACTED'},source='MANUAL')
         for version,field in [(2,'notes'),(3,'callback_due_at')]:
             ConsultationRevision.objects.create(customer=self.rows[0],assignment=self.rows[0].current_assignment,actor=self.employee,
-                saved_at=timezone.now(),customer_version=version,changed_fields=[field],after_values={'call_result':'INTERESTED'},source='MANUAL')
+                saved_at=timezone.now(),customer_version=version,changed_fields=[field],after_values={'call_result':'INTERESTED','contract_status':'CONTRACTED'},source='MANUAL')
         os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH',str(settings.BASE_DIR/'.cache/ms-playwright'))
         self.pw=sync_playwright().start()
         self.browser=self.pw.chromium.launch()
@@ -111,9 +114,20 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(self.page.locator('#staff-record-chart .staff-bar title',has_text=self.employee.name+': 1명')).to_have_count(1)
         expect(self.page.locator('#staff-record-range')).to_contain_text('같은 고객은 직원별 1명으로 집계')
         expect(self.page.locator('#call-result-chart .donut-total')).to_have_text('3건')
+        expect(self.page.locator('#contract-count')).to_have_text('1건')
+        expect(self.page.locator('#contract-rate')).to_have_text('33.3%')
+        card=self.page.locator('section.chart-card').filter(has=self.page.locator('#contract-summary'))
+        for width,label in [(1440,'desktop'),(390,'mobile')]:
+            self.page.set_viewport_size({'width':width,'height':960})
+            expect(self.page.locator('#contract-count')).to_be_visible()
+            self.assertEqual(self.page.evaluate('Math.max(0,document.documentElement.scrollWidth-innerWidth)'),0)
+            card.screenshot(path=str(artifact_path(f'dashboard-contracts-{label}.png')))
+        self.page.set_viewport_size({'width':1440,'height':960})
         self.page.locator('#result-period').select_option('today')
         expect(self.page.locator('#call-result-chart .donut-total')).to_have_text('1건')
         expect(self.page.locator('#call-result-legend')).to_contain_text('관심')
+        expect(self.page.locator('#contract-count')).to_have_text('1건')
+        expect(self.page.locator('#contract-rate')).to_have_text('100.0%')
         self.page.locator('#result-period').select_option('week')
         expect(self.page.locator('#result-basis')).to_contain_text('금주 월요일부터 일요일')
         self.page.get_by_role('button',name='영업 진행 현황',exact=True).click()
@@ -123,6 +137,8 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.locator('#graph-site').select_option(str(self.second.pk))
         expect(self.page.locator('#default-site')).to_have_value(str(self.second.pk))
         expect(self.page.locator('#call-result-chart .donut-total')).to_have_text('0건')
+        expect(self.page.locator('#contract-count')).to_have_text('0건')
+        expect(self.page.locator('#contract-rate')).to_have_text('0%')
         self.page.locator('#default-site').select_option(str(self.site.pk))
         expect(self.page.locator('#graph-site')).to_have_value(str(self.site.pk))
         expect(self.page.locator('#call-result-chart .donut-total')).to_have_text('1건')
@@ -131,3 +147,5 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(self.page.locator('#dashboard-summary')).to_contain_text('불러오지 못했습니다')
         expect(self.page.locator('#staff-record-chart svg')).to_have_count(0)
         expect(self.page.locator('#call-result-chart svg')).to_have_count(0)
+        expect(self.page.locator('#contract-summary')).to_contain_text('불러오지 못했습니다')
+        expect(self.page.locator('#contract-count')).to_have_count(0)

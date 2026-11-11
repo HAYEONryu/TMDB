@@ -26,22 +26,24 @@ def distribution(customers, now, period):
     today, tomorrow, monday, next_monday, _ = periods(now)
     start, end = (today, tomorrow) if period == "today" else (monday, next_monday) if period == "week" else (None, None)
     if period == "all":
-        grouped = customers.values("call_result").annotate(count=Count("pk"))
-        counts = {row["call_result"]: row["count"] for row in grouped}
+        grouped = customers.values(result=F("call_result"), contract=F("contract_status")).annotate(count=Count("pk"))
     else:
         latest = ConsultationRevision.objects.filter(customer_id=OuterRef("pk"), source__in=HUMAN_SAVES,
             saved_at__gte=start, saved_at__lt=end, saved_at__lte=now).order_by("-saved_at", "-customer_version", "-pk")
         grouped = (customers.annotate(period_saved=Exists(latest),
-            result=Subquery(latest.values("after_values__call_result")[:1], output_field=JSONField()))
-            .filter(period_saved=True).values("result").annotate(count=Count("pk")))
-        counts = {}
-        for row in grouped:
-            value = row["result"] if row["result"] in Customer.CallResult.values else None
-            counts[value] = counts.get(value, 0)+row["count"]
+            result=Subquery(latest.values("after_values__call_result")[:1], output_field=JSONField()),
+            contract=Subquery(latest.values("after_values__contract_status")[:1], output_field=JSONField()))
+            .filter(period_saved=True).values("result", "contract").annotate(count=Count("pk")))
+    counts, contracted = {}, 0
+    for row in grouped:
+        value = row["result"] if row["result"] in Customer.CallResult.values else None
+        counts[value] = counts.get(value, 0)+row["count"]
+        if row["contract"] == Customer.ContractStatus.CONTRACTED:
+            contracted += row["count"]
     rows = result_rows(counts)
     return {"period": period, "start": start.isoformat() if start else None,
             "end_exclusive": end.isoformat() if end else None, "as_of": now.isoformat(),
-            "total": sum(row["count"] for row in rows), "results": rows,
+            "total": sum(row["count"] for row in rows), "results": rows, "contracted_total": contracted,
             "basis": "선택 현장의 현재 상태" if period == "all" else "기간 내 저장 고객별 마지막 상담결과"}
 
 

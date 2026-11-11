@@ -23,12 +23,12 @@ class DashboardReportTests(Fixtures, TransactionTestCase):
         clock=patch('django.utils.timezone.now',side_effect=lambda:self.now);clock.start();self.addCleanup(clock.stop)
         self.prepare();self.client=login(self.admin);self.versions={}
 
-    def revision(self,customer,actor=None,at=None,result='INTERESTED',source='MANUAL',assignment=None):
+    def revision(self,customer,actor=None,at=None,result='INTERESTED',source='MANUAL',assignment=None,contract='UNKNOWN'):
         version=self.versions.get(customer.pk,0)+1;self.versions[customer.pk]=version
         return ConsultationRevision.objects.create(customer=customer,actor=actor or self.employee,
             assignment=assignment or customer.current_assignment, saved_at=at or self.now,
             customer_version=version,source=source,changed_fields=['notes','call_result'],
-            after_values={'call_result':result},notes='가짜 내부 상담 기록')
+            after_values={'call_result':result,'contract_status':contract},notes='가짜 내부 상담 기록')
 
     def report(self,period='all',site=None):
         response=self.client.get('/api/dashboard',{'site_id':str((site or self.site).pk),'result_period':period})
@@ -112,6 +112,40 @@ class DashboardReportTests(Fixtures, TransactionTestCase):
         self.assertEqual(week['start'],'2026-12-28T00:00:00+09:00')
         self.assertEqual(week['end_exclusive'],'2027-01-04T00:00:00+09:00')
 
+    def test_contract_counts_share_result_cohort_and_period_latest_snapshot(self):
+        self.now=datetime(2026,11,11,10,tzinfo=KST);self.client=login(self.admin)
+        a,b,c,d,trash=self.customers(5)
+        Customer.objects.filter(pk__in=[a.pk,d.pk,trash.pk]).update(contract_status='CONTRACTED')
+        Customer.objects.filter(pk=trash.pk).update(deleted_at=self.now,deleted_by=self.admin)
+        outside=self.customers(site=self.second,offset=20)[0]
+        Customer.objects.filter(pk=outside.pk).update(contract_status='CONTRACTED')
+        self.revision(a,contract='CONTRACTED',at=self.now-timedelta(minutes=3))
+        self.revision(a,contract='NO_CONTRACT',at=self.now-timedelta(minutes=2))
+        self.revision(b,contract='CONTRACTED',at=self.now-timedelta(minutes=2))
+        self.revision(b,contract='CONTRACTED',source='AI_APPLIED')
+        self.revision(b,contract='NO_CONTRACT',at=self.now+timedelta(minutes=1))
+        self.revision(c,contract='CONTRACTED',at=datetime(2026,11,10,8,tzinfo=KST))
+        self.revision(d,contract='CONTRACTED',source='IMPORT')
+        self.revision(d,contract='CONTRACTED',source='SYSTEM_DELETE_NOTE')
+        self.revision(trash,contract='CONTRACTED')
+        self.revision(outside,contract='CONTRACTED')
+        for period,total,contracts in [('all',4,2),('week',3,2),('today',2,1)]:
+            with self.subTest(period=period):
+                result=self.report(period)['manager']['distribution']
+                self.assertEqual((result['total'],result['contracted_total']),(total,contracts))
+                self.assertEqual(sum(row['count'] for row in result['results']),total)
+        self.assertEqual(self.report('today',self.second)['manager']['distribution']['contracted_total'],1)
+
+    def test_missing_historical_contract_field_is_not_inferred_from_current_state(self):
+        customer=self.customers()[0]
+        Customer.objects.filter(pk=customer.pk).update(contract_status='CONTRACTED')
+        ConsultationRevision.objects.create(customer=customer,actor=self.employee,saved_at=self.now,
+            customer_version=1,source='MANUAL',changed_fields=['call_result'],after_values={'call_result':'INTERESTED'})
+        self.assertEqual(self.report()['manager']['distribution']['contracted_total'],1)
+        for period in ['today','week']:
+            result=self.report(period)['manager']['distribution']
+            self.assertEqual((result['total'],result['contracted_total']),(1,0))
+
     def test_progress_uses_current_assignment_not_old_owner_and_excludes_trash(self):
         a,b,c=self.customers(3)
         self.assign(a,progress=True);self.assign(b);old=self.assign(c,progress=True)
@@ -148,6 +182,7 @@ class DashboardReportTests(Fixtures, TransactionTestCase):
             self.assertIn(self.client.get('/api/dashboard?'+query).status_code,[409,422])
         data=self.report('week',self.second)['manager']
         self.assertEqual(data['distribution']['total'],0)
+        self.assertEqual(data['distribution']['contracted_total'],0)
         self.assertEqual(data['assigned_today_unique'],0)
         self.assertEqual(GlobalSettings.objects.get(pk=1).version,before)
 
@@ -168,5 +203,6 @@ class DashboardReportTests(Fixtures, TransactionTestCase):
         for period in ['all','week','today']:
             data=self.report(period)['manager']
             self.assertEqual(data['distribution']['total'],0)
+            self.assertEqual(data['distribution']['contracted_total'],0)
             staff=next(r for r in data['staff'] if r['id']==str(self.employee.pk))
             self.assertEqual(staff['consultation_records_7d'],1)
