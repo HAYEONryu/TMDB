@@ -1,5 +1,5 @@
 """Current editable choices; historical stored values remain readable."""
-CALL_RESULTS = {'INTERESTED':'가망고객', 'DELETE_REQUEST':'삭제 요망', 'REJECTED':'거절', 'NEXT_SITE':'다음현장 연락 요청'}
+CALL_RESULTS = {'INTERESTED':'가망고객', 'DELETE_REQUEST':'삭제 요망', 'REJECTED':'거절', 'NEXT_SITE':'다음현장 연락 요청', 'NO_ANSWER':'부재'}
 CONTRACT_STATUSES = {'SUBSCRIBED':'청약', 'SUB_CANCELLED':'청약해지', 'CONTRACT_CANCELLED':'계약해지', 'CONTRACTED':'계약'}
 ROUTES = {value:value for value in ['티엠','사이드','대표콜','개인관리','워킹','재방']}
 HOUSING_STATUSES = {value:value for value in ['무주택','1주택','다주택','생애최초']}

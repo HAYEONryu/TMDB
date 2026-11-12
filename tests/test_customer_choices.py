@@ -33,7 +33,7 @@ class CustomerChoiceTests(Fixtures, TestCase):
             'contract_status':['청약','청약해지','계약해지','계약'],
             'route':['티엠','사이드','대표콜','개인관리','워킹','재방'],
             'housing_status':['무주택','1주택','다주택','생애최초'],
-            'call_result':['가망고객','삭제 요망','거절','다음현장 연락 요청']}
+            'call_result':['가망고객','삭제 요망','거절','다음현장 연락 요청','부재']}
         for field, labels in expected.items():
             self.assertEqual(list(customer_schema()[field].values()),labels)
             for actor in [self.admin,self.employee]:
@@ -42,10 +42,10 @@ class CustomerChoiceTests(Fixtures, TestCase):
         self.customer.refresh_from_db();self.assertIsNone(self.customer.deleted_at)
 
     def test_unknown_choices_rejected_and_legacy_unchanged_preserved(self):
-        for field,value in [('route','소개'),('housing_status','자가'),('call_result','NO_ANSWER'),('contract_status','NO_CONTRACT'),('route',42),('contract_status',0)]:
+        for field,value in [('route','소개'),('housing_status','자가'),('call_result','CALL_AGAIN'),('contract_status','NO_CONTRACT'),('route',42),('contract_status',0)]:
             self.assertEqual(self.save(field,value)['error']['code'],'VALIDATION_ERROR')
-        Customer.objects.filter(pk=self.customer.pk).update(route='소개',housing_status='전세',call_result='NO_ANSWER',contract_status='NO_CONTRACT')
-        for field,value in [('route','소개'),('housing_status','전세'),('call_result','NO_ANSWER'),('contract_status','NO_CONTRACT')]:
+        Customer.objects.filter(pk=self.customer.pk).update(route='소개',housing_status='전세',call_result='CALL_AGAIN',contract_status='NO_CONTRACT')
+        for field,value in [('route','소개'),('housing_status','전세'),('call_result','CALL_AGAIN'),('contract_status','NO_CONTRACT')]:
             self.assertTrue(self.save(field,value)['ok'])
         self.assertTrue(self.save('notes','기존값 보존 상담')['ok'])
         self.assertTrue(self.save('housing_status','무주택')['ok'])

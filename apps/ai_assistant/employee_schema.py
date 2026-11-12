@@ -22,7 +22,7 @@ INSTRUCTIONS = (
     "날짜 추천은 원문의 시각을 결합한 ISO8601(+09:00)로 반환한다. notes_date_anchors가 없으면 상대 날짜 추천을 하지 않는다. "
     "CLEANUP은 suggestions의 여섯 상담 필드, SUMMARY는 key_points/concerns/promises/checks, "
     "NEXT_QUESTIONS는 목적·근거를 가진 questions 3~5개를 반환한다. 사용자가 선택하기 전에는 값을 바꾸지 않는다. "
-    "통화결과는 INTERESTED=가망고객, DELETE_REQUEST=삭제 요망, REJECTED=거절, NEXT_SITE=다음현장 연락 요청만 사용한다. "
+    "통화결과는 INTERESTED=가망고객, DELETE_REQUEST=삭제 요망, REJECTED=거절, NEXT_SITE=다음현장 연락 요청, NO_ANSWER=부재만 사용한다. "
     "계약여부는 SUBSCRIBED=청약, SUB_CANCELLED=청약해지, CONTRACT_CANCELLED=계약해지, CONTRACTED=계약만 사용한다. "
     "주택보유상황은 무주택/1주택/다주택/생애최초만 사용한다. 근거가 없으면 NO_SUGGESTION으로 유지한다."
 )
