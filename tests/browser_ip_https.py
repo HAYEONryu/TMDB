@@ -26,7 +26,7 @@ def available_port():
 class IPHttpsBrowserTests(Fixtures, StaticLiveServerTestCase):
     def test_local_tls_proxy_enables_secure_browser_employee_save(self):
         self.prepare()
-        self.assign(self.customers()[0])
+        self.assign(self.customers(site=self.second)[0])
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         port = available_port()
@@ -89,7 +89,10 @@ class IPHttpsBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.get_by_label("비밀번호", exact=True).fill(STRONG_PASSWORD)
         page.get_by_role("button", name="로그인", exact=True).click()
         expect(page).to_have_url(origin + "/app/employee")
-        page.goto(origin + f"/app/employee/mine?site_id={self.site.pk}")
+        page.locator('#employee-dashboard-site').select_option(str(self.second.pk))
+        expect(page.locator('#dashboard-summary .overview-metric').nth(2).locator('dd')).to_have_text('1건')
+        page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
+        expect(page.locator('#site')).to_have_value(str(self.second.pk))
         expect(page.locator("#page-info")).to_contain_text("검색 1건")
         expect(page.locator("#employee-message")).to_be_empty()
         self.assertTrue(page.evaluate("isSecureContext && !!crypto.subtle && !!navigator.locks"))

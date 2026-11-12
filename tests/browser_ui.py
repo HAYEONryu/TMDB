@@ -104,6 +104,82 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.get_by_role('link',name='비밀번호 변경',exact=True).click()
         expect(self.page.get_by_role('heading',name='비밀번호 변경')).to_be_visible()
 
+    def test_employee_selected_dashboard_site_carries_to_today_and_mine(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from django.db import close_old_connections
+
+        def allocate():
+            from apps.assignments.services import change_assignee
+            close_old_connections()
+            try:
+                for row in self.rows[:2]:
+                    change_assignee(self.admin,row.pk,self.assignee_body(row,self.other))
+                row=self.customers(site=self.second,offset=40)[0]
+                self.assign(row)
+            finally:
+                close_old_connections()
+        with ThreadPoolExecutor(max_workers=1) as pool:pool.submit(allocate).result()
+        self.login(self.employee)
+        self.page.locator('#employee-dashboard-site').select_option(str(self.second.pk))
+        cards=self.page.locator('#dashboard-summary .overview-metric')
+        expect(cards.nth(2).locator('dd')).to_have_text('1건')
+        self.page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
+        expect(self.page.locator('#site')).to_have_value(str(self.second.pk))
+        expect(self.page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(self.page.locator('.tabulator-row [tabulator-field="customer_name"]')).to_have_text('가상고객0040')
+        self.page.get_by_role('link',name='나의 DB',exact=True).click()
+        expect(self.page.locator('#site')).to_have_value(str(self.second.pk))
+        expect(self.page.locator('#page-info')).to_contain_text('검색 1건')
+        self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
+        expect(self.page.locator('#employee-dashboard-site')).to_have_value(str(self.second.pk))
+        expect(cards.nth(2).locator('dd')).to_have_text('1건')
+        self.page.get_by_role('link',name='오늘 할 일 열기',exact=True).click()
+        expect(self.page.locator('#site')).to_have_value(str(self.second.pk))
+        expect(self.page.locator('#page-info')).to_contain_text('검색 1건')
+        # Returning to the default still works without modifying the global default.
+        self.page.locator('#site').select_option(str(self.site.pk))
+        expect(self.page.locator('#page-info')).to_contain_text('검색 0건')
+        self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
+        expect(self.page.locator('#employee-dashboard-site')).to_have_value(str(self.site.pk))
+        expect(cards.nth(0).locator('dd')).to_have_text('0건')
+
+    def test_employee_today_card_excludes_recall_transfer_and_trash_but_preserves_history(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from django.db import close_old_connections
+        from apps.assignments.services import change_assignee
+        from apps.customers.services import trash_operation
+        from uuid import uuid4
+
+        def db(action):
+            def run():
+                close_old_connections()
+                try:return action()
+                finally:close_old_connections()
+            with ThreadPoolExecutor(max_workers=1) as pool:return pool.submit(run).result()
+
+        self.login(self.employee)
+        today=self.page.locator('#dashboard-summary .overview-metric').nth(2)
+        expect(today.locator('dd')).to_have_text('2건')
+        db(lambda:change_assignee(self.admin,self.rows[0].pk,self.assignee_body(self.rows[0])))
+        self.page.locator('#dashboard-refresh').click()
+        expect(today.locator('dd')).to_have_text('1건')
+        db(lambda:change_assignee(self.admin,self.rows[1].pk,self.assignee_body(self.rows[1],self.other)))
+        self.page.locator('#dashboard-refresh').click()
+        expect(today.locator('dd')).to_have_text('0건')
+        self.page.get_by_role('link',name='오늘 할 일 열기',exact=True).click()
+        expect(self.page.locator('#page-info')).to_contain_text('검색 0건')
+        self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
+
+        db(lambda:self.assign(self.rows[2]))
+        self.page.locator('#dashboard-refresh').click()
+        expect(today.locator('dd')).to_have_text('1건')
+        db(lambda:trash_operation(self.admin,{'customer_ids':[str(self.rows[2].pk)],'site_id':str(self.site.pk),'idempotency_key':str(uuid4())}))
+        self.page.locator('#dashboard-refresh').click()
+        expect(today.locator('dd')).to_have_text('0건')
+        self.page.locator('.dashboard-detail summary').click()
+        history=self.page.locator('#dashboard-statistics .dashboard-cards > div').filter(has=self.page.locator('dt',has_text='오늘 배정 이력'))
+        expect(history.locator('dd')).to_have_text('3')
+
     def test_manager_charts_period_switch_staff_views_and_failed_refresh_clear_old_data(self):
         self.login(self.admin)
         expect(self.page.locator('#graph-site option')).to_have_count(2)

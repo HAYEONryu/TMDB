@@ -9,6 +9,7 @@ import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
 import {choiceFilter} from './choice-filter.js';
+import {syncEmployeeSiteLinks} from './employee-navigation.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
@@ -17,7 +18,7 @@ const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=val
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
 const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
-let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
+let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},defaultSite='',loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
 async function request(url,body){
   if(environmentProblem&&body!==undefined)throw new Error('현재 조회 전용입니다. 상담 편집·저장은 HTTPS와 지원되는 브라우저에서 이용해 주세요.');
   return withRequestTimeout(async signal=>{
@@ -121,7 +122,7 @@ async function load(){
     $('#page-info').textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
     $('#active-filters').replaceChildren(...Object.keys(state.filters).map(field=>{const button=text('button',labels[field]+' 조건 해제 ×');button.className='btn btn-sm btn-outline-primary';button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error);return button;}));
-    loadedState=structuredClone(state);renderStatus();
+    loadedState=structuredClone(state);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
   }catch(e){if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);}throw e;}
   finally{loading=false;}
 }
@@ -214,6 +215,6 @@ try{
   }else{
   const context=await request('/api/employee/context'),receivedAt=Date.now();await queue.start(context);queueReady=!queue.paused;renderStatus();if(queue.paused)throw new Error(queue.pauseMessage);installPreRecall({serverTime:context.server_time,receivedAt,commit:commitEditor,flush:()=>queue.flush(true),notice});
   }
-  const sites=await request('/api/sites');$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||sites.default_site_id||'';$('#site').value=state.site;
+  const sites=await request('/api/sites');defaultSite=sites.default_site_id||'';$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||defaultSite;$('#site').value=state.site;
   await load();await ai.refreshAvailability();queue.tick();
 }catch(e){error(e);loading=false;}
