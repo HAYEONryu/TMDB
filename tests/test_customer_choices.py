@@ -67,6 +67,20 @@ class CustomerChoiceTests(Fixtures, TestCase):
     def test_model_migration_matches_current_fields(self):
         call_command('makemigrations','customers',dry_run=True,check=True,stdout=StringIO())
 
+    def test_route_select_filter_is_exact_and_keeps_legacy_contains_api(self):
+        from apps.customers.queries import customer_list, filter_options
+        Customer.objects.filter(pk=self.customer.pk).update(route='티엠')
+        old=Customer.objects.create(site=self.site,phone_normalized='01094000002',route='티엠 소개')
+        self.assign(old)
+        foreign=Customer.objects.create(site=self.site,phone_normalized='01094000003',route='다른직원 이전값')
+        self.assign(foreign,self.other)
+        import json
+        params={'site_id':str(self.site.pk),'filters':json.dumps({'route':{'values':['티엠'],'exclude':False}})}
+        self.assertEqual(customer_list(self.employee,params)['total'],1)
+        self.assertEqual(customer_list(self.admin,{**params,'filters':json.dumps({'route':{'contains':'티엠'}})})['total'],2)
+        options=filter_options(self.employee,{'site_id':str(self.site.pk),'field':'route'})
+        self.assertCountEqual(options['values'],['티엠','티엠 소개'])
+
 
 @override_settings(PASSWORD_HASHERS=TEST_HASHERS)
 class CustomerChoiceMigrationTests(Fixtures, TransactionTestCase):

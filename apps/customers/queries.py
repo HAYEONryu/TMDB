@@ -14,7 +14,7 @@ from apps.customers.models import Customer, CustomerDeletionRequest
 from apps.sites.models import GlobalSettings, Site
 
 KST = ZoneInfo("Asia/Seoul")
-CHOICE_FIELDS = {"assignee_name", "customer_name", "phone_normalized", "call_result", "contract_status", "housing_status"}
+CHOICE_FIELDS = {"assignee_name", "customer_name", "phone_normalized", "call_result", "contract_status", "housing_status", "route"}
 DATE_FIELDS = {"visit_at", "callback_due_at", "assigned_at"}
 SORT_FIELDS = CHOICE_FIELDS | DATE_FIELDS | {"created_at", "notes"}
 TEXT_FIELDS = {"notes", "residence", "route", "memo"}
@@ -103,7 +103,7 @@ def apply_conditions(query, params, *, omit=None, admin=False):
             error()
         if field == omit:
             continue
-        if field in CHOICE_FIELDS:
+        if field in CHOICE_FIELDS and not (field=='route' and isinstance(condition,dict) and set(condition)=={'contains'}):
             exclude = False
             if isinstance(condition, dict) and set(condition) <= {"values", "exclude"}:
                 exclude = condition.get("exclude", False)

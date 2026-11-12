@@ -5,7 +5,7 @@ export const customerLabels={customer_name:'고객명',phone_normalized:'연락�
   callback_due_at:'재콜일정',visit_at:'방문예약 날짜',residence:'고객 거주지',housing_status:'주택보유상황',
   route:'루트',memo:'비고',assigned_at:'할당일'};
 const order=['customer_name','phone_normalized','contract_status','admin_notes','assignee_name',
-  'call_result','notes','callback_due_at','visit_at','residence','housing_status','route','memo','assigned_at'];
+  'call_result','callback_due_at','visit_at','residence','housing_status','notes','route','memo','assigned_at'];
 export const customerFields=({admin=false}={})=>order.filter(field=>admin||field!=='admin_notes');
 export function choiceLabel(schema,field,value){
   if(value==null||value===''||(field==='contract_status'&&value==='UNKNOWN'))return '(빈 값)';

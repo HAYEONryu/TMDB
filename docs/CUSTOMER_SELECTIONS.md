@@ -29,7 +29,28 @@ AI 요청의 허용 enum과 로컬 검증도 새 목록을 사용한다. 청약�
 
 기존 ‘주택상황’ 제목의 6열/9열 파일도 읽지만 새 업로드 값은 현재 선택 목록으로 검증한다. 예전 자가·전세 등의 값을 임의로 무주택·1주택으로 추정하지 않고 해당 행의 오류를 표시한다. 검증 완료 뒤 확정할 때도 선택값을 재검사하므로 배포 전에 검증한 파일은 새로 검증하는 것을 권장한다.
 
-## 검증 기록
+## 필터와 열 순서
+
+2026-11-12 추가 요청에 따라 계약여부·통화결과·주택보유상황·루트 필터도 **드롭다운 select**로 선택한다. 목록의 ‘전체’로 해당 조건을 해제하거나 ‘빈 값’으로 미입력을 찾을 수 있다. 네 고정 목록은 해당 값의 고객이 없어도 표시한다. 권한 범위에 저장된 이전 값은 별도 그룹으로 제공하며 후보가 많으면 ‘이전값 더 보기’로 이어서 조회한다. 필터를 다시 열면 선택한 값을 유지하고 ‘이 열 초기화’로 해제할 수 있다.
+
+루트 드롭다운은 정확히 같은 값으로 검색한다. 예를 들어 ‘티엠’ 선택은 ‘티엠 소개’ 같은 이전 자유문자 값을 포함하지 않는다. 직원에게 다른 직원의 이전 값 후보나 고객을 제공하지 않는다. HTTP 조회 전용 화면에서도 이 필터를 사용할 수 있다.
+
+상담내용 열은 관리자·직원 모두 주택보유상황 바로 뒤로 이동했다. 해당 구간은 **고객 거주지 → 주택보유상황 → 상담내용 → 루트 → 비고**다. 전체 순서는 [고객 그리드 문서](CUSTOMER_GRID_EDITING.md)를 따른다. 이번 필터·열 순서 변경에 추가 migration은 없으며 기존 0004 적용 조건은 유지한다.
+
+필터·열 순서 변경 영향 범위는 로컬 가상 DB와 실제 Chromium의 54개 검사로 확인했다. `20261112T021848228341Z-12bb23d7d9ee4859b821d2911d77da77`은 54개 중 51개 통과, 드롭다운의 접근성 이름 식별이 불명확해 브라우저 3개 실패했다. label 연결과 aria-label을 명확히 한 뒤 `20261112T022127325092Z-2fe2dd6a0e334ed1b15f8ab3bbac577a`에서 해당 검사와 HTTP 조회를 포함한 4개가 통과했다. 선택·재진입·초기화·빈 계약 상태·이전값·직원 권한·정확한 열 순서를 검증했고 실행별 소스 불변을 확인했다. 실패 기록은 덮어쓰지 않고 보존한다. 이 기록은 아래 최초 선택값 변경 검증과 별개다.
+
+```sh
+.venv/bin/python scripts/run_final_verification.py start
+.venv/bin/python scripts/run_final_verification.py test --label choice-filters-column-order \
+  tests.test_customer_choices.CustomerChoiceTests tests.test_customer_metadata.CustomerMetadataTests \
+  tests.test_p2 tests.browser_customer_metadata \
+  tests.browser_p2.AdminGridBrowserTests.test_grid_paging_filters_manual_save_trash_restore_site_default_and_mobile \
+  tests.browser_employee.EmployeeBrowserTests.test_filters_mobile_dates_and_visual_evidence \
+  tests.browser_http_environment.EmployeeEnvironmentBrowserTests.test_http_today_site_selection_filters_and_session_end
+.venv/bin/python scripts/run_final_verification.py stop
+```
+
+## 최초 선택값 검증 기록
 
 분리된 PostgreSQL 17·가상 사용자/고객과 Chromium을 사용했다. 실행별 소스 변경 없음과 결과를 `.local/verification-runs/<실행ID>/`에 보존한다. 운영 DB·개발/데모 DB·실제 고객정보·실제 AI 호출·외부 배포는 사용하지 않았다.
 

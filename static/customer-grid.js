@@ -5,6 +5,7 @@ import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
+import {choiceFilter} from './choice-filter.js';
 
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
@@ -225,7 +226,9 @@ $("#bulk-confirm").onclick=async()=>{
 async function openFilter(field) {
   const dialog=$("#filter-dialog"), area=$("#filter-content");$("#filter-title").textContent=labels[field]+" 필터";$("#filter-error").textContent="";area.replaceChildren();
   let getCondition;
-  if(dates.has(field)){
+  if(schema[field]){
+    getCondition=await choiceFilter({area,field,schema,current:state.filters[field],request:api,params,display});
+  }else if(dates.has(field)){
     for(const [key,title] of [["from","시작일"],["to","종료일"]]){const label=text("label",title);const input=document.createElement("input");input.type="date";input.id="filter-"+key;input.value=state.filters[field]?.[key]||"";label.append(input);area.append(label);}
     getCondition=()=>{const result={};for(const key of ["from","to"])if($("#filter-"+key).value)result[key]=$("#filter-"+key).value;return Object.keys(result).length?result:undefined;};
   }else if(textFields.has(field)){

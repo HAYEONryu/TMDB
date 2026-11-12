@@ -8,6 +8,7 @@ import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
+import {choiceFilter} from './choice-filter.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
@@ -179,7 +180,9 @@ window.addEventListener('online',resume);document.addEventListener('visibilitych
 window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial){accessRevoked=true;readOnly=false;queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');}});
 async function openFilter(field){
   const dialog=$('#filter-dialog'),area=$('#filter-content');$('#filter-title').textContent=labels[field]+' 필터';$('#filter-error').textContent='';area.replaceChildren();let condition;
-  if(dates.has(field)){
+  if(schema[field]){
+    condition=await choiceFilter({area,field,schema,current:state.filters[field],request,params,display});
+  }else if(dates.has(field)){
     for(const [key,title] of [['from','시작일'],['to','종료일']]){const label=text('label',title),input=document.createElement('input');input.type='date';input.id='filter-'+key;input.value=state.filters[field]?.[key]||'';label.append(input);area.append(label);}
     condition=()=>{const values={};for(const key of ['from','to'])if($('#filter-'+key).value)values[key]=$('#filter-'+key).value;return Object.keys(values).length?values:undefined;};
   }else if(textFields.has(field)){

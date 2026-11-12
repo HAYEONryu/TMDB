@@ -105,9 +105,9 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
         fields=['customer_name','phone_normalized','contract_status','admin_notes','assignee_name',
-                'call_result','notes','callback_due_at','visit_at','residence','housing_status','route','memo','assigned_at','_actions','_status']
-        labels=['고객명','연락처','계약여부','관리자 비고','담당직원명','통화결과','상담내용','재콜일정',
-                '방문예약 날짜','고객 거주지','주택보유상황','루트','비고','할당일','작업','저장상태']
+                'call_result','callback_due_at','visit_at','residence','housing_status','notes','route','memo','assigned_at','_actions','_status']
+        labels=['고객명','연락처','계약여부','관리자 비고','담당직원명','통화결과','재콜일정',
+                '방문예약 날짜','고객 거주지','주택보유상황','상담내용','루트','비고','할당일','작업','저장상태']
         def header(grid):
             return page.locator(f'#{grid} .tabulator-header .tabulator-col[tabulator-field]').evaluate_all(
                 "cells=>cells.filter(c=>c.getAttribute('tabulator-field')).map(c=>[c.getAttribute('tabulator-field'),c.querySelector('.tabulator-col-title').textContent.replace('▾','').trim()])")
@@ -177,4 +177,44 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         updated=self.db(lambda:Customer.objects.get(pk=customer.pk))
         self.assertEqual((updated.call_result,updated.contract_status,updated.housing_status,updated.route),('DELETE_REQUEST','SUB_CANCELLED','1주택','사이드'))
         self.assertIsNone(updated.deleted_at)
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
+
+    def test_fixed_filters_use_select_for_both_roles_and_legacy_values_are_scoped(self):
+        import json
+        from apps.customers.choices import CURRENT_CHOICES
+        def prepare_rows():
+            first=Customer.objects.create(site=self.site,phone_normalized='01094000001',contract_status='SUBSCRIBED',call_result='INTERESTED',housing_status='무주택',route='티엠')
+            legacy=Customer.objects.create(site=self.site,phone_normalized='01094000002',contract_status='NO_CONTRACT',call_result='NO_ANSWER',housing_status='전세',route='티엠 소개')
+            foreign=Customer.objects.create(site=self.site,phone_normalized='01094000003',route='다른직원 이전값')
+            self.assign(first);self.assign(legacy);self.assign(foreign,self.other)
+        self.db(prepare_rows)
+        for actor,grid,path,total in [(self.admin,'customer-grid','admin/customers',3),(self.employee,'employee-grid','employee/mine',2)]:
+            self.login(actor);page=self.page
+            page.goto(self.live_server_url+f'/app/{path}?site_id={self.site.pk}')
+            expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+            for field,choices in CURRENT_CHOICES.items():
+                page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
+                select=page.get_by_label('필터 값',exact=True)
+                expect(select).to_be_visible()
+                self.assertEqual(select.locator(':scope > option').all_text_contents(),['전체','(빈 값)',*choices.values()])
+                select.select_option(json.dumps(next(iter(choices)),ensure_ascii=False))
+                page.locator('#filter-apply').click()
+                expect(page.locator('#page-info')).to_contain_text('검색 1건')
+                page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
+                expect(page.get_by_label('필터 값',exact=True)).to_have_value(json.dumps(next(iter(choices)),ensure_ascii=False))
+                page.locator('#filter-reset').click()
+                expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+                page.locator('#clear-filters').click()
+                expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+            page.get_by_role('button',name='계약여부 필터',exact=True).click()
+            page.get_by_label('필터 값',exact=True).select_option('EMPTY');page.locator('#filter-apply').click()
+            expect(page.locator('#page-info')).to_contain_text(f'검색 {1 if actor==self.admin else 0}건')
+            page.locator('#clear-filters').click()
+            expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+            page.get_by_role('button',name='루트 필터',exact=True).click()
+            select=page.get_by_label('필터 값',exact=True)
+            if actor==self.employee:self.assertNotIn('다른직원 이전값',select.inner_text())
+            select.select_option(json.dumps('티엠 소개',ensure_ascii=False));page.locator('#filter-apply').click()
+            expect(page.locator('#page-info')).to_contain_text('검색 1건')
+            expect(page.locator(f'#{grid} .tabulator-row [tabulator-field="route"]').first).to_have_text('이전값: 티엠 소개')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
