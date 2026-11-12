@@ -12,13 +12,13 @@
     <label>정렬<select id="sort" class="form-select mt-1"><option value="-created_at">최근 등록순</option><option value="customer_name">고객명순</option><option value="assignee_name">담당직원순</option><option value="callback_due_at">재콜 예정순</option><option value="visit_at">방문 예정순</option><option value="assigned_at">할당 시각순</option></select></label>
   </div><div class="d-flex flex-wrap gap-2 mt-3 align-items-center">
     {% if not trash %}<button id="save" class="btn btn-primary">저장</button><a id="open-imports" class="btn btn-outline-primary" href="/app/admin/imports">엑셀 업로드</a>{% endif %}
-    <button id="clear-filters" class="btn btn-link">필터 초기화</button><span id="dirty-count" class="small" role="status"></span>
+    <button id="clear-filters" class="btn btn-link">전체 필터 해제</button><span id="dirty-count" class="small" role="status"></span>
     <div class="toolbar-secondary"><button id="bulk" class="btn {% if trash %}btn-outline-primary{% else %}btn-outline-secondary{% endif %}">{% if trash %}선택 복구{% else %}선택 휴지통 이동{% endif %}</button>{% if not trash %}<button id="delete-site" class="btn btn-outline-danger">현장 삭제</button>{% endif %}</div>
   </div></div>
   <p id="message" class="grid-message" role="alert" aria-live="polite"></p>
   {% if not trash %}<div id="assignee-pending" class="card card-body border-warning mb-3" hidden><p>담당자 변경 결과를 확인하지 못했습니다. 같은 요청을 확인하세요. 대기 정보 폐기는 이미 처리된 변경을 취소하지 않습니다.</p><div class="d-flex flex-wrap gap-2"><button id="assignee-retry" class="btn btn-primary">담당 변경 결과 다시 확인</button><button id="assignee-discard" class="btn btn-outline-secondary">대기 정보 폐기</button></div></div>{% endif %}
   <div id="active-filters" class="d-flex flex-wrap gap-2 mb-2"></div>
-  <div class="table-caption d-flex flex-wrap justify-content-between gap-2 mb-2 small"><span id="counts"></span><span>{% if not trash %}수정할 셀을 클릭한 뒤 저장하세요. 연락처·관리자 비고는 관리자만 수정할 수 있습니다. · {% endif %}열 제목의 ▾ 버튼으로 필터 · 날짜 숫자 8자리 → YYYY-MM-dd · 방문일정만 시간 4자리 추가 가능 (예: 202611131430 → 2026-11-13 14:30, 한국 시각) · 선택 항목의 - 선택 또는 입력 내용 지우기로 빈 값 저장</span></div>
+  <div class="table-caption d-flex flex-wrap justify-content-between gap-2 mb-2 small"><span id="counts"></span><span>{% if not trash %}수정할 셀을 클릭한 뒤 저장하세요. 연락처·관리자 비고는 관리자만 수정할 수 있습니다. · {% endif %}열 제목의 필터 아이콘으로 조건 설정 · 날짜 숫자 8자리 → YYYY-MM-dd · 방문일정만 시간 4자리 추가 가능 (예: 202611131430 → 2026-11-13 14:30, 한국 시각) · 선택 항목의 - 선택 또는 입력 내용 지우기로 빈 값 저장</span></div>
   <p class="table-scroll-hint">표를 좌우로 움직이면 다른 상담 항목과 작업 버튼을 볼 수 있어요. <span aria-hidden="true">↔</span></p><div id="customer-grid" aria-label="고객관리 표"></div>
   <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mt-3"><span id="page-info" role="status"></span><div class="d-flex gap-2 align-items-center"><label for="page-size">페이지당</label><select id="page-size" class="form-select w-auto"><option value="50">50행</option><option value="100">100행</option></select><button id="previous" class="btn btn-outline-secondary">이전</button><button id="next" class="btn btn-outline-secondary">다음</button></div></div>
 </section>

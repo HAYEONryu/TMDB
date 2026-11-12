@@ -99,7 +99,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
         expect(page.locator('.tabulator-row [tabulator-field="customer_name"]').first).to_have_text('가상고객0031')
         page.get_by_role('button',name='루트 필터',exact=True).click()
-        page.get_by_label('필터 값',exact=True).select_option('EMPTY');page.locator('#filter-apply').click()
+        page.locator('#filter-mode input[value="EMPTY"]').check();page.locator('#filter-apply').click()
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
         page.locator('#clear-filters').click()
         page.locator('#search').fill('없는가상고객');page.locator('#search-form').get_by_role('button',name='검색',exact=True).click()

@@ -5,7 +5,7 @@ import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
-import {openGridFilter,filterDescription,markFilterHeaders} from './grid-filter.js';
+import {openGridFilter,renderFilterChips,columnFilterButton,markFilterHeaders} from './grid-filter.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
 
 const $ = selector => document.querySelector(selector);
@@ -77,7 +77,7 @@ function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
     headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue())),
-    titleFormatter:() => { const wrap = text("span", labels[field]); const button = text("button", "▾"); button.className="column-filter"; button.type="button"; button.setAttribute("aria-label", labels[field]+" 필터");button.dataset.filterField=field;button.setAttribute("aria-haspopup","dialog");button.setAttribute("aria-controls","filter-dialog");button.setAttribute("aria-pressed","false"); button.addEventListener("click", event => {event.stopPropagation(); guarded(() => openFilter(field)).catch(showError);}); wrap.append(button); return wrap; }};
+    titleFormatter:() => { const wrap = text("span", labels[field]);wrap.append(columnFilterButton(field,labels[field],()=>guarded(()=>openFilter(field)).catch(showError)));return wrap; }};
   if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
@@ -123,8 +123,8 @@ async function load() {
     await table.setData(data.data.map(row=>({...row,...pending.get(row.id)?.changes})));
     $("#page-info").textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $("#counts").textContent=data.counts?`전체 DB ${data.counts.total} · 미할당 ${data.counts.unassigned} · 휴지통 ${data.counts.trash}`:"";
-    $("#active-filters").replaceChildren(...Object.keys(state.filters).map(field=>{const button=text("button",labels[field]+": "+filterDescription(field,state.filters[field],display)+" ×");button.className="btn btn-sm btn-outline-primary";button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(showError);return button;}));
-    if(state.assignee){const button=text("button","담당직원 조건 해제 ×");button.className="btn btn-sm btn-outline-primary";button.onclick=()=>guarded(async()=>{state.assignee="";await load();}).catch(showError);$("#active-filters").append(button);}
+    renderFilterChips($("#active-filters"),state.filters,labels,display,field=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(showError));
+    if(state.assignee){const button=text("button","담당직원 조건 해제 ×");button.type='button';button.className="filter-chip";button.onclick=()=>guarded(async()=>{state.assignee="";await load();}).catch(showError);$("#active-filters").append(button);}
     loadedState=structuredClone(state);markFilterHeaders(state.filters);
     if (!siteInfo.items.length) notice("등록된 현장이 없습니다. 현장을 생성해 주세요.");
   } catch(error) {

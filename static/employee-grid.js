@@ -8,7 +8,7 @@ import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
-import {openGridFilter,filterDescription,markFilterHeaders} from './grid-filter.js';
+import {openGridFilter,renderFilterChips,columnFilterButton,markFilterHeaders} from './grid-filter.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
@@ -75,7 +75,7 @@ function editor(cell,onRendered,success,cancel){
 function column(field){
   return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
     formatter:cell=>text('span',display(field,cell.getValue())),
-    titleFormatter:()=>{const wrap=text('span',labels[field]),button=text('button','▾');button.type='button';button.className='column-filter';button.setAttribute('aria-label',labels[field]+' 필터');button.dataset.filterField=field;button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','filter-dialog');button.setAttribute('aria-pressed','false');button.onclick=e=>{e.stopPropagation();guarded(()=>openFilter(field)).catch(error);};wrap.append(button);return wrap;},
+    titleFormatter:()=>{const wrap=text('span',labels[field]);wrap.append(columnFilterButton(field,labels[field],()=>guarded(()=>openFilter(field)).catch(error)));return wrap;},
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
@@ -160,7 +160,7 @@ async function load(){
     await table.setData(data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )})));
     $('#page-info').textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
-    $('#active-filters').replaceChildren(...Object.keys(state.filters).map(field=>{const button=text('button',labels[field]+': '+filterDescription(field,state.filters[field],display)+' ×');button.className='btn btn-sm btn-outline-primary';button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error);return button;}));
+    renderFilterChips($('#active-filters'),state.filters,labels,display,field=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error));
     loadedState=structuredClone(state);markFilterHeaders(state.filters);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
   }catch(e){if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);}throw e;}
   finally{loading=false;}

@@ -1,8 +1,8 @@
 <dialog id="filter-dialog" class="grid-filter" aria-labelledby="filter-title" aria-describedby="filter-help">
-  <p class="eyebrow">고객정보 필터</p><h2 id="filter-title" class="h5"></h2>
-  <p id="filter-help" class="filter-help">다른 열의 조건과 함께 적용됩니다. -는 값이 없는 항목입니다.</p>
+  <header class="filter-dialog-heading"><p class="eyebrow">고객 목록 필터</p><h2 id="filter-title" class="h5"></h2>
+  <p id="filter-help" class="filter-help">여러 필터를 적용하면 모든 조건에 맞는 고객만 표시합니다.</p></header>
   <div id="filter-content"></div>
-  <p id="filter-summary" class="filter-summary" role="status" aria-live="polite"></p>
+  <footer class="filter-dialog-footer"><div class="filter-preview"><span>적용할 조건</span><p id="filter-summary" role="status" aria-live="polite"></p></div>
   <p id="filter-error" class="field-error" role="alert"></p>
-  <div class="dialog-actions mt-3"><button type="button" data-close class="btn btn-outline-secondary">취소</button><button type="button" id="filter-reset" class="btn btn-outline-secondary">이 열 해제</button><button type="button" id="filter-apply" class="btn btn-primary">적용</button></div>
+  <div class="dialog-actions"><button type="button" id="filter-reset" class="filter-text-button">이 필터 해제</button><button type="button" data-close class="btn btn-outline-secondary">취소</button><button type="button" id="filter-apply" class="btn btn-primary">필터 적용</button></div></footer>
 </dialog>
