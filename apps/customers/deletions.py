@@ -12,6 +12,7 @@ from apps.common.http import identifier
 from apps.common.receipts import fingerprint,replay,remember,failure
 from apps.common.transactions import business_write,retry_transient_write
 from apps.consultations.models import ConsultationRevision
+from apps.consultations.snapshots import audit_snapshot
 from apps.customers.access import current_access
 from apps.customers.models import Customer,CustomerDeletionRequest,CustomerChangeEvent
 from apps.customers.queries import KST
@@ -88,7 +89,7 @@ def approve(actor,request_id,body):
             deletion.status='APPROVED';deletion.approved_by=actor;deletion.approved_at=now;deletion.deletion_note=note;deletion.save()
             CustomerChangeEvent.objects.create(customer=customer,assignment=assignment,changed_by=actor,changed_at=now,changed_fields=['notes'])
             ConsultationRevision.objects.create(customer=customer,assignment=assignment,actor=actor,saved_at=now,customer_version=customer.version,
-                changed_fields=['notes'],before_values=before,after_values=snapshot(customer,callback),notes=customer.notes,source=ConsultationRevision.Source.SYSTEM_DELETE_NOTE)
+                changed_fields=['notes'],before_values=audit_snapshot(before, {'notes'}),after_values=audit_snapshot(snapshot(customer,callback), {'notes'}),notes=customer.notes,source=ConsultationRevision.Source.SYSTEM_DELETE_NOTE)
             OperationEvent.objects.create(actor=actor,operation='DELETION_APPROVE',occurred_at=now,affected_count=1)
         return remember(actor,'DELETION_APPROVE',key,body_hash,result_for(deletion),target_ids=[customer.pk,customer.site_id])
 

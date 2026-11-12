@@ -38,7 +38,7 @@ def error(message="검색·필터 조건을 확인해 주세요."):
 def enriched(query):
     callback = Callback.objects.filter(customer_id=OuterRef("pk"), status="PENDING")
     deletion = CustomerDeletionRequest.objects.filter(customer_id=OuterRef("pk"), status="PENDING")
-    return query.select_related("site", "current_assignment__employee").annotate(
+    return query.select_related("site", "current_assignment").annotate(
         assignee_name=Coalesce("current_assignment__employee__name", Value(""), output_field=CharField()),
         assigned_at=F("current_assignment__assigned_at"),
         callback_due_at=Subquery(callback.values("due_at")[:1]),
@@ -65,6 +65,7 @@ def scoped(actor, params):
     else:
         site_id = GlobalSettings.objects.filter(pk=1).values_list("default_site_id", flat=True).first()
     query = enriched(Customer.objects.all())
+    if actor.role != User.Role.ADMIN:query = query.defer('admin_notes')
     if site_id != "all":
         query = query.filter(site_id=site_id) if site_id else query.none()
     query = query.filter(deleted_at__isnull=(view != "trash"))

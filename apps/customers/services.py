@@ -13,6 +13,7 @@ from apps.common.http import identifier
 from apps.common.validation import normalize_phone
 from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
+from apps.consultations.snapshots import audit_snapshot
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
 from apps.customers.choices import CURRENT_CHOICES, FIELD_LABELS
 from apps.customers.queries import KST, enriched, iso, serialize, visible_values
@@ -100,7 +101,10 @@ def snapshot(customer, callback):
 
 
 def safe_row(customer_id, actor=None):
-    return serialize(enriched(Customer.objects.filter(pk=customer_id)).get(), admin=bool(actor and actor.role == User.Role.ADMIN))
+    admin = bool(actor and actor.role == User.Role.ADMIN)
+    query = Customer.objects.filter(pk=customer_id)
+    if not admin:query = query.defer('admin_notes')
+    return serialize(enriched(query).get(), admin=admin)
 
 
 @retry_transient_write
@@ -212,8 +216,9 @@ def update_row(actor, body, *, employee_only=False):
             after.update({field: getattr(customer, field) for field in identity_fields})
             CustomerChangeEvent.objects.create(customer=customer, assignment=assignment, changed_by=actor, changed_at=now, changed_fields=sorted(actual))
             ConsultationRevision.objects.create(customer=customer, assignment=assignment, actor=actor, saved_at=now,
-                customer_version=customer.version, changed_fields=sorted(actual), before_values=before, after_values=after,
-                notes=customer.notes, source=ConsultationRevision.Source.AI_APPLIED if source_result else ConsultationRevision.Source.MANUAL,source_ai_result=source_result)
+                customer_version=customer.version, changed_fields=sorted(actual), before_values=audit_snapshot(before, actual), after_values=audit_snapshot(after, actual),
+                notes=customer.notes if set(actual)-IDENTITY_FIELDS-{'admin_notes'} else '',
+                source=ConsultationRevision.Source.AI_APPLIED if source_result else ConsultationRevision.Source.MANUAL,source_ai_result=source_result)
         result = {"ok": True, "customer_id": str(cid), "mutation_id": str(mutation_id), "changed": bool(actual),
                   "version": customer.version, "row": safe_row(cid, actor)}
         MutationReceipt.objects.create(actor=actor, customer=customer, mutation_id=mutation_id, body_hash=body_hash,

@@ -30,6 +30,7 @@ from tests.test_p4 import Fixtures
 
 
 class ConcurrentHTTPTests(Fixtures, TransactionTestCase):
+    web_workers = 2
     staff_count = 19
     admin_count = 1
     report_name = 'p13-concurrency.json'
@@ -58,12 +59,13 @@ class ConcurrentHTTPTests(Fixtures, TransactionTestCase):
         with tempfile.TemporaryDirectory(prefix='tm-p13-load-', dir='/private/tmp') as directory:
             env = {k: v for k, v in os.environ.items() if not k.startswith('AI_')}
             env.update(DJANGO_SETTINGS_MODULE='config.test_settings', DATABASE_URL=database_url,
-                       AI_ENV_FILE=str(Path(directory)/'missing.ai'), LOGIN_REQUEST_FAILURE_LIMIT='100')
+                       AI_ENV_FILE=str(Path(directory)/'missing.ai'), LOGIN_REQUEST_FAILURE_LIMIT='100',
+                       TM_WEB_WORKERS=str(self.web_workers),TM_WEB_THREADS='4',TM_WEB_MAX_REQUESTS='0')
             if os.environ.get('TM_PROFILE_SQL') == 'true':
                 env['DJANGO_SETTINGS_MODULE']='tests.load_settings'
             with (Path(directory)/'server.log').open('w') as log:
-                process = subprocess.Popen([str(settings.BASE_DIR/'.venv/bin/gunicorn'), 'config.wsgi:application', '--bind', f'127.0.0.1:{port}',
-                    '--workers', '2', '--worker-class', 'gthread', '--threads', '4', '--access-logfile', str(artifact_path('p13-load-access.log')),
+                process = subprocess.Popen([str(settings.BASE_DIR/'.venv/bin/gunicorn'), '--config','config/gunicorn.py','config.wsgi:application', '--bind', f'127.0.0.1:{port}',
+                    '--access-logfile', str(artifact_path('p13-load-access.log')),
                     '--access-logformat', '%(m)s %(U)s %(D)s'], cwd=settings.BASE_DIR, env=env, stdout=log, stderr=log)
                 try:
                     wait_http(origin+'/healthz', process)
@@ -133,7 +135,7 @@ class ConcurrentHTTPTests(Fixtures, TransactionTestCase):
         reads = sorted(value for read, _ in outcomes for value in read)
         writes = sorted(value for _, write in outcomes for value in write)
         p95 = lambda values: values[math.ceil(.95*len(values))-1]
-        report = {'sessions':session_count,'employees':len(employees),'admins':len(admins),'customers':10000,'gunicorn_workers':2,'threads_per_worker':4,'rounds_per_session':5,
+        report = {'sessions':session_count,'employees':len(employees),'admins':len(admins),'customers':10000,'gunicorn_workers':self.web_workers,'threads_per_worker':4,'rounds_per_session':5,
             'measured_requests':session_count*10,'failed_requests':0,'elapsed_including_login_seconds':round(elapsed,3),
             'read_p95_seconds':round(p95(reads),3),'write_p95_seconds':round(p95(writes),3),
             'read_max_seconds':round(max(reads),3),'write_max_seconds':round(max(writes),3),
@@ -155,3 +157,8 @@ class FullCapacityHTTPTests(ConcurrentHTTPTests):
     staff_count = 20
     admin_count = 5
     report_name = 'final-25-concurrency.json'
+
+
+class LowMemoryFullCapacityHTTPTests(FullCapacityHTTPTests):
+    web_workers = 1
+    report_name = 'low-memory-25-concurrency.json'

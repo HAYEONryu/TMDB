@@ -117,7 +117,7 @@ def build_report(feature, *, site, employee, start, end, korean_date):
     names.extend(historical_customer_names(source_customers))
     records=[];checks=[]
     pending_customers=set(callbacks.filter(Q(completed_at__isnull=True)|Q(completed_at__gt=end)).filter(Q(cancelled_at__isnull=True)|Q(cancelled_at__gt=end)).values_list('customer_id',flat=True))
-    selected_rows=ConsultationRevision.objects.in_bulk([m['id'] for m in selected])
+    selected_rows=ConsultationRevision.objects.only('id','customer_id','actor_id','saved_at','customer_version','notes','after_values').in_bulk([m['id'] for m in selected])
     for metadata_row in selected:
         r=selected_rows[metadata_row['id']]
         if any(w in r.notes for w in ['다시 연락','재통화','재콜']) and r.customer_id not in pending_customers:

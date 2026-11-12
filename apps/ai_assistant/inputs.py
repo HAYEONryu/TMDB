@@ -55,7 +55,8 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
         from .reports import build_report
         return build_report(feature, site=site, employee=employee, start=start, end=end, korean_date=korean_date)
     query = ConsultationRevision.objects.filter(saved_at__lte=end).exclude(
-        Q(changed_fields__contained_by=["customer_name","phone_normalized","admin_notes"]) & ~Q(changed_fields=[])).select_related("customer")
+        Q(changed_fields__contained_by=["customer_name","phone_normalized","admin_notes"]) & ~Q(changed_fields=[])).select_related("customer").only(
+            'id','customer_id','saved_at','source','customer_version','notes','after_values','customer__customer_name')
     sources = []
     payload = {"reference_date": korean_date.isoformat(), "period_start": start.isoformat(), "period_end": end.isoformat(), "records": []}
     names = list(User.objects.values_list("name", flat=True))

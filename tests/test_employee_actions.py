@@ -94,8 +94,8 @@ class EmployeeActionPreparationTests(Fixtures, TestCase):
         self.assertNotIn('notes',row)
         revision=ConsultationRevision.objects.get(customer=self.customer)
         self.assertEqual(revision.notes,self.customer.notes)
-        self.assertEqual(revision.after_values['notes'],self.customer.notes)
-        legacy={**row,'before_values':revision.before_values,'after_values':revision.after_values,'notes':revision.notes}
+        self.assertNotIn('notes',revision.after_values)
+        legacy={**row,'before_values':{**revision.before_values,'notes':revision.notes},'after_values':{**revision.after_values,'notes':revision.notes},'notes':revision.notes}
         old_size=len(json.dumps(legacy,ensure_ascii=False).encode());new_size=len(json.dumps(row,ensure_ascii=False).encode())
         self.assertLess(new_size,old_size/2)
         artifact_path('history-response-size.json').write_text(json.dumps({'synthetic':True,'legacy_row_bytes':old_size,'projected_row_bytes':new_size,'reduction_percent':round(100*(1-new_size/old_size),2),'database_rows_deleted':0}))

@@ -8,6 +8,7 @@ from apps.common.http import identifier
 from apps.common.receipts import fingerprint,replay,remember
 from apps.common.transactions import business_write,retry_transient_write
 from apps.consultations.models import ConsultationRevision
+from apps.consultations.snapshots import audit_snapshot
 from apps.customers.access import current_access
 from apps.customers.models import Customer,CustomerChangeEvent
 from apps.customers.services import snapshot,safe_row
@@ -48,7 +49,7 @@ def complete(actor,cid,body,*,employee_only=False):
             after=snapshot(customer,None)
             CustomerChangeEvent.objects.create(customer=customer,assignment=assignment,changed_by=actor,changed_at=now,changed_fields=['callback_due_at'])
             ConsultationRevision.objects.create(customer=customer,assignment=assignment,actor=actor,saved_at=now,customer_version=customer.version,
-                changed_fields=['callback_due_at'],before_values=before,after_values=after,notes=customer.notes,source=ConsultationRevision.Source.MANUAL)
+                changed_fields=['callback_due_at'],before_values=audit_snapshot(before, {'callback_due_at'}),after_values=audit_snapshot(after, {'callback_due_at'}),notes=customer.notes,source=ConsultationRevision.Source.MANUAL)
         result={'ok':True,'changed':changed,'customer_id':str(cid),'callback_id':str(callback.pk),'completed_at':callback.completed_at.isoformat(),'completed_by':str(callback.completed_by_id),'version':customer.version}
         remember(actor,'CALLBACK_COMPLETE',key,body_hash,result,target_ids=[cid,customer.site_id])
         return {**result,'row':safe_row(cid,actor)},200

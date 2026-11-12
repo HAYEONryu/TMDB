@@ -8,6 +8,8 @@
 
 직원 작업 버튼·재콜 완료 체크·AI 준비 안내와 이력 조회 응답 축소도 새 migration이 없다. [최신 버튼 사용법과 HTTPS 반영](EMPLOYEE_ACTIONS.md#기존-https-서버-반영)을 따른다.
 
+신규 이력 저장 중복·SQL 조회 메모리 최적화도 migration 없이 이미지 갱신으로 반영한다. [DB·메모리 측정과 진단 명령](DATABASE_MEMORY_OPTIMIZATION.md)을 확인한다. 기존 DB 파일 축소나 worker 수 강제 감소를 수행하는 업데이트가 아니다.
+
 현재 필요한 고객 migration은 `0004_customer_selection_options`까지다. `0004`가 이미 적용됐다면 아래 migration 명령은 추가 변경 없이 끝난다. 미적용이면 `0003` 중복 정책 등 선행 migration도 함께 적용한다. **DB 변경 전에는 현재 DB의 새 백업과 별도 DB 복구 확인을 완료한다.** [백업·복구 방법](OPERATIONS.md#암호화-백업)을 따른다.
 
 기존 `.env`·`.env.ai`·`compose.server.yaml`을 그대로 사용하며 PostgreSQL 컨테이너와 데이터 볼륨은 유지한다. 서버의 Docker·Compose와 PostgreSQL 서비스가 준비된 상태에서 실행한다. 호스트의 Python이나 `.venv`는 사용하지 않는다.
