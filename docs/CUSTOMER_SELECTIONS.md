@@ -76,23 +76,6 @@ AI 요청의 허용 enum과 로컬 검증도 새 목록을 사용한다. 청약�
 
 ## 서버 반영
 
-현재 서버 DB의 새 백업과 별도 DB 복구 확인을 마친 뒤 아래 절차를 사용한다. 이번 작업에서는 서버를 변경하지 않았다. 기존 `.env`·`.env.ai`와 PostgreSQL 볼륨을 유지한다.
+현재 필요한 migration은 `0004_customer_selection_options`까지다. 기존 0003이 미적용이면 함께 적용되며, 이미 0004가 적용됐다면 추가 DB 변경 없이 이미지와 웹·스케줄러를 갱신한다.
 
-```sh
-cd /root/TMDB &&
-git pull --ff-only &&
-unset TM_SERVER_SECRET TM_DB_PASSWORD &&
-docker compose -f compose.yaml -f compose.server.yaml --profile ai build web scheduler ai_worker &&
-docker compose -f compose.yaml -f compose.server.yaml --profile ai stop web scheduler ai_worker &&
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --plan
-```
-
-계획을 확인한 뒤 적용한다. 이전 0003 미적용이면 함께 적용되므로 앞선 중복 정책 설명도 확인한다.
-
-```sh
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --noinput &&
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py showmigrations customers &&
-docker compose -f compose.yaml -f compose.server.yaml up -d --no-deps --no-build --force-recreate web scheduler
-```
-
-`[X] 0004_customer_selection_options`를 확인하고 브라우저를 새로고침한다. 관리자/직원 목록과 새 양식을 확인하며 업무용 AI 작업자는 이 변경으로 새로 시작하지 않는다. 적용 실패 시 기존 제약으로 강제 변환하거나 원문을 지우지 말고 쓰기를 중지한 상태에서 오류를 확인한다.
+복사·붙여넣기 명령은 [우분투 서버 최신 코드 반영 명령어](SERVER_UPDATE_COMMANDS.md)에 모았다. 현재 DB의 새 백업과 별도 DB 복구 확인 후 **최신 코드·이미지 준비 및 계획 확인 → 쓰기 중단·migration·재시작 → 브라우저 확인** 순서로 수행한다. 이 문서를 작성하면서 실제 서버는 변경하지 않았다.

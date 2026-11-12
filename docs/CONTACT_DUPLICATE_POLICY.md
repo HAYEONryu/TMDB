@@ -45,25 +45,6 @@
 
 ## 기존 Docker 서버에 적용
 
-2026-11-12 최신 코드에는 [선택값 변경](CUSTOMER_SELECTIONS.md)도 포함되므로 아래 명령은 0004까지 적용한다. 중복 정책 자체의 변경·검증 기록은 위 0003 설명 그대로 보존한다.
+중복 정책 자체에는 `customers.0003_live_phone_unique`가 필요하다. 2026-11-12 최신 코드의 선택 목록까지 사용하려면 `0004_customer_selection_options`까지 적용한다. [선택값 변경](CUSTOMER_SELECTIONS.md)을 함께 확인한다.
 
-실제 서버에 이 작업에서 배포하거나 migration하지 않았다. 적용 대상 DB의 **새 백업과 별도 DB 복구 확인**을 먼저 완료한다([백업·복원](OPERATIONS.md)). 아래는 사용자 서버의 기존 두 Compose 파일을 사용하는 절차다. 비밀 파일과 PostgreSQL 볼륨을 유지한다.
-
-```sh
-cd /root/TMDB
-git pull --ff-only
-unset TM_SERVER_SECRET TM_DB_PASSWORD
-docker compose -f compose.yaml -f compose.server.yaml --profile ai build web scheduler ai_worker
-docker compose -f compose.yaml -f compose.server.yaml --profile ai stop web scheduler ai_worker
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate --plan
-```
-
-계획에서 적용 대상과 `customers.0004_customer_selection_options`까지의 변경을 확인한 뒤 실행한다. 명령이 실패하면 웹을 먼저 재개하지 말고 원인을 확인한다.
-
-```sh
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --noinput &&
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py showmigrations customers &&
-docker compose -f compose.yaml -f compose.server.yaml up -d --no-deps --no-build --force-recreate web scheduler
-```
-
-`[X] 0004_customer_selection_options`와 웹 상태를 확인하고 브라우저를 새로고침한다. AI 작업자 이미지만 새 코드로 준비하며 비활성 상태와 무료 확인 설정을 유지한다. 운영 확인은 가상 고객으로 A 등록 후 B 중복 제외, 휴지통 번호의 새 등록, 중복 복구 거절을 확인한다. 기존 고객을 자동 정리하는 작업은 포함하지 않는다.
+실제 서버 적용 명령은 [우분투 서버 업데이트 명령어](SERVER_UPDATE_COMMANDS.md)에 모았다. 적용 대상 DB의 새 백업·별도 복구 확인을 마친 뒤 진행한다. 기존 고객을 자동 정리하는 작업이나 AI 작업자 시작은 포함하지 않는다. 이번 작업에서 실제 서버 배포·migration을 수행하지 않았다.
