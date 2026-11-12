@@ -4,6 +4,7 @@ from io import BytesIO,StringIO
 from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
+from types import SimpleNamespace
 from uuid import uuid4
 from zipfile import ZipFile,ZIP_DEFLATED
 import logging
@@ -267,6 +268,28 @@ class ImportTests(Fixtures,TestCase):
         batch.refresh_from_db();self.assertEqual(batch.status,"VALIDATED")
         self.assertEqual(batch.candidates.count(),1);self.assertEqual(IdempotencyRecord.objects.count(),0)
         self.assertTrue(commit_upload(self.admin,batch.pk,key)[0]["ok"])
+
+    def test_commit_failure_logs_only_allowlisted_database_metadata(self):
+        batch=self.validate();secret="SYNTHETIC_PRIVATE_DATABASE_ROW"
+        cause=Exception(secret)
+        cause.sqlstate="23514"
+        cause.diag=SimpleNamespace(constraint_name="customer_name_not_empty",message_detail=secret)
+        error=IntegrityError(secret);error.__cause__=cause
+        with self.assertLogs("apps.imports.services",level="ERROR") as logs:
+            with patch("apps.imports.services.Customer.objects.bulk_create",side_effect=error):
+                result,status=commit_upload(self.admin,batch.pk,self.body())
+        self.assertEqual(status,500)
+        self.assertIn("sqlstate=23514 constraint=customer_name_not_empty",logs.output[0])
+        self.assertNotIn(secret,"".join(logs.output)+str(result))
+        self.assertIsNone(logs.records[0].exc_info)
+
+    def test_diagnostic_command_reads_schema_without_changing_customer_data(self):
+        self.validate();output=StringIO()
+        before=(Customer.objects.count(),ImportBatch.objects.count(),ImportCandidate.objects.count())
+        call_command("diagnose_imports",stdout=output)
+        import json
+        self.assertEqual(json.loads(output.getvalue()),{"ok":True,"pending_migrations":[],"schema_issues":[]})
+        self.assertEqual(before,(Customer.objects.count(),ImportBatch.objects.count(),ImportCandidate.objects.count()))
 
     def test_expiration_boundary_rejects_commit_hides_rows_and_cleanup_purges(self):
         batch=self.validate()

@@ -1,4 +1,6 @@
 from datetime import timedelta
+import logging
+import re
 from django.conf import settings
 from django.db import DatabaseError, OperationalError
 from django.db.models import Exists, OuterRef, Q
@@ -22,6 +24,22 @@ from apps.sites.services import locked_actor
 OPERATION = "IMPORT_COMMIT"
 TTL = timedelta(hours=settings.IMPORT_TTL_HOURS)
 METADATA_RETENTION = timedelta(days=7)
+logger = logging.getLogger(__name__)
+
+
+def log_commit_failure(exc):
+    # Never log exception text, SQL, parameters or traceback: PostgreSQL error
+    # details can contain complete customer rows. Only emit bounded metadata.
+    cause = exc.__cause__
+    state = getattr(cause, "sqlstate", None)
+    state = state if isinstance(state, str) and re.fullmatch(r"[0-9A-Z]{5}", state) else "unknown"
+    constraint = getattr(getattr(cause, "diag", None), "constraint_name", None)
+    known = {"customer_site_phone_unique", "customer_phone_format", "customer_name_not_empty",
+        "customer_name_valid", "customer_version_positive", "customer_call_result_valid",
+        "customer_contract_valid", "revision_customer_version_unique", "revision_source_valid",
+        "revision_actor_required", "idempotency_actor_op_key_unique"}
+    constraint = constraint if constraint in known else "unknown"
+    logger.error("IMPORT_COMMIT_DB_ERROR sqlstate=%s constraint=%s", state, constraint)
 
 
 def reject(code, message, status=409):
@@ -218,6 +236,7 @@ def commit_upload(actor,batch_id,body):
     body_hash=digest({"batch_id":str(batch_id),"site_id":str(site_id)})
     try:return commit_once(actor,batch_id,site_id,key,body_hash)
     except DatabaseError as exc:
+        log_commit_failure(exc)
         if isinstance(exc,OperationalError):
             # Infrastructure/lock failure: no durable FAILED receipt; retry the same key.
             raise
