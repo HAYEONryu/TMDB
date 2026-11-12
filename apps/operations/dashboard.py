@@ -61,5 +61,8 @@ def dashboard(request):
             data['transfer_needed']=query.filter(deleted_at=None,current_assignment__employee__is_active=False,current_assignment__first_activity_at__isnull=False).count()
             from .dashboard_reports import manager_report
             data['manager']=manager_report(site_id,now,result_period)
-        else:data['employee']=employee_counts(request.user,site_id,start,end,now)
+        else:
+            from .employee_dashboard import daily_report
+            data['employee']={**employee_counts(request.user,site_id,start,end,now),
+                **daily_report(request.user,site_id,start,end,now)}
     return JsonResponse(data)

@@ -76,7 +76,7 @@ def availability(request):
         message='이미 접수된 AI 작업이 있습니다. AI 작업 확인에서 처리 결과를 확인해 주세요.'
     return JsonResponse({"generation_available": enabled and not personal_blocked and not active and not budget_blocked and not test_budget_blocked and not server_blocked, "configured": settings.AI_CONFIG.configured,
                          "reason": reason,
-                         "message": message, "server_limit": server, "usage_tier": settings.AI_CONFIG.usage_tier,
+                         "message": message, "server_limit": server if request.user.role == User.Role.ADMIN else None, "usage_tier": settings.AI_CONFIG.usage_tier,
                          "daily_limit": free_limits.STAFF_DAILY_LIMIT if staff else None,
                          "successful_count": successful if staff else None, "reserved_count": reserved if staff else None,
                          "remaining_count": max(0, free_limits.STAFF_DAILY_LIMIT-successful-reserved) if staff else None,

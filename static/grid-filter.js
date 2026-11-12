@@ -1,4 +1,5 @@
 import {choiceFilter} from './choice-filter.js';
+import {setupDateInput,readDateInput} from './date-input.js';
 
 const dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const textFields=new Set(['notes','memo','admin_notes','residence']);
@@ -36,7 +37,7 @@ export async function openGridFilter({field,label,schema,current,request,params,
     finally{clearTimeout(timer);}
   };
   document.querySelector('#filter-title').textContent=label+' 필터';error.textContent='';area.replaceChildren(node('p','필터를 준비하고 있습니다…'));
-  document.querySelector('#filter-help').textContent=dates.has(field)?'한국 시간 기준이며 종료일까지 포함합니다. 다른 열의 조건도 함께 적용됩니다.':'다른 열의 조건과 함께 적용됩니다. -는 값이 없는 항목입니다.';
+  document.querySelector('#filter-help').textContent=dates.has(field)?'날짜는 숫자 8자리로 입력하세요. (예: 20261113 → 2026-11-13) 한국 시간 기준이며 종료일까지 포함합니다.':'다른 열의 조건과 함께 적용됩니다. -는 값이 없는 항목입니다.';
   document.querySelector('#filter-summary').textContent='';applyButton.disabled=true;reset.disabled=false;cancel.disabled=false;
   const submit=async value=>{
     if(applying||!alive())return;
@@ -59,7 +60,7 @@ export async function openGridFilter({field,label,schema,current,request,params,
       const mode=modeControl(area,current,'날짜 범위'),group=node('div');group.className='filter-date-range';
       const fields={};
       for(const [key,title] of [['from','시작일'],['to','종료일']]){
-        const lab=node('label',title),input=node('input');input.type='date';input.id='filter-'+key;input.className='form-control';input.min='0001-01-01';input.max='9999-12-31';input.value=current?.[key]||'';lab.htmlFor=input.id;lab.append(input);group.append(lab);fields[key]=input;input.oninput=()=>{error.textContent='';refresh();};
+        const lab=node('label',title),input=setupDateInput(node('input'));input.id='filter-'+key;input.className='form-control';input.value=current?.[key]||'';lab.htmlFor=input.id;lab.append(input);group.append(lab);fields[key]=input;input.oninput=()=>{error.textContent='';refresh();};
       }
       const quick=node('div');quick.className='filter-quick-dates';
       for(const [code,title] of [['today','오늘'],['week','최근 7일'],['month','이번 달']]){
@@ -69,7 +70,7 @@ export async function openGridFilter({field,label,schema,current,request,params,
       area.append(group,quick);mode.onchange=()=>{for(const input of Object.values(fields))input.disabled=mode.value!=='MATCH';quick.hidden=mode.value!=='MATCH';refresh();};
       getCondition=()=>{
         if(mode.value==='ALL')return undefined;if(mode.value!=='MATCH')return {blank:mode.value==='EMPTY'};
-        const from=fields.from.value,to=fields.to.value;
+        const from=readDateInput(fields.from.value),to=readDateInput(fields.to.value);
         if(from&&to&&from>to)throw new Error('종료일은 시작일과 같거나 이후여야 합니다.');
         const value={};if(from)value.from=from;if(to)value.to=to;return Object.keys(value).length?value:undefined;
       };mode.onchange();

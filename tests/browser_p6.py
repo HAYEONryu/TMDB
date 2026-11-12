@@ -65,6 +65,39 @@ class P6BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.assertEqual(self.sent[0]['rows'][0]['customer_id'],str(self.rows[0].pk));self.assertEqual(len(self.sent[0]['rows']),1);self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[1].pk).notes),'')
         self.page.locator('#save-now').click();expect(self.page.locator('#queue-status')).to_have_text('모든 변경 저장됨');self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[1].pk).notes),'다른 행 가상 대기')
 
+    def test_completion_label_click_does_not_open_date_editor(self):
+        self.open();page=self.page
+        notes=self.row().locator('[tabulator-field="notes"]');notes.dblclick()
+        notes.locator('textarea').fill('완료 글자 클릭 전에 편집 중인 상담')
+        label=self.row().locator('.callback-complete');box=label.bounding_box()
+        label.click(position={'x':box['width']-3,'y':box['height']/2})
+        self.completed()
+        expect(self.row().locator('[tabulator-field="callback_due_at"].tabulator-editing')).to_have_count(0)
+        self.assertEqual(len(self.completions),1)
+        self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'COMPLETED')
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[0].pk).notes),'완료 글자 클릭 전에 편집 중인 상담')
+
+    def test_completion_checkbox_supports_keyboard(self):
+        self.open()
+        check=self.row().get_by_role('checkbox',name='재콜 완료',exact=True)
+        check.focus();check.press('Space');self.completed()
+        self.assertEqual(len(self.completions),1)
+        self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'COMPLETED')
+
+    def test_completion_label_supports_touch(self):
+        context=self.browser.new_context(viewport={'width':390,'height':844},has_touch=True)
+        try:
+            page=context.new_page();page.goto(self.live_server_url+'/auth/login')
+            page.get_by_label('전화번호',exact=True).fill(self.employee.phone_normalized)
+            page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD)
+            page.get_by_role('button',name='로그인',exact=True).click()
+            page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
+            expect(page.locator('#page-info')).to_contain_text('검색 3건')
+            page.locator('.callback-complete').tap(position={'x':30,'y':8})
+            expect(page.locator('#employee-message')).to_have_text('재콜을 완료했습니다.')
+            self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'COMPLETED')
+        finally:context.close()
+
     def test_lost_completion_response_reload_retry_preserves_new_callback(self):
         self.open();page=self.page
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
@@ -80,9 +113,9 @@ class P6BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.row().get_by_role('checkbox',name='재콜 완료',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('할당이 변경');self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'PENDING')
 
     def test_dashboards_selected_site_manual_refresh_and_mobile(self):
-        page=self.page;expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 배정 이력');expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 재콜할 DB')
-        page.locator('#employee-dashboard-site').select_option(str(self.second.pk));expect(page.locator('#dashboard-statistics dd').first).to_have_text('0')
-        page.locator('#employee-dashboard-site').select_option(str(self.site.pk));expect(page.locator('#dashboard-statistics dd').first).to_have_text('2');page.screenshot(path=str(self.evidence/'p6-employee-dashboard.png'),full_page=True)
+        page=self.page;expect(page.locator('#employee-tm-value')).to_have_text('0%(0/3)');expect(page.locator('.quick-work')).to_have_count(0)
+        page.locator('#employee-dashboard-site').select_option(str(self.second.pk));expect(page.locator('#employee-tm-value')).to_have_text('0%(0/0)')
+        page.locator('#employee-dashboard-site').select_option(str(self.site.pk));expect(page.locator('#dashboard-summary dd').nth(2)).to_have_text('2건');page.screenshot(path=str(self.evidence/'p6-employee-dashboard.png'),full_page=True)
         self.login(self.admin);expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 할당 고유 DB');expect(page.locator('#dashboard-statistics')).to_contain_text('현재 보유 전체');before=self.db(lambda:__import__('apps.sites.models',fromlist=['GlobalSettings']).GlobalSettings.objects.get(pk=1).version)
         page.locator('#default-site').select_option(str(self.second.pk));page.locator('#dashboard-refresh').click();expect(page.locator('#site-counts')).to_contain_text('전체 DB 0');self.assertEqual(self.db(lambda:__import__('apps.sites.models',fromlist=['GlobalSettings']).GlobalSettings.objects.get(pk=1).version),before)
         page.locator('#default-site').select_option(str(self.site.pk));expect(page.locator(f'#dashboard-statistics tr[data-employee-id="{self.employee.pk}"] td').nth(1)).to_have_text('2');page.screenshot(path=str(self.evidence/'p6-admin-dashboard.png'),full_page=True);page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);page.screenshot(path=str(self.evidence/'p6-admin-mobile.png'),full_page=True)

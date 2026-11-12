@@ -10,14 +10,14 @@ import {EmployeeAI} from './employee-ai.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter,filterDescription,markFilterHeaders} from './grid-filter.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
+import {setupDateInput,dateInputTimestamp} from './date-input.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']);
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
-const fullDate=value=>{if(!value)return '-';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
-const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
+const display=(field,value)=>dates.has(field)?(value?(field==='visit_at'?localDate(value).replace('T',' '):localDate(value).slice(0,10)):'-'):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
 let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},defaultSite='',loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
 async function request(url,body){
   if(environmentProblem&&body!==undefined)throw new Error('현재 조회 전용입니다. 상담 편집·저장은 HTTPS와 지원되는 브라우저에서 이용해 주세요.');
@@ -52,20 +52,20 @@ function editor(cell,onRendered,success,cancel){
     input.replaceChildren(...Object.entries(schema[field]).map(([value,label])=>option(value,label)));
     if(!Object.hasOwn(schema[field],original??'')){const previous=option(original??'',display(field,original));previous.disabled=true;input.prepend(previous);}
   }
-  else if(dates.has(field)){input.type='datetime-local';input.min='0001-01-01T00:00';input.max='9999-12-31T23:59';}
-  input.value=dates.has(field)?localDate(original):original??'';
-  let done=false,touched=false,valid=true;
+  else if(dates.has(field))setupDateInput(input,{allowTime:field==='visit_at'});
+  input.value=dates.has(field)?(field==='visit_at'?localDate(original).replace('T',' '):localDate(original).slice(0,10)):original??'';
+  let done=false,touched=false,valid=true,validationMessage='';
   const stage=()=>{
     if(done)return original;
-    touched=true;const value=dates.has(field)?input.value||null:input.value;
-    try{validate(field,value,row);queue.markInvalid(row.id,field,'');valid=true;input.setCustomValidity('');queue.stage(row,field,value);}
-    catch(e){valid=false;input.setCustomValidity(e.message);queue.markInvalid(row.id,field,e.message);notice(e.message);}return value;
+    touched=true;let value;
+    try{value=dates.has(field)?dateInputTimestamp(input.value,{allowTime:field==='visit_at'}):input.value;validate(field,value,row);queue.markInvalid(row.id,field,'');valid=true;input.setCustomValidity('');if($('#employee-message').textContent===validationMessage)notice('');validationMessage='';queue.stage(row,field,value);}
+    catch(e){valid=false;validationMessage=e.message;input.setCustomValidity(e.message);queue.markInvalid(row.id,field,e.message);if(!dates.has(field))notice(e.message);}return value;
   };
-  const finish=()=>{if(done)return;if(touched&&!valid){input.reportValidity();return false;}const value=touched?stage():original;done=true;activeEditor=null;success(value);return true;};
+  const finish=()=>{if(done)return true;const value=touched?stage():original;if(!valid){notice(validationMessage);input.reportValidity();return false;}done=true;activeEditor=null;success(value);return true;};
   input.addEventListener('input',stage);input.addEventListener('change',stage);
   input.addEventListener('blur',()=>{if(!finish())setTimeout(()=>input.focus(),0);});
   input.addEventListener('keydown',event=>{
-    // Native date segments need arrows and Tab; Tabulator otherwise navigates rows/cells.
+    // Keep cursor movement and Tab inside the text editor until it commits.
     if(dates.has(field)&&(event.key.startsWith('Arrow')||event.key==='Tab'))event.stopPropagation();
     if(event.key==='Escape'){event.preventDefault();done=true;activeEditor=null;queue.markInvalid(row.id,field,'');if(touched)queue.stage(row,field,original);cancel();}
     if(event.key==='Enter'&&!multiline.has(field)){event.preventDefault();finish();}
@@ -74,20 +74,46 @@ function editor(cell,onRendered,success,cancel){
 }
 function column(field){
   return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
-    formatter:cell=>{const value=cell.getValue();if(field==='assigned_at'){const span=text('span',value?localDate(value).slice(5,10).replace('-','/'):'-');if(value)span.title=display(field,value)+' (한국 시각)';return span;}return text('span',display(field,value));},
+    formatter:cell=>text('span',display(field,cell.getValue())),
     titleFormatter:()=>{const wrap=text('span',labels[field]),button=text('button','▾');button.type='button';button.className='column-filter';button.setAttribute('aria-label',labels[field]+' 필터');button.dataset.filterField=field;button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','filter-dialog');button.setAttribute('aria-pressed','false');button.onclick=e=>{e.stopPropagation();guarded(()=>openFilter(field)).catch(error);};wrap.append(button);return wrap;},
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
-const actionHelp='이력: 저장된 상담 변경·재콜 기록을 필요할 때 조회합니다.\n삭제 요청: 고객 삭제를 관리자에게 요청합니다. 승인 전에는 고객이 삭제되지 않습니다.\nAI 도움: 항목 정리·핵심 요약·다음 질문과 기존 AI 결과를 선택합니다. 준비가 부족하면 안내만 표시하고 생성하지 않습니다.\n재콜 완료는 재콜일정 셀의 완료 체크를 사용하세요. 날짜 삭제는 완료가 아니라 일정 취소입니다.';
+const actionHelp=[
+  '이력: 상담 변경 내역과 재콜 처리 기록을 확인합니다.',
+  '삭제 요청: 관리자에게 고객 삭제를 요청합니다.\n관리자 승인 후 휴지통으로 이동합니다.',
+  'AI 도움\n· 항목 정리: 상담을 정리하고 수정할 값을 제안합니다.\n· 핵심 요약: 상담의 핵심 내용을 보여줍니다.\n· 다음 질문: 다음 통화에서 물어볼 질문을 제안합니다.\n· 기존 결과: 이전에 생성한 AI 결과를 확인합니다.\n결과를 확인한 뒤 선택한 항목만 반영할 수 있습니다.',
+  '재콜 완료: 재콜일정의 ‘완료’를 체크합니다.\n날짜를 지우면 완료가 아닌 일정 취소로 처리됩니다.'
+].join('\n\n');
+function actionTooltip(event,_column,onRendered){
+  const tooltip=text('div',actionHelp);tooltip.className='actions-header-tooltip';
+  onRendered(()=>requestAnimationFrame(()=>{
+    if(!tooltip.isConnected)return;
+    // Tabulator fits tooltips to the full document; keep this longer help
+    // inside the visible window, including when the grid is near its bottom.
+    Object.assign(tooltip.style,{position:'fixed',height:'auto',right:'auto'});
+    const {width,height}=tooltip.getBoundingClientRect(),gap=12;
+    tooltip.style.left=Math.max(gap,Math.min(event.clientX+gap,innerWidth-width-gap))+'px';
+    const below=event.clientY+gap;
+    tooltip.style.top=Math.max(gap,below+height<=innerHeight-gap?below:event.clientY-height-gap)+'px';
+  }));
+  return tooltip;
+}
 const actionBlocked=row=>queue.paused||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||ai?.busy||!!callbacks?.pending.value||!!deletions?.pending.value;
 function callbackCell(cell){
   const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span');
   wrap.className='callback-cell';wrap.append(text('span',display('callback_due_at',cell.getValue())));
   if(row.callback_id){
     const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','재콜 완료');check.disabled=!!actionBlocked(row);label.className='callback-complete';label.title='실제로 재콜을 마쳤을 때 체크하세요. 이 행의 변경을 먼저 저장하고 재콜을 완료합니다.';
-    label.append(check,document.createTextNode(' 완료'));label.onclick=event=>event.stopPropagation();check.onkeydown=event=>event.stopPropagation();
-    check.onchange=async()=>{if(!check.checked)return;check.disabled=true;commitEditor();await callbacks.run(row.id);renderStatus();};wrap.append(label);
+    label.append(check,document.createTextNode(' 완료'));
+    // A label press otherwise focuses Tabulator's editable parent cell before
+    // its click fires, replacing the checkbox with the date editor.
+    label.onmousedown=event=>{event.preventDefault();event.stopPropagation();};
+    for(const name of ['dblclick','pointerdown','touchstart'])label.addEventListener(name,event=>event.stopPropagation());
+    check.onkeydown=event=>event.stopPropagation();
+    // Run before native label activation can blur another editor. Committing
+    // that editor redraws this cell and would discard the pending label click.
+    label.onclick=async event=>{event.preventDefault();event.stopPropagation();if(check.disabled)return;check.checked=true;check.disabled=true;commitEditor();await callbacks.run(row.id);renderStatus();};wrap.append(label);
   }
   return wrap;
 }
@@ -100,7 +126,7 @@ function actions(cell){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...customerFields().map(field=>({...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})})),{title:'작업',field:'_actions',headerSort:false,minWidth:300,headerTooltip:actionHelp,titleFormatter:()=>{const label=text('span','작업');label.title=actionHelp;label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
+  columns:[...customerFields().map(field=>({...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})})),{title:'작업',field:'_actions',headerSort:false,minWidth:300,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=readOnly?'조회 전용':queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';

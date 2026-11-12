@@ -6,6 +6,7 @@ import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter,filterDescription,markFilterHeaders} from './grid-filter.js';
+import {setupDateInput,dateInputTimestamp} from './date-input.js';
 
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
@@ -16,7 +17,7 @@ const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
 const pending = new Map();
 const assigneeOperation=new PendingOperation("assignee",$("#management").dataset.userId,/^\/api\/customers\/[0-9a-f-]+\/assignee$/);
 let state = {site:"", page:1, size:50, q:"", sort:"-created_at", filters:{},assignee:new URL(location.href).searchParams.get("assignee_id")||""}, busy = false, lastPage = 1,assigneeRow;
-let siteInfo, rows = new Map(), conflictId, bulkBody, loadedState,callbacks,hard,renameTarget;
+let siteInfo, rows = new Map(), conflictId, bulkBody, loadedState,callbacks,hard,renameTarget,activeDateEditor;
 const actorRequest=(url,body)=>api(url,body,'POST',{'X-TM-Actor':$('#management').dataset.userId});
 const openHistory=installHistory(actorRequest);
 const notice = message => { $("#message").textContent = message; };
@@ -51,20 +52,32 @@ function refreshRows() {
   table.getRows().forEach(row=>{const item=pending.get(row.getData().id);row.getCell("_status")?.setValue(item?`${item.mutation}:${item.error?.code||"pending"}`:"saved");row.reformat();});
 }
 function dateEditor(cell, onRendered, success, cancel) {
-  const input = document.createElement("input"); input.type = "datetime-local"; input.value = localDate(cell.getValue()); input.setAttribute("aria-label", labels[cell.getField()]);
-  onRendered(() => input.focus());
-  let done = false;
-  const finish = () => { if (!done) { done = true; success(input.value ? input.value+":00+09:00" : null); } };
-  input.addEventListener("blur", finish);
-  input.addEventListener("keydown", event => { if (event.key === "Enter") finish(); if (event.key === "Escape") { done = true; cancel(); } });
+  const field=cell.getField(),original=cell.getValue(),allowTime=field==='visit_at';
+  const input=setupDateInput(document.createElement('input'),{allowTime});
+  input.value=allowTime?localDate(original).replace('T',' '):localDate(original).slice(0,10);input.setAttribute('aria-label',labels[field]);
+  let done=false,touched=false;
+  const finish=()=>{
+    if(done)return true;
+    try{
+      const value=touched?dateInputTimestamp(input.value,{allowTime}):original;
+      done=true;activeDateEditor=null;success(value);return true;
+    }catch(error){input.setCustomValidity(error.message);input.reportValidity();notice(error.message);return false;}
+  };
+  onRendered(()=>{activeDateEditor={finish};input.focus();});
+  input.addEventListener('input',()=>{touched=true;});
+  input.addEventListener('blur',()=>{if(!finish())setTimeout(()=>input.focus(),0);});
+  input.addEventListener('keydown',event=>{
+    if(event.key.startsWith('Arrow')||event.key==='Tab')event.stopPropagation();
+    if(event.key==='Enter'){event.preventDefault();finish();}
+    if(event.key==='Escape'){event.preventDefault();done=true;activeDateEditor=null;cancel();}
+  });
   return input;
 }
 function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
-    headerSort:false, formatter:cell => text("span", dates.has(field) ? localDate(cell.getValue()).replace("T"," ")||"-" : display(field, cell.getValue())),
+    headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue())),
     titleFormatter:() => { const wrap = text("span", labels[field]); const button = text("button", "▾"); button.className="column-filter"; button.type="button"; button.setAttribute("aria-label", labels[field]+" 필터");button.dataset.filterField=field;button.setAttribute("aria-haspopup","dialog");button.setAttribute("aria-controls","filter-dialog");button.setAttribute("aria-pressed","false"); button.addEventListener("click", event => {event.stopPropagation(); guarded(() => openFilter(field)).catch(showError);}); wrap.append(button); return wrap; }};
-  if(field==="assigned_at")definition.formatter=cell=>{const value=localDate(cell.getValue()),span=text("span",value?value.slice(5,10).replace("-","/"):"-");if(value)span.title=`${value.slice(0,10)} (${new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",weekday:"short"}).format(new Date(cell.getValue()))}) ${value.slice(11).replace(":","시")}분`;return span;};
   if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
@@ -92,7 +105,7 @@ table.on("cellEdited", cell => {
   if (Object.keys(item.changes).length) pending.set(data.id,item); else pending.delete(data.id);
   refreshRows(); status();
 });
-function commitEditor() { const input = $("#customer-grid .tabulator-editing input, #customer-grid .tabulator-editing textarea"); if (input) input.blur(); }
+function commitEditor() { if(activeDateEditor)return activeDateEditor.finish();const input = $("#customer-grid .tabulator-editing input, #customer-grid .tabulator-editing textarea"); if (input) input.blur();return true; }
 function showError(error) { notice(error.message); }
 async function loadSites(selected) {
   siteInfo = await api("/api/sites");
@@ -120,7 +133,7 @@ async function load() {
   } finally { busy=false; status(); }
 }
 async function save() {
-  commitEditor(); if (busy) return false; if (!pending.size) return true;
+  if(!commitEditor()||busy)return false; if (!pending.size) return true;
   busy=true; status(); notice("저장 중…");
   const entries=[...pending.entries()];
   const payload={rows:entries.map(([id,item])=>({customer_id:id,assignment_id:item.base.assignment_id,mutation_id:item.mutation,expected_version:item.base.version,changes:item.changes}))};
@@ -141,7 +154,7 @@ async function save() {
   } finally { busy=false; status(); }
 }
 async function guarded(action) {
-  commitEditor(); if (busy||callbacks?.busy||hard?.busy) return false;
+  if(!commitEditor()||busy||callbacks?.busy||hard?.busy)return false;
   if(hard?.pending.value){notice('먼저 영구 삭제 결과를 확인하거나 대기 정보를 폐기해 주세요.');return false;}
   if(callbacks?.pending.value&&!await callbacks.run())return false;
   if (pending.size) {
@@ -165,13 +178,13 @@ $("#search-form").addEventListener("submit",event=>{event.preventDefault();const
 $("#previous").onclick=()=>guarded(async()=>{state.page--;await load();}).catch(showError);
 $("#next").onclick=()=>guarded(async()=>{state.page++;await load();}).catch(showError);
 $("#clear-filters").onclick=()=>guarded(async()=>{state.filters={};state.assignee="";state.q="";$("#search").value="";state.page=1;await load();}).catch(showError);
-window.addEventListener("beforeunload",event=>{commitEditor();if(pending.size||hard?.pending.value){event.preventDefault();event.returnValue="";}});
+window.addEventListener("beforeunload",event=>{const valid=commitEditor();if(!valid||pending.size||hard?.pending.value){event.preventDefault();event.returnValue="";}});
 document.addEventListener("click",event=>{
-  const link=event.target.closest("a[href]"); if(!link)return;commitEditor();if(!pending.size&&!busy&&!hard?.busy&&!hard?.pending.value)return;
+  const link=event.target.closest("a[href]"); if(!link)return;if(!commitEditor()){event.preventDefault();event.stopImmediatePropagation();return;}if(!pending.size&&!busy&&!hard?.busy&&!hard?.pending.value)return;
   event.preventDefault(); event.stopImmediatePropagation(); guarded(()=>{location.href=link.href;}).catch(showError);
 },true);
 document.querySelector('form[action="/auth/logout"]')?.addEventListener("submit",event=>{
-  commitEditor();
+  if(!commitEditor()){event.preventDefault();event.stopImmediatePropagation();return;}
   if (!pending.size&&!busy&&!hard?.busy&&!hard?.pending.value)return;event.preventDefault();event.stopImmediatePropagation();const form=event.target;guarded(()=>form.submit()).catch(showError);
 },true);
 document.querySelectorAll("[data-close]").forEach(button=>button.onclick=()=>button.closest("dialog").close());

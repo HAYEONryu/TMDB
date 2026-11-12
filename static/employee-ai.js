@@ -32,7 +32,7 @@ export class EmployeeAI {
     const history=el('button','기존 AI 결과 보기');history.className='btn btn-outline-secondary';history.onclick=()=>this.history(this.choosing);body.append(history,el('p','기존 결과 조회는 새 생성이나 사용 횟수를 소모하지 않습니다. 새 생성은 직원 AI 3종 합산 하루 40회와 공용 무료 한도를 적용합니다.'));
   }
   update(){
-    const data=this.availability,server=data?.server_limit;$('ai-usage').textContent=data?`AI 하루 합산 · 성공 ${data.successful_count??0}회 · 예약 ${data.reserved_count??0}회 · 남은 ${data.remaining_count??0}회 / ${data.daily_limit??40}회${server?` · 서버 공용 남은 ${server.remaining_count}회 / ${server.daily_limit}회 (대기·진행 포함)` :''}`: 'AI 사용 가능 여부 확인 중';
+    const data=this.availability;$('ai-usage').textContent=data?`AI 하루 합산 · 성공 ${data.successful_count??0}회 · 예약 ${data.reserved_count??0}회 · 남은 ${data.remaining_count??0}회 / ${data.daily_limit??40}회`: 'AI 사용 가능 여부 확인 중';
     $('ai-availability').textContent=data?data.message:'';$('ai-task-open').hidden=!this.value;$('ai-pending').hidden=!this.pending.value||this.queue.paused;
     for(const id of ['ai-retry','ai-discard'])$(id).disabled=this.busy;this.syncApply();this.changed();
   }

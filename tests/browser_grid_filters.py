@@ -89,8 +89,15 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             for field in ['visit_at','callback_due_at','assigned_at']:
                 self.open_filter(field);page.locator('#filter-mode').select_option('EMPTY');self.apply(0 if field=='assigned_at' else 1);self.clear()
             self.open_filter('visit_at')
-            page.locator('#filter-from').fill('2026-11-14');page.locator('#filter-to').fill('2026-11-13')
+            expect(page.locator('#filter-from')).to_have_attribute('type','text')
+            page.locator('#filter-from').press_sequentially('20261114');page.locator('#filter-to').fill('20261113')
+            expect(page.locator('#filter-from')).to_have_value('2026-11-14')
+            expect(page.locator('#filter-to')).to_have_value('2026-11-13')
             page.locator('#filter-apply').click();expect(page.locator('#filter-error')).to_contain_text('종료일')
+            page.locator('#filter-from').fill('20260229');page.locator('#filter-apply').click()
+            expect(page.locator('#filter-error')).to_contain_text('존재하는 날짜')
+            page.locator('#filter-from').fill('2026111');page.locator('#filter-apply').click()
+            expect(page.locator('#filter-error')).to_contain_text('숫자 8자리')
             page.locator('#filter-from').fill('2026-11-13');self.apply(1)
             self.open_filter('route');page.locator('#filter-choice').select_option('EMPTY');self.apply(0)
             expect(page.locator('#active-filters button')).to_have_count(2)
@@ -102,6 +109,54 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.assertEqual((datetime.fromisoformat(end)-datetime.fromisoformat(start)).days,6)
             page.get_by_role('button',name='이번 달',exact=True).click();self.assertTrue(page.locator('#filter-from').input_value().endswith('-01'))
             page.keyboard.press('Escape');self.count(2)
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
+
+    def test_manual_date_editors_optional_visit_time_validation_and_clearing(self):
+        self.seed();page=self.page
+        for actor in [self.admin,self.employee]:
+            self.open_grid(actor)
+            row=page.locator(f'#{self.grid} .tabulator-row').filter(has=page.get_by_text('010-8000-0001',exact=True))
+            def edit(field,value,formatted):
+                cell=row.locator(f'[tabulator-field="{field}"]')
+                (cell.locator('.callback-cell > span') if field=='callback_due_at' and actor==self.employee else cell).dblclick()
+                control=cell.locator('input');expect(control).to_have_attribute('type','text')
+                control.fill('');control.press_sequentially(value);expect(control).to_have_value(formatted)
+                control.press('Enter')
+            def save():
+                page.locator('#save' if actor==self.admin else '#save-now').click()
+                expect(page.locator('#message' if actor==self.admin else '#queue-status')).to_have_text('저장했습니다.' if actor==self.admin else '모든 변경 저장됨')
+
+            # Opening an existing callback must preserve its stored legacy time.
+            cell=row.locator('[tabulator-field="callback_due_at"]')
+            (cell.locator('.callback-cell > span') if actor==self.employee else cell).dblclick()
+            original=self.db(lambda:Callback.objects.get(customer=self.filled,status='PENDING').due_at)
+            expect(cell.locator('input')).to_have_value('2026-11-13')
+            page.locator('h1').click()
+            expect(page.locator('#dirty-count' if actor==self.admin else '#queue-status')).to_have_text('변경사항 없음' if actor==self.admin else '모든 변경 저장됨')
+            self.assertEqual(self.db(lambda:Callback.objects.get(customer=self.filled,status='PENDING').due_at),original)
+
+            cell=row.locator('[tabulator-field="visit_at"]');cell.dblclick()
+            cell.locator('input').fill('20260229');cell.locator('input').press('Enter')
+            expect(page.locator('#message' if actor==self.admin else '#employee-message')).to_contain_text('존재하는 날짜')
+            expect(cell.locator('input')).to_be_focused();cell.locator('input').press('Escape')
+            for field,value,formatted in [('callback_due_at','20261114','2026-11-14'),('visit_at','202611141430','2026-11-14 14:30')]:
+                edit(field,value,formatted)
+            save()
+            customer=self.db(lambda:Customer.objects.get(pk=self.filled.pk))
+            self.assertEqual(customer.visit_at.astimezone(KST).isoformat(),'2026-11-14T14:30:00+09:00')
+            callback=self.db(lambda:Callback.objects.get(customer=self.filled,status='PENDING'))
+            self.assertEqual(callback.due_at.astimezone(KST).isoformat(),'2026-11-14T00:00:00+09:00')
+            edit('visit_at','20261115','2026-11-15');save()
+            self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.filled.pk)).visit_at.astimezone(KST).isoformat(),'2026-11-15T00:00:00+09:00')
+            for field in ['callback_due_at','visit_at']:edit(field,'','')
+            save()
+            self.assertIsNone(self.db(lambda:Customer.objects.get(pk=self.filled.pk)).visit_at)
+            self.assertFalse(self.db(lambda:Callback.objects.filter(customer=self.filled,completed_at__isnull=True,cancelled_at__isnull=True).exists()))
+            # Restore the seed values before exercising the second role.
+            def restore():
+                Customer.objects.filter(pk=self.filled.pk).update(visit_at=datetime(2026,11,13,23,59,59,tzinfo=KST))
+                Callback.objects.create(customer=self.filled,due_at=datetime(2026,11,13,23,59,59,tzinfo=KST),created_by=self.employee,updated_by=self.employee)
+            self.db(restore)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
     def test_candidate_search_paging_inclusion_exclusion_and_cancel(self):

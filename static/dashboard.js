@@ -11,10 +11,13 @@ function icon(name){const node=svg('svg',{'class':'icon','aria-hidden':'true'});
 function summary(data){
   const target=$('dashboard-summary');if(!target)return;
   const items=data.employee?
-    [['현재 보유 고객',data.employee.held_total,'내가 담당하고 있는 고객','customers'],['오늘까지 재콜',data.employee.callbacks_due_today_or_past,'오늘·기한 지난 미완료 재콜','calendar'],['오늘 새로 받은 고객',data.employee.current_assignment_today_held,'오늘 배정받아 현재 담당 중인 고객','distribute'],['기한 지난 재콜',data.employee.callbacks_overdue,'지금까지 미완료인 재콜','calendar']]:
+    [['현재 보유 고객',data.employee.held_total,'내가 담당하고 있는 고객','customers','held'],['오늘 재콜',data.employee.callbacks_today,'오늘 예정된 미완료 재콜','calendar','callbacks_today'],['오늘 새로 받은 고객',data.employee.current_assignment_today_held,'오늘 배정받아 현재 담당 중인 고객','distribute','new_today'],['기한 지난 재콜',data.employee.callbacks_past_due,'어제까지 예정된 미완료 재콜','calendar','overdue']]:
     [['전체 고객',data.counts.total,'선택 현장의 현재 고객','customers'],['미할당 고객',data.counts.unassigned,'직원 분배 대기','distribute'],['오늘 할당 DB',data.manager.assigned_today_unique,'중복 고객 제외 · 오늘 배정 이력','calendar'],['활성 직원',data.employees.length,'현재 업무 중인 직원','users']];
   const list=document.createElement('dl');list.className='overview-metrics';
-  items.forEach(([label,value,caption,symbol],index)=>{const card=document.createElement('div');card.className='overview-metric';card.dataset.tone=['blue','teal','amber','violet'][index];const title=text('dt',label);title.prepend(icon(symbol));const number=text('dd',format(value));number.append(text('span',label==='활성 직원'?'명':'건'));card.append(title,number,text('p',caption));list.append(card);});
+  items.forEach(([label,value,caption,symbol,category],index)=>{const card=document.createElement('div');card.className='overview-metric';card.dataset.tone=['blue','teal','amber','violet'][index];const title=text('dt',label);title.prepend(icon(symbol));const number=text('dd',category?'':format(value));
+    const target=category?text('button',format(value),'metric-details-button'):number;
+    if(category){target.type='button';target.dataset.customerCategory=category;target.setAttribute('aria-label',`${label} ${format(value)}건 고객정보 보기`);target.setAttribute('aria-controls','employee-customer-panel');target.setAttribute('aria-expanded','false');number.append(target);}
+    target.append(text('span',label==='활성 직원'?'명':'건'));card.append(title,number,text('p',caption));list.append(card);});
   target.replaceChildren(list);target.setAttribute('aria-busy','false');
 }
 function staffChart(report){
@@ -73,7 +76,6 @@ function staffTables(data){
   $('staff-allocation-table').replaceChildren(allocation.node);$('staff-progress-table').replaceChildren(progress.node);
 }
 function legacyStatistics(data,area){
-  if(data.employee){const e=data.employee,items=[['오늘 배정 이력 (회수·이관·삭제 포함)',e.assigned_today_unique],['오늘 재콜할 DB (오늘·과거 미완료)',e.callbacks_due_today_or_past],['오늘 신규 할당 현재 보유',e.current_assignment_today_held],['기한 지난 재콜',e.callbacks_overdue],['현재 보유 전체',e.held_total]],list=document.createElement('dl');list.className='dashboard-cards';for(const [label,value] of items){const card=document.createElement('div');card.append(text('dt',label),text('dd',value));list.append(card);}area.append(list);return;}
   const {node,body}=table(['활성 직원','오늘 할당 고유 DB','오늘 할당 작업 횟수','현재 보유 전체','오늘 할당 중 현재 보유','회수·이관·삭제된 DB','미진행: 오늘 할당 중 현재 보유','미진행: 현재 보유 전체','오늘 할당 중 현재 보유의 통화결과']);node.classList.add('dashboard-table');
   for(const e of data.employees){const row=document.createElement('tr');row.dataset.employeeId=e.id;for(const value of [e.name,e.assigned_today_unique,e.assignment_operations_today,e.held_total,e.assigned_today_held,e.assigned_today_removed,e.unprogressed_today_held,e.unprogressed_total,e.call_results.map(r=>`${r.label} ${r.count}`).join(' · ')])row.append(text('td',value));body.append(row);}area.append(node,text('p',`비활성 직원의 진행 DB · 이관 필요 ${data.transfer_needed}건 (선택 현장)`));if(!data.employees.length)area.append(text('p','활성 직원이 없습니다.'));
 }
@@ -87,7 +89,8 @@ export async function renderDashboard(site){
     const data=await api('/api/dashboard'+(params.size?'?'+params:''),undefined,'GET',{'X-TM-Actor':document.body.dataset.userId});if(current!==generation)return;
     summary(data);message.textContent=`${data.business_date} · 한국 시각 기준 · 조회 시점 ${new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',timeStyle:'short',hourCycle:'h23'}).format(new Date(data.as_of))}`;
     if(data.manager){staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);manager?.setAttribute('aria-busy','false');}
-    legacyStatistics(data,area);
+    if(data.manager)legacyStatistics(data,area);
+    return data;
   }catch(error){if(current!==generation)return;area.replaceChildren();message.textContent=error.message;if(target){target.replaceChildren(text('p','업무 현황을 불러오지 못했습니다. 통계 새로고침으로 다시 확인해 주세요.','summary-loading'));target.setAttribute('aria-busy','false');}if(manager){for(const id of ['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table'])$(id).replaceChildren(text('p','현황을 불러오지 못했습니다. 새로고침해 주세요.','chart-empty'));manager.setAttribute('aria-busy','false');}}
 }
 $('result-period')?.addEventListener('change',()=>renderDashboard($('default-site').value));

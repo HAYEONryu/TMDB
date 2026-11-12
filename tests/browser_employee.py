@@ -116,27 +116,29 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.login(page,self.employee);self.open(page);expect(page.locator('#queue-status')).to_contain_text('저장 대기 1행');expect(page.locator('#employee-grid')).to_contain_text('가짜 오프라인 상담 고유문장');self.save(page);self.assertEqual(self.records(page),[]);context.close()
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),1)
 
-    def test_native_datetime_arrows_edit_value_instead_of_navigating_grid(self):
+    def test_manual_date_arrows_move_cursor_instead_of_navigating_grid(self):
         cell = self.cell(field='callback_due_at')
         customer_name = self.cell(field='customer_name').inner_text()
         customer_id = self.db(lambda: str(Customer.objects.get(customer_name=customer_name).pk))
         cell.dblclick()
         control = cell.locator('input')
-        control.fill('2026-11-08T15:00')
+        control.press_sequentially('20261108')
+        expect(control).to_have_value('2026-11-08')
         control.press('ArrowLeft')
-        before = control.input_value()
-        control.press('ArrowUp')
-        after = control.input_value()
-        self.assertNotEqual(after, before)
+        self.assertEqual(control.evaluate('(el)=>el.selectionStart'),9)
+        control.press('ArrowRight')
+        control.press('Backspace');control.press('9')
+        after='2026-11-09'
+        expect(control).to_have_value(after)
         self.page.locator('h1').click()
         self.save()
         self.assertEqual(self.sent[-1]['rows'][0]['customer_id'], customer_id)
         self.page.reload()
         self.saved()
         cell = self.cell(field='callback_due_at')
-        cell.dblclick()
-        self.assertEqual(cell.locator('input').input_value(), after)
-        cell.locator('input').press('Escape')
+        cell.locator('.callback-cell > span').dblclick()
+        self.assertEqual(cell.locator('input:not([type=checkbox])').input_value(), after)
+        cell.locator('input:not([type=checkbox])').press('Escape')
 
     def test_inflight_later_edit_and_lost_response_recovery(self):
         page=self.page;self.edit('가상 전송 스냅샷');held=[]
@@ -198,8 +200,8 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_reverted_unsent_values_do_not_create_activity_and_datetime_fields(self):
         page=self.page;self.edit('저장 전 원복할 가상 내용');self.edit('',pending=False);self.saved();self.assertEqual(self.sent,[]);self.assertFalse(self.db(lambda:Assignment.objects.filter(first_activity_at__isnull=False).exists()))
-        self.edit('INTERESTED',field='call_result');self.edit('2026-11-05T13:30',field='visit_at');self.edit('2026-11-06T10:15',field='callback_due_at');self.edit('다주택',field='housing_status');self.save()
-        body=self.sent[0]['rows'][0];self.assertEqual(body['changes']['visit_at'],'2026-11-05T04:30:00.000Z');self.assertEqual(body['changes']['housing_status'],'다주택');self.assertEqual(body['changes']['callback_due_at'],'2026-11-06T01:15:00.000Z')
+        self.edit('INTERESTED',field='call_result');self.edit('202611051330',field='visit_at');self.edit('20261106',field='callback_due_at');self.edit('다주택',field='housing_status');self.save()
+        body=self.sent[0]['rows'][0];self.assertEqual(body['changes']['visit_at'],'2026-11-05T04:30:00.000Z');self.assertEqual(body['changes']['housing_status'],'다주택');self.assertEqual(body['changes']['callback_due_at'],'2026-11-05T15:00:00.000Z')
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),1)
         self.cell(field='visit_at').dblclick();page.locator('h1').click();self.saved();self.assertEqual(len(self.sent),1)
 

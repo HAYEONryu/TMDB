@@ -94,7 +94,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(cards).to_have_count(4)
         expect(cards.nth(0).locator('dd')).to_have_text('2건')
         expect(cards.nth(1).locator('dd')).to_have_text('1건')
-        self.page.get_by_role('link',name='나의 DB 열기',exact=True).click()
+        self.page.locator('.workspace-nav').get_by_role('link',name='나의 DB',exact=True).click()
         expect(self.page.locator('#page-info')).to_contain_text('검색 2건')
         expect(self.page.locator('#employee-grid .tabulator-header .tabulator-col').first).to_have_attribute('tabulator-field','customer_name')
         expect(self.page.locator('.workspace-nav [aria-current="page"]')).to_have_text('나의 DB')
@@ -133,7 +133,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
         expect(self.page.locator('#employee-dashboard-site')).to_have_value(str(self.second.pk))
         expect(cards.nth(2).locator('dd')).to_have_text('1건')
-        self.page.get_by_role('link',name='오늘 할 일 열기',exact=True).click()
+        self.page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
         expect(self.page.locator('#site')).to_have_value(str(self.second.pk))
         expect(self.page.locator('#page-info')).to_contain_text('검색 1건')
         # Returning to the default still works without modifying the global default.
@@ -166,7 +166,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         db(lambda:change_assignee(self.admin,self.rows[1].pk,self.assignee_body(self.rows[1],self.other)))
         self.page.locator('#dashboard-refresh').click()
         expect(today.locator('dd')).to_have_text('0건')
-        self.page.get_by_role('link',name='오늘 할 일 열기',exact=True).click()
+        self.page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
         expect(self.page.locator('#page-info')).to_contain_text('검색 0건')
         self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
 
@@ -176,9 +176,8 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         db(lambda:trash_operation(self.admin,{'customer_ids':[str(self.rows[2].pk)],'site_id':str(self.site.pk),'idempotency_key':str(uuid4())}))
         self.page.locator('#dashboard-refresh').click()
         expect(today.locator('dd')).to_have_text('0건')
-        self.page.locator('.dashboard-detail summary').click()
-        history=self.page.locator('#dashboard-statistics .dashboard-cards > div').filter(has=self.page.locator('dt',has_text='오늘 배정 이력'))
-        expect(history.locator('dd')).to_have_text('3')
+        expect(self.page.locator('.dashboard-detail')).to_have_count(0)
+        expect(self.page.locator('#employee-tm-value')).to_have_text('0%(0/0)')
 
     def test_manager_charts_period_switch_staff_views_and_failed_refresh_clear_old_data(self):
         self.login(self.admin)
@@ -201,7 +200,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.set_viewport_size({'width':1440,'height':960})
         self.page.locator('#result-period').select_option('today')
         expect(self.page.locator('#call-result-chart .donut-total')).to_have_text('1건')
-        expect(self.page.locator('#call-result-legend')).to_contain_text('관심')
+        expect(self.page.locator('#call-result-legend')).to_contain_text(Customer.CallResult.INTERESTED.label)
         expect(self.page.locator('#contract-count')).to_have_text('1건')
         expect(self.page.locator('#contract-rate')).to_have_text('100.0%')
         self.page.locator('#result-period').select_option('week')
