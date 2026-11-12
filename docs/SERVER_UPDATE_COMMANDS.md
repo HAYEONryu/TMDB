@@ -6,7 +6,33 @@
 
 기존 `.env`·`.env.ai`·`compose.server.yaml`을 그대로 사용하며 PostgreSQL 컨테이너와 데이터 볼륨은 유지한다. 서버의 Docker·Compose와 PostgreSQL 서비스가 준비된 상태에서 실행한다. 호스트의 Python이나 `.venv`는 사용하지 않는다.
 
-## 1. 최신 코드·이미지 준비와 적용 계획 확인
+## HTTPS 적용 서버의 반영 명령
+
+[IP HTTPS 적용](HTTPS_IP_SETUP.md)을 완료한 서버는 **이 절차를 사용하고 아래의 HTTP 서버용 두 파일 명령은 사용하지 않는다.** HTTPS 파일이 빠지면 8000 포트가 다시 공개되거나 보안 쿠키·프록시 처리가 해제될 수 있다. 기존 DB 변경 전 백업·별도 복구 확인 조건은 같다.
+
+```bash
+cd /root/TMDB &&
+git pull --ff-only &&
+bash scripts/compose_https.sh config --quiet &&
+bash scripts/compose_https.sh --profile ai build web scheduler ai_worker &&
+bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --plan
+```
+
+계획과 백업을 확인한 뒤 실행한다. AI는 중단 상태로 유지하며 PostgreSQL을 재생성하지 않는다.
+
+```bash
+cd /root/TMDB &&
+bash scripts/compose_https.sh --profile ai stop web scheduler ai_worker &&
+bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --noinput &&
+bash scripts/compose_https.sh run --rm --no-deps web python manage.py showmigrations customers &&
+bash scripts/compose_https.sh up -d --no-deps --no-build --force-recreate web scheduler &&
+bash scripts/compose_https.sh up -d --no-deps proxy &&
+bash scripts/compose_https.sh ps
+```
+
+고객 migration 네 개가 모두 `[X]`이고 웹 health가 `healthy`인지 확인한다. `https://165.140.21.197`로 접속해 아래 브라우저 확인 항목과 상담 저장을 확인한다. 인증서·외부 접속 확인은 [HTTPS 안내](HTTPS_IP_SETUP.md#4-확인)를 따른다.
+
+## 1. HTTP 서버: 최신 코드·이미지 준비와 적용 계획 확인
 
 아래 블록을 서버 터미널에 복사해 실행한다. 빌드와 읽기 전용 계획 확인을 먼저 하므로 이 단계에서는 기존 웹을 중단하지 않는다.
 
@@ -22,7 +48,7 @@ docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web pyt
 
 계획에 `0004_customer_selection_options`까지 필요한 변경이 표시되는지 확인한다. 이미 적용한 서버는 `No planned migration operations.`가 표시될 수 있다. 오류·연결 실패·예상하지 않은 역방향 migration이 표시되면 다음 단계로 진행하지 말고 원인을 확인한다.
 
-## 2. 쓰기 중단·DB 적용·웹과 스케줄러 재시작
+## 2. HTTP 서버: 쓰기 중단·DB 적용·웹과 스케줄러 재시작
 
 계획과 백업·복구 확인을 마친 뒤 아래 블록을 복사한다. 서비스 중단부터 재시작까지 잠시 접속이 끊긴다. 각 명령은 앞 명령이 성공해야 이어서 실행된다.
 

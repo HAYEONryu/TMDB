@@ -1,0 +1,25 @@
+{
+	admin off
+	default_sni {$TM_HTTPS_IP}
+	# No access logging. Remove request metadata from operational error logs too.
+	log {
+		format filter {
+			wrap json
+			fields {
+				request delete
+			}
+		}
+	}
+}
+
+https://{$TM_HTTPS_IP} {
+	# IP addresses otherwise use Caddy's local CA, untrusted by staff browsers.
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			profile shortlived
+		}
+	}
+	reverse_proxy web:8000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

@@ -1,0 +1,43 @@
+# Always LAST: compose.yaml + compose.server.yaml + compose.https.yaml.
+# Requires Compose >= 2.24.4; never expose web directly with these settings.
+x-https-environment: &https-environment
+  DJANGO_SETTINGS_MODULE: config.https_settings
+  TM_HTTPS_IP: ${TM_HTTPS_IP:-165.140.21.197}
+  DJANGO_DEBUG: "false"
+  ALLOW_DEMO_SEED: "false"
+
+services:
+  web:
+    environment: *https-environment
+    ports: !reset []
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import os, urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'Host':os.environ['TM_HTTPS_IP'],'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r, timeout=4)"
+  scheduler:
+    environment: *https-environment
+    restart: unless-stopped
+  ai_worker:
+    environment: *https-environment
+    restart: unless-stopped
+  postgres:
+    restart: unless-stopped
+  proxy:
+    # Inherits the digest-pinned Caddy 2.10.2 image from compose.yaml.
+    environment:
+      TM_HTTPS_IP: ${TM_HTTPS_IP:-165.140.21.197}
+    restart: unless-stopped
+    ports: !override
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile.ip-https:/etc/caddy/Caddyfile:ro
+      - caddy_ip_data:/data
+      - caddy_ip_config:/config
+
+volumes:
+  caddy_ip_data:
+  caddy_ip_config:
