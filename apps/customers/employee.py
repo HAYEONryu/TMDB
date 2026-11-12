@@ -10,6 +10,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.common.http import api_errors,identifier,json_object
 from apps.customers.models import Customer
+from apps.customers.choices import customer_schema
 from apps.customers.queries import enriched,serialize,visible_values
 from apps.customers.services import digest
 from apps.operations.models import MutationReceipt
@@ -29,8 +30,7 @@ def optional_queue_identity(request):
 @require_GET
 @require_role(User.Role.EMPLOYEE)
 def page(request,view):
-    return render(request,"customers/employee.html",{"employee_view":view,"customer_schema":{
-        "call_result":{"":"(빈 값)",**dict(Customer.CallResult.choices)},"contract_status":dict(Customer.ContractStatus.choices)}})
+    return render(request,"customers/employee.html",{"employee_view":view,"customer_schema":customer_schema()})
 
 
 @require_GET

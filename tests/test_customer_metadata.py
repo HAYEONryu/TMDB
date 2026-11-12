@@ -56,10 +56,10 @@ class CustomerMetadataTests(Fixtures, TestCase):
             self.assertIn(field, staff)
 
     def test_admin_and_staff_edit_new_public_text_separate_from_consultation_notes(self):
-        result = update_row(self.admin, self.body({"route":" 소개 ","residence":" 서울 ","memo":"새 비고\r\n다음 줄","admin_notes":PRIVATE+" updated"}))
+        result = update_row(self.admin, self.body({"route":" 티엠 ","residence":" 서울 ","memo":"새 비고\r\n다음 줄","admin_notes":PRIVATE+" updated"}))
         self.assertTrue(result["ok"])
         self.assertEqual(result["row"]["admin_notes"], PRIVATE+" updated")
-        result = update_row(self.employee, self.body({"route":"온라인", "memo":"직원 비고", "residence":"부산"}))
+        result = update_row(self.employee, self.body({"route":"개인관리", "memo":"직원 비고", "residence":"부산"}))
         self.assertTrue(result["ok"])
         self.assert_private_absent(result)
         self.customer.refresh_from_db()
@@ -135,14 +135,14 @@ class CustomerMetadataTests(Fixtures, TestCase):
         self.assert_private_absent(recovered)
 
     def test_six_column_import_phone_only_and_metadata_mapping(self):
-        rows=[[None,"01090000002"," 서울 "," 전세 ","새 비고\r\n줄바꿈",PRIVATE],
+        rows=[[None,"01090000002"," 서울 "," 무주택 ","새 비고\r\n줄바꿈",PRIVATE],
               [" ","01090000003",None,None,None,None]]
         batch=validate_upload(self.admin,self.site.pk,uploaded(workbook(rows,headers=HEADERS)))
         self.assertEqual(batch.validation_summary["ready"],2)
         result,status=commit_upload(self.admin,batch.pk,{"site_id":str(self.site.pk),"idempotency_key":str(uuid4())})
         self.assertEqual((status,result["success_count"]),(200,2))
         customer=Customer.objects.get(phone_normalized="01090000002")
-        self.assertEqual((customer.customer_name,customer.residence,customer.housing_status,customer.memo,customer.notes,customer.route,customer.admin_notes),("","서울","전세","새 비고\n줄바꿈","","",PRIVATE))
+        self.assertEqual((customer.customer_name,customer.residence,customer.housing_status,customer.memo,customer.notes,customer.route,customer.admin_notes),("","서울","무주택","새 비고\n줄바꿈","","",PRIVATE))
         self.assertIsNone(customer.current_assignment_id)
         self.assertEqual(customer.call_result,None)
 
@@ -168,7 +168,7 @@ class CustomerMetadataMigrationTests(Fixtures,TransactionTestCase):
     def test_previous_schema_synthetic_upgrade_preserves_existing_data(self):
         self.prepare()
         executor=MigrationExecutor(connection)
-        target=[("customers","0003_live_phone_unique")]
+        target=[("customers","0004_customer_selection_options")]
         try:
             executor.migrate([("customers","0001_initial")])
             old=executor.loader.project_state([("customers","0001_initial")]).apps.get_model("customers","Customer")

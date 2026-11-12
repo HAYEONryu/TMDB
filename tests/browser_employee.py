@@ -60,7 +60,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3건');expect(page.locator('#employee-message')).to_be_empty()
     def cell(self,page=None,field='notes',index=0):return (page or self.page).locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').nth(index)
     def edit(self,value,page=None,field='notes',index=0,blur=True,pending=True):
-        page=page or self.page;cell=self.cell(page,field,index);cell.dblclick();control=cell.locator('textarea,input,select');control.fill(value) if field not in ['call_result','contract_status'] else control.select_option(value)
+        page=page or self.page;cell=self.cell(page,field,index);cell.dblclick();control=cell.locator('textarea,input,select');control.fill(value) if field not in ['call_result','contract_status','route','housing_status'] else control.select_option(value)
         if blur:page.locator('h1').click()
         if pending:expect(page.locator('#queue-status')).to_contain_text('저장 대기')
         return cell
@@ -198,8 +198,8 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_reverted_unsent_values_do_not_create_activity_and_datetime_fields(self):
         page=self.page;self.edit('저장 전 원복할 가상 내용');self.edit('',pending=False);self.saved();self.assertEqual(self.sent,[]);self.assertFalse(self.db(lambda:Assignment.objects.filter(first_activity_at__isnull=False).exists()))
-        self.edit('INTERESTED',field='call_result');self.edit('2026-11-05T13:30',field='visit_at');self.edit('2026-11-06T10:15',field='callback_due_at');self.edit(' 가상 월세 ',field='housing_status');self.save()
-        body=self.sent[0]['rows'][0];self.assertEqual(body['changes']['visit_at'],'2026-11-05T04:30:00.000Z');self.assertEqual(body['changes']['housing_status'],'가상 월세');self.assertEqual(body['changes']['callback_due_at'],'2026-11-06T01:15:00.000Z')
+        self.edit('INTERESTED',field='call_result');self.edit('2026-11-05T13:30',field='visit_at');self.edit('2026-11-06T10:15',field='callback_due_at');self.edit('다주택',field='housing_status');self.save()
+        body=self.sent[0]['rows'][0];self.assertEqual(body['changes']['visit_at'],'2026-11-05T04:30:00.000Z');self.assertEqual(body['changes']['housing_status'],'다주택');self.assertEqual(body['changes']['callback_due_at'],'2026-11-06T01:15:00.000Z')
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),1)
         self.cell(field='visit_at').dblclick();page.locator('h1').click();self.saved();self.assertEqual(len(self.sent),1)
 
@@ -214,6 +214,6 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('재시도 대기');self.assertEqual(len(self.sent),count)
 
     def test_invalid_first_input_is_not_reported_saved_and_navigation_requires_choice(self):
-        page=self.page;cell=self.cell(field='housing_status');cell.dblclick();control=cell.locator('input');control.fill('x'*201)
+        page=self.page;cell=self.cell(field='residence');cell.dblclick();control=cell.locator('input');control.fill('x'*201)
         expect(page.locator('#queue-status')).to_have_text('입력 오류 · 미저장');expect(page.locator('#employee-message')).to_contain_text('200자');self.assertEqual(self.sent,[])
         page.get_by_role('link',name='대시보드',exact=True).click();expect(page.locator('#leave-dialog')).to_be_visible();page.locator('#leave-cancel').click();control.press('Escape');self.saved();self.assertEqual(self.sent,[])

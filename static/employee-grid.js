@@ -7,7 +7,7 @@ import {installHistory} from './customer-history.js';
 import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
-import {customerLabels as labels,customerFields} from './customer-columns.js';
+import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
@@ -15,7 +15,7 @@ const multiline=new Set(['notes','memo']),textFields=new Set(['notes','memo','ro
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
-const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):schema[field]?.[value??'']??(value==null||value===''?'(빈 값)':String(value));
+const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
 let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
 async function request(url,body){
   if(environmentProblem&&body!==undefined)throw new Error('현재 조회 전용입니다. 상담 편집·저장은 HTTPS와 지원되는 브라우저에서 이용해 주세요.');
@@ -36,16 +36,19 @@ function error(error){notice(error.message);}
 function commitEditor(){activeEditor?.finish();}
 function validate(field,value,row){
   normalized(field,value);
-  if(schema[field]&&!Object.hasOwn(schema[field],value??''))throw new Error('선택값을 확인해 주세요.');
+  if(schema[field]&&!Object.hasOwn(schema[field],value??'')&&value!==(row[field]??''))throw new Error('선택값을 확인해 주세요.');
   if(field==='notes'&&Array.from(value||'').length>Math.max(10000,Array.from(queue.rows.get(row.id)?.notes||'').length))throw new Error('비고는 최대 10,000자입니다. 기존의 긴 비고는 현재 길이까지 보존할 수 있습니다.');
-  if(field==='housing_status'&&Array.from(value||'').length>200)throw new Error('주택상황은 최대 200자입니다.');
+  if(field==='housing_status'&&Array.from(value||'').length>200)throw new Error('주택보유상황은 최대 200자입니다.');
   if(['route','residence'].includes(field)&&Array.from(value||'').length>200)throw new Error(labels[field]+'는 최대 200자입니다.');
   if(field==='memo'&&Array.from(value||'').length>10000)throw new Error('비고는 최대 10,000자입니다.');
 }
 function editor(cell,onRendered,success,cancel){
   const field=cell.getField(),row=cell.getRow().getData(),original=cell.getValue();
   const input=document.createElement(schema[field]?'select':multiline.has(field)?'textarea':'input');input.setAttribute('aria-label',labels[field]);
-  if(schema[field])input.replaceChildren(...Object.entries(schema[field]).map(([value,label])=>option(value,label)));
+  if(schema[field]){
+    input.replaceChildren(...Object.entries(schema[field]).map(([value,label])=>option(value,label)));
+    if(!Object.hasOwn(schema[field],original??'')){const previous=option(original??'',display(field,original));previous.disabled=true;input.prepend(previous);}
+  }
   else if(dates.has(field)){input.type='datetime-local';input.min='0001-01-01T00:00';input.max='9999-12-31T23:59';}
   input.value=dates.has(field)?localDate(original):original??'';
   let done=false,touched=false,valid=true;

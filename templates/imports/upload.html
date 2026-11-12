@@ -7,7 +7,7 @@
   <p class="eyebrow">관리자 · 고객 등록</p><h1 class="h2">엑셀 업로드</h1>
   <p class="text-secondary">파일 검증 후 등록 가능 건수를 확인하고 확정해 주세요. 기존 고객의 상담정보는 변경하지 않습니다.</p>
   <div class="card card-body p-4 mb-4"><div class="d-flex flex-wrap gap-2 align-items-center justify-content-between"><h2 class="h5 mb-0">1. 입력 양식 준비</h2><a class="btn btn-outline-primary" href="/api/imports/template">빈 입력 양식 다운로드</a></div>
-    <p class="small text-secondary mt-3 mb-0">.xlsx · 최대 10MB · 빈 행 제외 10,000행 · 첫 워크시트를 사용합니다. 새 양식은 A열부터 고객명·연락처·고객 거주지·주택상황·비고·관리자 비고의 6열입니다. 연락처만 필수이며 고객명은 비워도 됩니다. 연락처는 010으로 시작하는 11자리 텍스트로 입력하세요. 비고는 기존 상담기타내용과 별도이고 관리자 비고는 관리자만 조회·수정합니다. 루트는 등록 후 화면에서 입력하세요. 첫 행 아래 안내와 셀 선택 시 입력 안내를 확인하고 고객 데이터는 2행부터 입력하세요. 수식·매크로는 사용하지 마세요. 이전 9열 양식도 업로드할 수 있습니다.</p>
+    <p class="small text-secondary mt-3 mb-0">.xlsx · 최대 10MB · 빈 행 제외 10,000행 · 첫 워크시트를 사용합니다. 새 양식은 A열부터 고객명·연락처·고객 거주지·주택보유상황·비고·관리자 비고의 6열입니다. 연락처만 필수이며 고객명은 비워도 됩니다. 연락처는 010으로 시작하는 11자리 텍스트로 입력하세요. 비고는 기존 상담기타내용과 별도이고 관리자 비고는 관리자만 조회·수정합니다. 주택보유상황은 무주택·1주택·다주택·생애최초 중 하나입니다. 루트는 등록 후 목록에서 선택하세요. 첫 행 아래 안내와 셀 선택 시 입력 안내를 확인하고 고객 데이터는 2행부터 입력하세요. 수식·매크로는 사용하지 마세요. 이전 9열 양식도 업로드할 수 있습니다.</p>
   </div>
   <form id="upload-form" data-async class="card card-body p-4 mb-4"><h2 class="h5">2. 현장과 파일 선택</h2><div class="d-flex flex-wrap gap-3 align-items-end"><label>현장<select id="upload-site" class="form-select mt-2" required></select></label><label class="flex-grow-1">엑셀 파일<input id="upload-file" type="file" accept=".xlsx" class="form-control mt-2" required></label><button id="validate-file" type="submit" class="btn btn-primary">파일 검증</button></div></form>
   <p id="upload-message" role="alert" class="grid-message"></p>

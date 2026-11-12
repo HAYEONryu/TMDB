@@ -137,16 +137,16 @@ class P2ApiTests(Fixtures, TestCase):
         self.assertEqual(MutationReceipt.objects.count(),0)
 
     def test_filters_or_within_and_across_blank_exclude_notes_and_kst_dates(self):
-        update_row(self.admin,self.body({"call_result":"INTERESTED","housing_status":"자가","notes":"가짜 메모 알파","visit_at":"2026-11-04T00:00:00+09:00"}))
-        Customer.objects.create(site=self.site,customer_name="빈값",phone_normalized="01090000002",call_result=None,housing_status="자가",visit_at=datetime(2026,11,3,23,59,tzinfo=KST))
-        Customer.objects.create(site=self.site,customer_name="다른값",phone_normalized="01090000003",call_result="REJECTED",housing_status="월세",visit_at=datetime(2026,11,5,0,0,tzinfo=KST))
+        update_row(self.admin,self.body({"call_result":"INTERESTED","housing_status":"1주택","notes":"가짜 메모 알파","visit_at":"2026-11-04T00:00:00+09:00"}))
+        Customer.objects.create(site=self.site,customer_name="빈값",phone_normalized="01090000002",call_result=None,housing_status="1주택",visit_at=datetime(2026,11,3,23,59,tzinfo=KST))
+        Customer.objects.create(site=self.site,customer_name="다른값",phone_normalized="01090000003",call_result="REJECTED",housing_status="다주택",visit_at=datetime(2026,11,5,0,0,tzinfo=KST))
         def total(filters):return self.get(filters=json.dumps(filters)).json()["total"]
-        self.assertEqual(total({"call_result":["INTERESTED",None],"housing_status":["자가"]}),2)
+        self.assertEqual(total({"call_result":["INTERESTED",None],"housing_status":["1주택"]}),2)
         self.assertEqual(total({"call_result":{"values":["REJECTED"],"exclude":True}}),2)
         self.assertEqual(total({"call_result":[]}),0)
         self.assertEqual(total({"notes":{"contains":"알파"}}),1)
         self.assertEqual(total({"visit_at":{"from":"2026-11-04","to":"2026-11-04"}}),1)
-        candidates=self.client.get("/api/customers/filter-options",{"site_id":str(self.site.pk),"field":"call_result","filters":json.dumps({"call_result":["REJECTED"],"housing_status":["자가"]})}).json()
+        candidates=self.client.get("/api/customers/filter-options",{"site_id":str(self.site.pk),"field":"call_result","filters":json.dumps({"call_result":["REJECTED"],"housing_status":["1주택"]})}).json()
         self.assertCountEqual(candidates["values"],[None,"INTERESTED"])
 
     def test_filter_candidates_paged_at_100(self):
@@ -189,12 +189,12 @@ class P2ApiTests(Fixtures, TestCase):
         self.assertEqual(ConsultationRevision.objects.count(),0)
 
     def test_admin_and_employee_save_actual_revision_progress_and_idempotent_replay(self):
-        body=self.body({"notes":"새 상담\r\n메모","housing_status":" 자가 ","contract_status":"CONTRACTED","call_result":"INTERESTED"})
+        body=self.body({"notes":"새 상담\r\n메모","housing_status":" 1주택 ","contract_status":"CONTRACTED","call_result":"INTERESTED"})
         result=update_row(self.admin,body)
         again=update_row(self.admin,body)
         self.assertEqual(result,again)
         self.customer.refresh_from_db();self.assignment.refresh_from_db()
-        self.assertEqual(self.customer.version,2);self.assertEqual(self.customer.notes,"새 상담\n메모");self.assertEqual(self.customer.housing_status,"자가")
+        self.assertEqual(self.customer.version,2);self.assertEqual(self.customer.notes,"새 상담\n메모");self.assertEqual(self.customer.housing_status,"1주택")
         self.assertIsNotNone(self.assignment.first_activity_at)
         revision=ConsultationRevision.objects.get()
         self.assertEqual(revision.actor,self.admin);self.assertEqual(revision.assignment,self.assignment)

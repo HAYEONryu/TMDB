@@ -181,6 +181,29 @@ class P10Tests(Fixtures,TransactionTestCase):
         item=self.custom_suggestion('contract_status','CONTRACTED','계약 체결 완료, 확인된 가격 1억원');self.assertEqual(item['status'],'SUGGESTION')
         self.customer.version+=1;self.customer.save();item=self.custom_suggestion('notes','확인 가격 1억원','확인된 가격 1억원');self.assertEqual(item['status'],'SUGGESTION')
 
+    def test_new_subscription_and_cancellation_statuses_need_explicit_evidence(self):
+        for value,quote in [('SUBSCRIBED','청약 접수 완료'),('SUB_CANCELLED','청약 해지 완료'),('CONTRACT_CANCELLED','계약 해지 완료')]:
+            item=self.custom_suggestion('contract_status',value,quote)
+            self.assertEqual(item['status'],'SUGGESTION')
+            self.customer.version+=1;self.customer.save()
+        item=self.custom_suggestion('contract_status','CONTRACT_CANCELLED','계약 해지 예정으로 검토 중')
+        self.assertEqual(item['status'],'NO_SUGGESTION')
+
+    def test_provider_schema_offers_only_current_business_choices(self):
+        from apps.ai_assistant.openai_schema import schema
+        from apps.customers.choices import CURRENT_CHOICES
+        task=reserve(self.employee,self.body())[0]
+        suggestions=schema(task)['properties']['suggestions']['properties']
+        for field in ['call_result','contract_status','housing_status']:
+            self.assertEqual(suggestions[field]['properties']['value']['enum'],[*CURRENT_CHOICES[field],None])
+
+    def test_housing_ownership_cannot_be_inferred_from_previous_tenancy(self):
+        item=self.custom_suggestion('housing_status','무주택','현재 전세로 거주 중')
+        self.assertEqual(item['status'],'NO_SUGGESTION')
+        self.customer.version+=1;self.customer.save()
+        item=self.custom_suggestion('housing_status','무주택','무주택임을 고객이 확인함')
+        self.assertEqual(item['status'],'SUGGESTION')
+
     def test_datetime_output_is_canonical_for_browser_and_normal_save(self):
         item=self.date_result('2026-11-20 14:00 방문 확인','2026-11-20T14+09:00',known=False);self.assertEqual(item['value'],'2026-11-20T14:00:00+09:00')
 

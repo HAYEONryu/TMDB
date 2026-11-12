@@ -121,6 +121,7 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 - [직원 재로그인·비밀번호 변경 화면·HTTP 현장/고객 조회](docs/EMPLOYEE_LOGIN_ACCESS.md)
 - [현재 6열 엑셀 양식·고객명 선택·루트/비고/관리자 비고·migration 적용](docs/EXCEL_TEMPLATE_GUIDANCE.md)
 - [전체 현장 연락처 중복 제외·휴지통 번호 재등록·DB 변경 적용](docs/CONTACT_DUPLICATE_POLICY.md)
+- [계약여부·통화결과·루트·주택보유상황 선택 목록](docs/CUSTOMER_SELECTIONS.md)
 - [고객 그리드 열 순서·관리자 편집·고객명/연락처 정정 권한](docs/CUSTOMER_GRID_EDITING.md)
 - [관리자 현장명 변경 방법·중복/동시 수정 처리](docs/SITE_RENAMING.md)
 - [관리자 상담결과 비율의 계약 건수·계약률](docs/DASHBOARD_CONTRACT_COUNTS.md)

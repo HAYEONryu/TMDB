@@ -1,0 +1,77 @@
+# 고객 항목 선택 목록
+
+2026-11-12 KST 최신 사용자 승인. 관리자·직원의 고객 그리드에서 다음 고정 목록을 사용한다. 한 항목에는 한 값만 선택하며 자유 문자는 새 값으로 저장할 수 없다.
+
+| 항목 | 표시 순서대로 선택값 |
+|---|---|
+| 계약여부 | 청약 · 청약해지 · 계약해지 · 계약 |
+| 루트 | 티엠 · 사이드 · 대표콜 · 개인관리 · 워킹 · 재방 |
+| 주택보유상황 | 무주택 · 1주택 · 다주택 · 생애최초 |
+| 통화결과 | 가망고객 · 삭제 요망 · 거절 · 다음현장 연락 요청 |
+
+기존 연락처만 필수인 등록 정책은 유지한다. 미입력 자료를 억지로 특정 값으로 바꾸지 않으며 편집할 때 목록에서 선택한다. 직원 편집은 기존 HTTPS/브라우저 지원 조건을 유지한다. HTTP는 조회 전용이다.
+
+‘삭제 요망’ 선택 자체는 통화결과만 저장한다. 실제 삭제는 기존 행별 삭제 요청 → 관리자 승인 → 휴지통 절차를 따른다. 청약·해지 상태를 계약 건수로 더하지 않으며 계약 건수는 기존처럼 현재/조회 기간의 `CONTRACTED` 상태를 기준으로 센다.
+
+## 기존 자료와 코드
+
+저장된 예전 부재·재통화·방문예약·방문·재방, 미계약, 전세/자가 같은 주택상황 및 자유 입력 루트는 삭제하거나 새 의미로 자동 매핑하지 않는다. 그리드·이력은 현재 목록 밖의 값을 `이전값: ...`로 구분한다. 원래 값 그대로 상담 등 다른 항목을 저장할 수 있지만, 다른 고객에게 새로 입력하거나 새 목록으로 바꾼 뒤 다시 옛 값으로 입력할 수는 없다.
+
+기존 관심 코드 `INTERESTED`는 가망고객 표시로 재사용한다. `REJECTED`(거절)·`CONTRACTED`(계약)도 기존 코드를 유지한다. 신규 코드는 통화결과 `DELETE_REQUEST`·`NEXT_SITE`, 계약여부 `SUBSCRIBED`·`SUB_CANCELLED`·`CONTRACT_CANCELLED`다. `UNKNOWN`은 기존 미입력 계약 상태 보존용이며 새 선택 목록에 추가하지 않는다.
+
+`customers.0004_customer_selection_options`는 통화결과·계약여부의 저장 길이를 24자로 확장하고 기존/신규 코드를 함께 보관할 DB 제약을 적용한다. 주택보유상황·루트의 모델 선택 메타데이터도 갱신한다. 기존 고객·상담·할당·원문 값을 수정하는 데이터 migration은 없다. 기존 값 보존을 위해 DB는 옛 값도 읽을 수 있고, 새 입력 제한은 공통 서버 서비스가 검사한다. 새 상태가 저장된 후에는 옛 길이·제약으로 무조건 되돌릴 수 없다.
+
+AI 요청의 허용 enum과 로컬 검증도 새 목록을 사용한다. 청약·해지 추천에는 완료/접수 등 명시적 근거를 요구하며 예정·검토 문구로 상태를 확정하지 않는다. 전세 같은 거주 형태만으로 무주택·1주택 등을 추정하지 않고 보유상황의 명시적 인용 근거를 요구한다. 외부 호출 없이 가짜 AI로 확인했고 활성화/무료 확인 설정은 바꾸지 않았다.
+
+## 엑셀
+
+다운로드 양식은 기존 6열을 유지하며 D열만 **주택보유상황**으로 바꾼다. D열에 네 선택값의 드롭다운·입력 안내·오류 안내를 제공한다. 루트는 기존 승인대로 엑셀 열에 추가하지 않고 등록 후 표에서 선택한다.
+
+기존 ‘주택상황’ 제목의 6열/9열 파일도 읽지만 새 업로드 값은 현재 선택 목록으로 검증한다. 예전 자가·전세 등의 값을 임의로 무주택·1주택으로 추정하지 않고 해당 행의 오류를 표시한다. 검증 완료 뒤 확정할 때도 선택값을 재검사하므로 배포 전에 검증한 파일은 새로 검증하는 것을 권장한다.
+
+## 검증 기록
+
+분리된 PostgreSQL 17·가상 사용자/고객과 Chromium을 사용했다. 실행별 소스 변경 없음과 결과를 `.local/verification-runs/<실행ID>/`에 보존한다. 운영 DB·개발/데모 DB·실제 고객정보·실제 AI 호출·외부 배포는 사용하지 않았다.
+
+| 실행 ID | 결과 |
+|---|---|
+| `20261112T020426847470Z-f735920bf2f84cbebfa62c4b328f6984` | 변경 영향 173개 중 169개 통과. 네 목록의 관리자/직원 편집·서버/엑셀 검증·migration 보존·기존 AI/통계 흐름 통과. 이전 주택 자유 입력/명칭을 가정한 브라우저 검사 3개와 테스트 문자열 교체로 잘못 바뀐 메시지 기대값 1개 실패 |
+| `20261112T020733084693Z-7c01ac02ce6648f6bf63155fff9d8805` | 자유 입력 오류 검사를 고객 거주지로 옮기고 새 열 제목을 반영한 뒤 관련 15개 중 14개 통과. 추가된 청약/해지 AI 근거·정확한 제공자 enum, 기존 통합 7개와 migration 복구 확인 포함. 메시지 기대값 오타 1개는 남음 |
+| `20261112T020900443431Z-4d0cb46834a04b7998f90e27e01a5fc0` | 위 기대값 오타 수정 후 해당 현장명·미저장 상담 보호 검사 재실행 통과 |
+| `20261112T021315985176Z-885598246eb9484b930b447e9b894d3d` | 전세 기록만으로 무주택을 추천하는 것을 막고 명시적 확인 근거일 때만 추천하는 가짜 AI 검사 통과 |
+| `20261112T020526258481Z-251719f21c7a4a1489ef514a54ae790e` | Django 시스템 검사·migration drift 통과 |
+
+현재 범위의 중복 제외 184개 검사에 통과 근거가 있으며 모두 한 실행에서 통과했다고 표시하지 않는다. 작업 트리의 기존 미커밋 업로드 진단 검사도 포함한 결과이고 관련 기존 작업은 별도 보존한다. 새 빈 테스트 DB 전체 migration과 0003 가상 DB의 예전 값 보존·긴 새 코드 저장을 확인했다. 실제 운영 반영·서버 성능은 별도 확인 대상이다.
+
+```sh
+.venv/bin/python scripts/run_final_verification.py start
+.venv/bin/python scripts/run_final_verification.py test --label customer-selections \
+  tests.test_customer_choices tests.test_p2 tests.test_customer_metadata tests.test_imports \
+  tests.test_p9 tests.test_p10 tests.test_dashboard_reports tests.test_p8 \
+  tests.test_live_contact_policy.LiveContactMigrationTests \
+  tests.browser_customer_metadata tests.browser_employee tests.browser_p2
+.venv/bin/python scripts/run_final_verification.py stop
+```
+
+## 서버 반영
+
+현재 서버 DB의 새 백업과 별도 DB 복구 확인을 마친 뒤 아래 절차를 사용한다. 이번 작업에서는 서버를 변경하지 않았다. 기존 `.env`·`.env.ai`와 PostgreSQL 볼륨을 유지한다.
+
+```sh
+cd /root/TMDB &&
+git pull --ff-only &&
+unset TM_SERVER_SECRET TM_DB_PASSWORD &&
+docker compose -f compose.yaml -f compose.server.yaml --profile ai build web scheduler ai_worker &&
+docker compose -f compose.yaml -f compose.server.yaml --profile ai stop web scheduler ai_worker &&
+docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --plan
+```
+
+계획을 확인한 뒤 적용한다. 이전 0003 미적용이면 함께 적용되므로 앞선 중복 정책 설명도 확인한다.
+
+```sh
+docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --noinput &&
+docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py showmigrations customers &&
+docker compose -f compose.yaml -f compose.server.yaml up -d --no-deps --no-build --force-recreate web scheduler
+```
+
+`[X] 0004_customer_selection_options`를 확인하고 브라우저를 새로고침한다. 관리자/직원 목록과 새 양식을 확인하며 업무용 AI 작업자는 이 변경으로 새로 시작하지 않는다. 적용 실패 시 기존 제약으로 강제 변환하거나 원문을 지우지 말고 쓰기를 중지한 상태에서 오류를 확인한다.

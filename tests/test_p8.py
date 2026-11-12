@@ -151,7 +151,7 @@ class P8IntegrationTests(Fixtures, TransactionTestCase):
         with patch("django.utils.timezone.now", return_value=now.replace(hour=22, minute=45)):
             for value in ["가상 상담 저장", ""]:
                 update_row(self.employee, self.mutation(rows[0], value)); rows[0].refresh_from_db()
-            changed = self.mutation(rows[1]); changed["changes"] = {"housing_status": "자가"}
+            changed = self.mutation(rows[1]); changed["changes"] = {"housing_status": "1주택"}
             update_row(self.admin, changed)
             unchanged = update_row(self.employee, self.mutation(rows[2], ""))
             self.assertFalse(unchanged["changed"])
@@ -163,7 +163,7 @@ class P8IntegrationTests(Fixtures, TransactionTestCase):
         self.assertIsNotNone(rows[1].current_assignment_id)
         self.assertIsNone(rows[2].current_assignment_id)
         self.assertEqual(rows[0].notes, "")
-        self.assertEqual(rows[1].housing_status, "자가")
+        self.assertEqual(rows[1].housing_status, "1주택")
         self.assertTrue(all(customer.call_result is None for customer in rows))
         self.assertEqual(ConsultationRevision.objects.count(), 3)
 

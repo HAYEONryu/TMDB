@@ -11,6 +11,7 @@ from apps.common.http import identifier
 from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer
+from apps.customers.choices import invalid_import_choice
 from apps.customers.services import digest, snapshot
 from apps.imports.excel import parse_upload
 from apps.imports.models import ImportBatch, ImportCandidate, ImportRowResult
@@ -158,6 +159,11 @@ def commit_once(actor,batch_id,site_id,key,body_hash):
         for candidate in candidates:
             values=candidate.normalized_values.copy()
             row=result_rows[candidate.row_number]
+            choice_error=invalid_import_choice(values)
+            if choice_error:
+                row.success=False;row.error_code='INVALID_ROW';row.reason=choice_error
+                changed_results.append(row)
+                continue
             if values["phone_normalized"] in existing:
                 row.success=False;row.error_code="DUPLICATE_PHONE";row.reason="검증 후 전체 현장의 휴지통 제외 고객 중 같은 연락처가 등록·복구되었습니다. 기존 상담정보는 변경하지 않았습니다."
                 changed_results.append(row)

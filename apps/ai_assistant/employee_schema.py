@@ -7,6 +7,7 @@ import re
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from apps.customers.models import Customer
+from apps.customers.choices import CURRENT_CHOICES
 from apps.customers.queries import KST
 from .inputs import source_ids
 
@@ -20,7 +21,10 @@ INSTRUCTIONS = (
     "reference_date는 조회일이며 과거 메모의 상대 날짜 기준이 아니다. 원문에 대응하는 notes_date_anchors의 날짜를 사용한다. "
     "날짜 추천은 원문의 시각을 결합한 ISO8601(+09:00)로 반환한다. notes_date_anchors가 없으면 상대 날짜 추천을 하지 않는다. "
     "CLEANUP은 suggestions의 여섯 상담 필드, SUMMARY는 key_points/concerns/promises/checks, "
-    "NEXT_QUESTIONS는 목적·근거를 가진 questions 3~5개를 반환한다. 사용자가 선택하기 전에는 값을 바꾸지 않는다."
+    "NEXT_QUESTIONS는 목적·근거를 가진 questions 3~5개를 반환한다. 사용자가 선택하기 전에는 값을 바꾸지 않는다. "
+    "통화결과는 INTERESTED=가망고객, DELETE_REQUEST=삭제 요망, REJECTED=거절, NEXT_SITE=다음현장 연락 요청만 사용한다. "
+    "계약여부는 SUBSCRIBED=청약, SUB_CANCELLED=청약해지, CONTRACT_CANCELLED=계약해지, CONTRACTED=계약만 사용한다. "
+    "주택보유상황은 무주택/1주택/다주택/생애최초만 사용한다. 근거가 없으면 NO_SUGGESTION으로 유지한다."
 )
 
 
@@ -98,6 +102,10 @@ def supported_contract(value,item,task):
     quote=item['evidence']
     if value=='CONTRACTED':return bool(re.search(r'계약\s*(완료|체결|했|함|되었습니다)|계약서\s*작성\s*완료',quote)) and not re.search(r'미계약|미체결|아직|아님|예정|희망|검토|가정|만약|않|취소',quote)
     if value=='NO_CONTRACT':return bool(re.search(r'미계약|미체결|계약\s*안\s*함|계약하지\s*않',quote))
+    if value in {'SUB_CANCELLED','CONTRACT_CANCELLED'}:
+        term='청약' if value=='SUB_CANCELLED' else '계약'
+        return bool(re.search(term+r'\s*(해지|취소)\s*(완료|했|함|되었습니다|확정)',quote)) and not re.search(r'예정|검토|희망|가정|만약|않|아님',quote)
+    if value=='SUBSCRIBED':return bool(re.search(r'청약\s*(완료|접수|했|함|되었습니다)',quote)) and not re.search(r'해지|취소|예정|검토|희망|가정|만약|않|아님',quote)
     return bool(re.search(r'미확인|확인\s*필요|알\s*수\s*없',quote))
 
 
@@ -129,8 +137,10 @@ def validate(task, payload):
             if item["value"] is None or not grounded(item,task):return None
             value=item["value"]
             if field in {"notes","housing_status"} and not text(value,10000 if field=="notes" else 200):return None
-            if field=="call_result" and value not in Customer.CallResult.values:return None
-            if field=="contract_status" and value not in Customer.ContractStatus.values:return None
+            if field in CURRENT_CHOICES and value not in CURRENT_CHOICES[field]:return None
+            if field=='housing_status' and task.input_payload.get('current',{}).get(field)!=value and value not in item['evidence']:
+                item.update(status='NO_SUGGESTION',value=None,reason='거주 형태로 주택 보유를 추정하지 않습니다. 주택보유상황을 명시적으로 확인해 주세요.')
+                continue
             if not supported_money(value,item,task) or (field=='contract_status' and not supported_contract(value,item,task)):
                 item.update(status='NO_SUGGESTION',value=None,reason='가격 또는 계약 여부의 확실한 근거를 확인해야 합니다.')
                 continue

@@ -2,6 +2,7 @@
 from .employee_schema import FIELDS, INSTRUCTIONS
 from .reports import SECTIONS, GUIDE_CHOICES, LABELS
 from apps.customers.models import Customer
+from apps.customers.choices import CURRENT_CHOICES
 
 
 def obj(properties):
@@ -27,8 +28,8 @@ def schema(task):
             suggestions = {}
             for field in sorted(FIELDS):
                 value = {"type": ["string", "null"]}
-                if field in {"call_result", "contract_status"}:
-                    values = Customer.CallResult.values if field == "call_result" else Customer.ContractStatus.values
+                if field in CURRENT_CHOICES:
+                    values = list(CURRENT_CHOICES[field])
                     value["enum"] = [*values, None]
                 suggestions[field] = obj({"status": string(enum=["SUGGESTION", "NO_SUGGESTION"]),
                     "value": value, "source_ids": ids, "evidence": string(), "reason": string()})

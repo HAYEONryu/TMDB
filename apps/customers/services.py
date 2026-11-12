@@ -14,6 +14,7 @@ from apps.common.validation import normalize_phone
 from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
+from apps.customers.choices import CURRENT_CHOICES, FIELD_LABELS
 from apps.customers.queries import KST, enriched, iso, serialize, visible_values
 from apps.operations.models import IdempotencyRecord, MutationReceipt, OperationEvent
 from apps.sites.models import Site
@@ -67,21 +68,24 @@ def normalized_changes(customer, changes):
                 invalid("연락처는 010으로 시작하는 11자리 텍스트로 입력해 주세요.")
         elif field in {"visit_at", "callback_due_at"}:
             result[field] = datetime_value(value)
-        elif field == "call_result":
-            if value not in [None, "", *Customer.CallResult.values]:
-                invalid("통화결과를 확인해 주세요.")
-            result[field] = value or None
-        elif field == "contract_status":
-            if value not in [None, "", *Customer.ContractStatus.values]:
-                invalid("계약여부를 확인해 주세요.")
-            result[field] = value or Customer.ContractStatus.UNKNOWN
+        elif field in CURRENT_CHOICES:
+            if field in {'route','housing_status'}:
+                if not isinstance(value,str):invalid(f'{FIELD_LABELS[field]} 선택값을 확인해 주세요.')
+                value=value.strip()
+            else:
+                if value is not None and not isinstance(value,str):invalid(f'{FIELD_LABELS[field]} 선택값을 확인해 주세요.')
+                value=(value or None) if field=='call_result' else (value or Customer.ContractStatus.UNKNOWN)
+            empty = value in (None,'') or (field=='contract_status' and value=='UNKNOWN')
+            if not empty and (not isinstance(value,str) or value not in CURRENT_CHOICES[field]) and value != getattr(customer,field):
+                invalid(f'{FIELD_LABELS[field]}은 지정된 선택값 중 하나를 선택해 주세요.')
+            result[field]=value
         else:
             limit = max(10000, len(customer.notes)) if field == "notes" else 10000 if field in {"memo", "admin_notes"} else 200
             if not isinstance(value, str):
                 invalid("텍스트 항목은 문자열로 입력해 주세요.")
             value = value.replace("\r\n", "\n").replace("\r", "\n") if field in {"notes", "memo", "admin_notes"} else value.strip()
             if len(value) > limit:
-                label = {"notes":"상담기타내용", "memo":"비고", "admin_notes":"관리자 비고", "route":"루트", "residence":"고객 거주지", "housing_status":"주택상황"}[field]
+                label = {"notes":"상담기타내용", "memo":"비고", "admin_notes":"관리자 비고", "route":"루트", "residence":"고객 거주지", "housing_status":"주택보유상황"}[field]
                 invalid(f"{label} 입력은 {limit:,}자까지 가능합니다.")
             result[field] = value
     return result

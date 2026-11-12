@@ -4,7 +4,7 @@ import {PendingOperation} from "./pending-operation.js";
 import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
-import {customerLabels as labels,customerFields} from './customer-columns.js';
+import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
 
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
@@ -21,7 +21,7 @@ const actorRequest=(url,body)=>api(url,body,'POST',{'X-TM-Actor':$('#management'
 const openHistory=installHistory(actorRequest);
 const notice = message => { $("#message").textContent = message; };
 const text = (tag, value) => { const el = document.createElement(tag); el.textContent = value; return el; };
-const display = (field, value) => field === "phone_normalized" && value ? String(value).replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3") : schema[field]?.[value ?? ""] ?? (value == null || value === "" ? "(빈 값)" : String(value));
+const display = (field, value) => field === "phone_normalized" && value ? String(value).replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3") : choiceLabel(schema,field,value);
 const localDate = value => value ? new Intl.DateTimeFormat("sv-SE", {timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value)).replace(" ", "T") : "";
 const normalize = (field, value) => dates.has(field) ? (value ? new Date(value.includes("Z") || /[+-]\d\d:\d\d$/.test(value) ? value : value+":00+09:00").toISOString() : null) : field === "call_result" ? value || null : field === "contract_status" ? value || "UNKNOWN" : ['housing_status','residence','route'].includes(field) ? (value || "").trim() : (value || "").replace(/\r\n?/g,"\n");
 const params = () => new URLSearchParams({site_id:state.site, view:trash?"trash":"all", q:state.q, filters:JSON.stringify(state.filters),...(state.assignee?{assignee_id:state.assignee}:{})});
@@ -68,7 +68,7 @@ function column(field) {
   if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"미할당");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
-    ...(schema[field] ? {editorParams:{values:schema[field],clearable:field === "call_result"}} : field === "housing_status" ? {editorParams:{elementAttributes:{placeholder:"미확인 / 자가 / 전세 / 월세 / 기타"}}} : {}),
+    ...(schema[field] ? {editorParams:{values:schema[field],clearable:false,autocomplete:false}} : {}),
     ...(multiline.has(field) ? {variableHeight:true} : {})});
   return definition;
 }

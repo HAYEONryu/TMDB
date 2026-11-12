@@ -3,19 +3,25 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from apps.common.models import TimestampedModel
+from .choices import HOUSING_STATUSES, ROUTES
 
 
 class Customer(TimestampedModel):
     class CallResult(models.TextChoices):
+        DELETE_REQUEST = "DELETE_REQUEST", "삭제 요망"
+        NEXT_SITE = "NEXT_SITE", "다음현장 연락 요청"
         NO_ANSWER = "NO_ANSWER", "부재"
         REJECTED = "REJECTED", "거절"
-        INTERESTED = "INTERESTED", "관심"
+        INTERESTED = "INTERESTED", "가망고객"
         CALL_AGAIN = "CALL_AGAIN", "재통화"
         VISIT_BOOKED = "VISIT_BOOKED", "방문예약"
         VISITED = "VISITED", "방문"
         REVISITED = "REVISITED", "재방"
 
     class ContractStatus(models.TextChoices):
+        SUBSCRIBED = "SUBSCRIBED", "청약"
+        SUB_CANCELLED = "SUB_CANCELLED", "청약해지"
+        CONTRACT_CANCELLED = "CONTRACT_CANCELLED", "계약해지"
         UNKNOWN = "UNKNOWN", "미확인"
         NO_CONTRACT = "NO_CONTRACT", "미계약"
         CONTRACTED = "CONTRACTED", "계약"
@@ -23,14 +29,14 @@ class Customer(TimestampedModel):
     site = models.ForeignKey("sites.Site", on_delete=models.CASCADE, related_name="customers")
     customer_name = models.CharField(max_length=100, blank=True, default="")
     phone_normalized = models.CharField(max_length=11)
-    call_result = models.CharField(max_length=12, choices=CallResult.choices, null=True, blank=True)
+    call_result = models.CharField(max_length=24, choices=CallResult.choices, null=True, blank=True)
     visit_at = models.DateTimeField(null=True, blank=True)
-    contract_status = models.CharField(max_length=12, choices=ContractStatus.choices, default=ContractStatus.UNKNOWN)
+    contract_status = models.CharField(max_length=24, choices=ContractStatus.choices, default=ContractStatus.UNKNOWN)
     # TextField deliberately has no 10,000-char DB cap: system approval notes must fit.
     notes = models.TextField(blank=True, default="")
-    housing_status = models.CharField(max_length=200, blank=True, default="")
+    housing_status = models.CharField(max_length=200, choices=list(HOUSING_STATUSES.items()), blank=True, default="", verbose_name="주택보유상황")
     residence = models.CharField(max_length=200, blank=True, default="")
-    route = models.CharField(max_length=200, blank=True, default="")
+    route = models.CharField(max_length=200, choices=list(ROUTES.items()), blank=True, default="")
     memo = models.TextField(blank=True, default="")
     admin_notes = models.TextField(blank=True, default="")
     current_assignment = models.OneToOneField("assignments.Assignment", null=True, blank=True, on_delete=models.SET_NULL, related_name="current_for_customer")
@@ -45,8 +51,8 @@ class Customer(TimestampedModel):
             models.CheckConstraint(condition=Q(phone_normalized__regex=r"^010[0-9]{8}$"), name="customer_phone_format"),
             models.CheckConstraint(condition=Q(customer_name="") | Q(customer_name__regex=r"\S"), name="customer_name_valid"),
             models.CheckConstraint(condition=Q(version__gte=1), name="customer_version_positive"),
-            models.CheckConstraint(condition=Q(call_result__isnull=True) | Q(call_result__in=["NO_ANSWER", "REJECTED", "INTERESTED", "CALL_AGAIN", "VISIT_BOOKED", "VISITED", "REVISITED"]), name="customer_call_result_valid"),
-            models.CheckConstraint(condition=Q(contract_status__in=["UNKNOWN", "NO_CONTRACT", "CONTRACTED"]), name="customer_contract_valid"),
+            models.CheckConstraint(condition=Q(call_result__isnull=True) | Q(call_result__in=["NO_ANSWER", "REJECTED", "INTERESTED", "CALL_AGAIN", "VISIT_BOOKED", "VISITED", "REVISITED", "DELETE_REQUEST", "NEXT_SITE"]), name="customer_call_result_valid"),
+            models.CheckConstraint(condition=Q(contract_status__in=["UNKNOWN", "NO_CONTRACT", "CONTRACTED", "SUBSCRIBED", "SUB_CANCELLED", "CONTRACT_CANCELLED"]), name="customer_contract_valid"),
             models.CheckConstraint(condition=Q(deleted_at__isnull=True) | Q(current_assignment__isnull=True), name="deleted_customer_unassigned"),
         ]
         indexes = [models.Index(fields=["site", "deleted_at", "created_at", "id"], name="customer_site_list_idx"),

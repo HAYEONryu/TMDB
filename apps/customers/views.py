@@ -5,6 +5,7 @@ from apps.accounts.access import AccessError, require_role
 from apps.accounts.models import User
 from apps.common.http import api_errors, identifier, json_object
 from apps.customers.models import Customer
+from apps.customers.choices import customer_schema
 from apps.customers.queries import customer_list, filter_options
 from apps.customers.services import update_row, trash_operation
 
@@ -68,6 +69,4 @@ def restore(request):
 @require_GET
 @require_role(User.Role.ADMIN)
 def management(request, trash=False):
-    return render(request, "customers/manage.html", {"trash": trash, "customer_schema": {
-        "call_result": {"": "(빈 값)", **dict(Customer.CallResult.choices)},
-        "contract_status": dict(Customer.ContractStatus.choices)}})
+    return render(request, "customers/manage.html", {"trash": trash, "customer_schema": customer_schema()})

@@ -104,7 +104,7 @@ class ImportTests(Fixtures,TestCase):
             self.assertLessEqual(len(validation.prompt),255)
             self.assertEqual(validation.prompt,instruction)
             self.assertIn(f"{cell.column_letter}2",validation.sqref)
-        self.assertTrue(all(item.type=="custom" for item in validations))
+        self.assertEqual([item.type for item in validations],["custom","custom","custom","list","custom","custom"])
         self.assertIn("선택",sheet["A1"].value)
         self.assertIn("필수",sheet["B1"].value)
         self.assertIn("관리자만",sheet["F1"].value)
@@ -112,7 +112,7 @@ class ImportTests(Fixtures,TestCase):
 
     def test_explanatory_headers_accept_valid_row_and_never_import_the_guidance(self):
         book=load_workbook(BytesIO(template_bytes()));sheet=book.worksheets[0]
-        values=[None,"01090000001","서울 강서구","전세","가상 신규 비고","가상 관리자 전용"]
+        values=[None,"01090000001","서울 강서구","무주택","가상 신규 비고","가상 관리자 전용"]
         for column,value in enumerate(values,1):sheet.cell(2,column,value)
         output=BytesIO();book.save(output);book.close()
         batch=validate_upload(self.admin,self.site.pk,uploaded(output.getvalue()))
@@ -205,13 +205,13 @@ class ImportTests(Fixtures,TestCase):
         self.assertFalse(Customer.objects.filter(site=self.site,phone_normalized='01090000002').exists())
 
     def test_commit_creates_import_revision_callback_unassigned_and_atomic_idempotency(self):
-        batch=self.validate([row(**{"3":"관심","4":"2026-11-04 14:30","5":"계약","6":"가짜 상담","7":"2026-11-05 16:00","8":" 자가 "})])
+        batch=self.validate([row(**{"3":"가망고객","4":"2026-11-04 14:30","5":"계약","6":"가짜 상담","7":"2026-11-05 16:00","8":" 1주택 "})])
         key=self.body();result,status=commit_upload(self.other_admin,batch.pk,key)
         self.assertEqual((status,result["success_count"],result["failure_count"]),(200,1,0))
         self.assertEqual(commit_upload(self.other_admin,batch.pk,key),(result,status))
         customer=Customer.objects.get();revision=ConsultationRevision.objects.get();callback=Callback.objects.get()
         self.assertEqual(customer.phone_normalized,"01090000001");self.assertEqual(customer.call_result,"INTERESTED")
-        self.assertEqual(customer.contract_status,"CONTRACTED");self.assertEqual(customer.housing_status,"자가")
+        self.assertEqual(customer.contract_status,"CONTRACTED");self.assertEqual(customer.housing_status,"1주택")
         self.assertIsNone(customer.current_assignment_id)
         self.assertEqual((revision.source,revision.actor_id,revision.assignment_id,revision.customer_version),("IMPORT",self.other_admin.pk,None,1))
         self.assertEqual(revision.after_values["notes"],"가짜 상담")

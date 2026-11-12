@@ -20,15 +20,18 @@ from django.core.exceptions import ValidationError
 from apps.accounts.access import AccessError
 from apps.common.validation import normalize_phone
 from apps.customers.models import Customer
+from apps.customers.choices import CALL_RESULTS, CONTRACT_STATUSES, HOUSING_STATUSES, invalid_import_choice
 from apps.customers.queries import KST
 
 LEGACY_HEADERS = ["담당직원명", "고객명", "고객 연락처", "통화결과", "방문예약 날짜", "계약여부", "상담기타내용", "재콜일정", "주택상황"]
-HEADERS = ["고객명", "연락처", "고객 거주지", "주택상황", "비고", "관리자 비고"]
+HEADERS = ["고객명", "연락처", "고객 거주지", "주택보유상황", "비고", "관리자 비고"]
+OLD_HEADERS = ["고객명", "연락처", "고객 거주지", "주택상황", "비고", "관리자 비고"]
+LEGACY_CURRENT_HEADERS = [*LEGACY_HEADERS[:-1], "주택보유상황"]
 HEADER_HINTS = [
     "선택 · 문자 최대 100자\n빈 칸 가능\n예: 가상고객",
     "필수 · 010 시작 11자리\n텍스트로 입력\n예: 010-0000-0000",
     "선택 · 문자 최대 200자\n예: 서울 강서구",
-    "선택 · 문자 최대 200자\n예: 자가/전세/월세/기타",
+    "선택 · 아래 중 택1\n무주택 / 1주택\n다주택 / 생애최초",
     "선택 · 문자 최대 10,000자\n기존 상담기타내용과 별도\n줄바꿈 가능 · 수식 금지",
     "선택 · 문자 최대 10,000자\n관리자만 조회·수정\n직원에게 노출되지 않음",
 ]
@@ -39,7 +42,7 @@ HEADER_INSTRUCTIONS = [
     "하이픈·공백은 제거해 검사합니다. 숫자로 저장해 앞자리 0이 빠지면 복원하지 않습니다. "
     "전체 현장의 중복 연락처는 등록하지 않습니다. 휴지통 고객은 중복 검사에서 제외합니다.",
     "선택. 고객 거주지를 자유 입력하는 문자 최대 200자. 예: 서울 강서구. 앞뒤 공백은 제거합니다.",
-    "선택. 자유 입력 문자 최대 200자. 예: 미확인, 자가, 전세, 월세, 기타. 빈 칸도 허용합니다.",
+    "선택. 무주택, 1주택, 다주택, 생애최초 중 하나를 선택합니다. 빈 칸도 허용합니다.",
     "선택. 문자 최대 10,000자. 기존 상담기타내용과 별도인 비고입니다. 줄바꿈 가능. 수식은 사용할 수 없습니다.",
     "선택. 문자 최대 10,000자. 관리자만 조회·수정합니다. 직원 화면·API·상담 이력·AI 입력에 제공하지 않습니다. 줄바꿈 가능. 수식은 사용할 수 없습니다.",
 ]
@@ -73,7 +76,9 @@ def template_bytes():
         cell.comment = Comment(instruction, "TM 고객관리")
         cell.comment.width, cell.comment.height = 380, 140
         column = cell.column_letter
-        validation = DataValidation(type="custom", formula1="TRUE", allow_blank=True)
+        validation = DataValidation(type="list", formula1='"'+','.join(HOUSING_STATUSES)+'"', allow_blank=True) if column=='D' else DataValidation(type="custom", formula1="TRUE", allow_blank=True)
+        if column=='D':
+            validation.showErrorMessage=True;validation.errorTitle='주택보유상황 확인';validation.error='목록의 값 중 하나를 선택해 주세요.'
         validation.promptTitle, validation.prompt = title, instruction
         validation.showInputMessage = True
         sheet.add_data_validation(validation)
@@ -192,21 +197,21 @@ def parse_row(cells, *, legacy=False):
     if not legacy:
         return {"customer_name":name, "phone_normalized":phone,
             "residence":text_value(values[2], "고객 거주지", 200),
-            "housing_status":text_value(values[3], "주택상황", 200),
+            "housing_status":text_value(values[3], "주택보유상황", 200),
             "memo":text_value(values[4], "비고", 10000, trim=False),
             "admin_notes":text_value(values[5], "관리자 비고", 10000, trim=False),
             "notes":"", "call_result":None, "visit_at":None,
             "callback_due_at":None, "contract_status":"UNKNOWN"}
     call = text_value(values[3], "통화결과", 20)
     contract = text_value(values[5], "계약여부", 20)
-    calls = {label: code for code, label in Customer.CallResult.choices}
-    contracts = {label: code for code, label in Customer.ContractStatus.choices}
+    calls = {label: code for code, label in CALL_RESULTS.items()}
+    contracts = {label: code for code, label in CONTRACT_STATUSES.items()}
     if call and call not in calls or contract and contract not in contracts:
         raise ValueError("통화결과·계약여부는 양식의 허용값을 사용해 주세요.")
     return {"customer_name":name, "phone_normalized":phone, "call_result":calls.get(call),
         "visit_at":excel_datetime(cells[4]), "contract_status":contracts.get(contract, "UNKNOWN"),
         "notes":text_value(values[6], "상담기타내용", 10000, trim=False),
-        "callback_due_at":excel_datetime(cells[7]), "housing_status":text_value(values[8], "주택상황", 200)}
+        "callback_due_at":excel_datetime(cells[7]), "housing_status":text_value(values[8], "주택보유상황", 200)}
 
 
 def parse_upload(upload):
@@ -233,12 +238,12 @@ def parse_upload(upload):
         # The first line is the stable column title. Later lines are guidance,
         # so files remain valid when examples or explanatory text are updated.
         titles = [cell.value.split("\n", 1)[0].rstrip("\r") if isinstance(cell.value, str) else cell.value for cell in header]
-        legacy = titles == LEGACY_HEADERS
+        legacy = titles in [LEGACY_HEADERS, LEGACY_CURRENT_HEADERS]
         width = 9 if legacy else 6
         extra = extra_columns(data, sheet._worksheet_path, sheet._shared_strings, width)
-        if (1 in extra or titles not in [HEADERS, LEGACY_HEADERS]
+        if (1 in extra or titles not in [HEADERS, OLD_HEADERS, LEGACY_HEADERS, LEGACY_CURRENT_HEADERS]
                 or any(cell.data_type == "f" for cell in header)):
-            file_error("INVALID_HEADER", "첫 행은 고객명·연락처·고객 거주지·주택상황·비고·관리자 비고 순서여야 합니다. 기존 9열 양식도 지원합니다.")
+            file_error("INVALID_HEADER", "첫 행은 고객명·연락처·고객 거주지·주택보유상황·비고·관리자 비고 순서여야 합니다. 기존 6/9열 제목도 지원합니다.")
         results, candidates, seen = [], [], set()
         for row_number, cells in enumerate(rows, 2):
             if row_number not in extra and all(blank(cell.value) for cell in cells):
@@ -260,6 +265,8 @@ def parse_upload(upload):
                 if row_number in extra:
                     raise ValueError(f"입력 양식의 {width}개 열 밖에 값이 있습니다.")
                 normalized = parse_row(padded[:width], legacy=legacy)
+                choice_error=invalid_import_choice(normalized)
+                if choice_error:raise ValueError(choice_error)
                 if normalized["phone_normalized"] in seen:
                     result.update(error_code="DUPLICATE_IN_FILE",reason="파일에서 먼저 나온 유효한 연락처 행과 중복됩니다.")
                 else:
