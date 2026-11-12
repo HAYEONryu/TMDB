@@ -4,6 +4,7 @@ import json
 import re
 from datetime import timedelta
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 from apps.accounts.models import User
 from apps.consultations.models import ConsultationRevision
@@ -53,7 +54,8 @@ def build(feature, *, customer=None, site=None, employee=None, start, end, korea
     if feature not in STAFF_FEATURES:
         from .reports import build_report
         return build_report(feature, site=site, employee=employee, start=start, end=end, korean_date=korean_date)
-    query = ConsultationRevision.objects.filter(saved_at__lte=end).exclude(changed_fields=["admin_notes"]).select_related("customer")
+    query = ConsultationRevision.objects.filter(saved_at__lte=end).exclude(
+        Q(changed_fields__contained_by=["customer_name","phone_normalized","admin_notes"]) & ~Q(changed_fields=[])).select_related("customer")
     sources = []
     payload = {"reference_date": korean_date.isoformat(), "period_start": start.isoformat(), "period_end": end.isoformat(), "records": []}
     names = list(User.objects.values_list("name", flat=True))

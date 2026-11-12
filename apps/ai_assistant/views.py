@@ -68,7 +68,12 @@ def availability(request):
     elif enabled:
         message='테스트 전용 AI입니다. 운영 결과가 아닙니다.' if test_mode() else '무료 AI · 서버 전체 한도를 먼저 적용하며 분당 한도에 맞춰 대기 후 처리합니다.' if free else 'AI 생성은 유료입니다. 생성 버튼을 누를 때만 요청합니다.'
     else:
-        message='AI 설정 또는 공급자 연결이 없어 생성할 수 없습니다. 기존 고객관리는 정상 작동합니다.'
+        from .prerequisites import configuration_help
+        message='AI 설정 또는 공급자 연결이 준비되지 않았습니다. '+configuration_help(settings.AI_CONFIG)+' 기존 결과 조회와 고객관리는 계속 사용할 수 있습니다.'
+    if reason=='AI_DAILY_LIMIT':
+        message='직원 AI 3종의 오늘 합산 40회 한도를 사용했습니다. 한국 시간 자정 이후 다시 이용해 주세요. 기존 결과는 조회할 수 있습니다.'
+    elif reason=='AI_BUSY':
+        message='이미 접수된 AI 작업이 있습니다. AI 작업 확인에서 처리 결과를 확인해 주세요.'
     return JsonResponse({"generation_available": enabled and not personal_blocked and not active and not budget_blocked and not test_budget_blocked and not server_blocked, "configured": settings.AI_CONFIG.configured,
                          "reason": reason,
                          "message": message, "server_limit": server, "usage_tier": settings.AI_CONFIG.usage_tier,
@@ -78,6 +83,40 @@ def availability(request):
                          "korean_date": day.isoformat(), "features": [feature for feature in Feature.values if (feature in STAFF_FEATURES) == staff], 'is_test':test_mode(), 'active':active,
                          "weekly_generation_day": day.weekday()==6,
                          "next_available_at": server['cooldown_until'] or server['reset_at'] if server_blocked else datetime.combine(day+timedelta(days=1),time.min,KST).isoformat() if personal_blocked else None})
+
+
+@require_GET
+@require_role(User.Role.EMPLOYEE)
+@api_errors
+def customer_readiness(request):
+    from apps.customers.employee import queue_identity
+    from apps.customers.access import current_access
+    from apps.customers.models import Customer
+    from apps.common.http import identifier
+    from .inputs import build
+    from .prerequisites import require_consultation
+    import json
+    queue_identity(request)
+    expected={'customer_id','assignment_id','expected_version','feature'}
+    if set(request.GET)!=expected or any(len(request.GET.getlist(k))!=1 for k in expected) or request.GET['feature'] not in STAFF_FEATURES:
+        raise AccessError('VALIDATION_ERROR','AI 준비 확인 형식을 확인해 주세요.',422)
+    try: version=int(request.GET['expected_version'])
+    except ValueError: raise AccessError('VALIDATION_ERROR','상담 버전을 확인해 주세요.',422)
+    customer=Customer.objects.select_related('current_assignment','site').filter(pk=identifier(request.GET['customer_id'])).first()
+    if not customer:raise AccessError('FORBIDDEN','현재 담당 고객정보만 사용할 수 있습니다.',403)
+    current_access(request.user,customer,identifier(request.GET['assignment_id']))
+    if version<1 or customer.version!=version:raise AccessError('VERSION_CONFLICT','고객정보가 변경되었습니다. 새로 확인한 뒤 다시 이용해 주세요.',409)
+    try:
+        require_consultation(customer)
+        now=timezone.now();day=timezone.localtime(now,KST).date()
+        payload,_=build(request.GET['feature'],customer=customer,site=customer.site,start=datetime.combine(day,time.min,KST),end=now,korean_date=day)
+        if len(json.dumps(payload,ensure_ascii=False).encode())>4000:
+            raise AccessError('AI_INPUT_TOO_LARGE','분석 범위를 초과했습니다.',422)
+    except AccessError as error:
+        if error.code not in {'AI_INPUT_REQUIRED','AI_INPUT_TOO_LARGE'}:raise
+        message=error.message if error.code=='AI_INPUT_REQUIRED' else '상담내용 또는 이력이 AI 분석 상한을 넘었습니다. 핵심 상담내용을 간결하게 정리해 저장한 뒤 다시 시도해 주세요. 이력은 삭제하지 말고 관리자에게 분석 범위 확인을 요청해 주세요.'
+        return JsonResponse({'ready':False,'code':error.code,'message':message})
+    return JsonResponse({'ready':True,'code':'AI_INPUT_READY','message':'저장된 상담내용을 분석합니다. AI 결과는 자동으로 고객정보에 적용되지 않습니다.'})
 
 
 def task_payload(task):

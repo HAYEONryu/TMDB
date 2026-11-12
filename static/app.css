@@ -433,3 +433,9 @@ input:focus,.form-control:focus,.form-select:focus,textarea:focus{border-color:#
 .chart-filters{display:flex;flex-wrap:wrap;gap:12px;width:100%;}
 .chart-filters label:first-child{flex:1;min-width:145px;}
 .chart-filters label:last-child{min-width:115px;}
+.callback-cell{display:inline-flex;align-items:center;gap:10px;}
+.callback-complete{display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-size:13px;}
+.callback-complete input{width:17px;height:17px;}
+.ai-feature-choice{padding:12px 0;border-bottom:1px solid #e5eaf0;}
+.ai-feature-choice p{margin:8px 0;}
+.tabulator-tooltip{max-width:min(420px,calc(100vw - 24px));white-space:pre-line;line-height:1.6;}

@@ -114,9 +114,9 @@ class P12BrowserTests(Fixtures, StaticLiveServerTestCase):
             route.fulfill(response=response)
 
         self.page.route('**/api/ai/customer-tasks', generate, times=1)
-        self.page.get_by_role('button', name='AI 상담 정리', exact=True).click()
+        self.page.get_by_role('button',name='AI 도움',exact=True).click();self.page.get_by_role('button',name='항목 정리',exact=True).click()
         expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답')
-        self.page.get_by_label('상담기타내용(비고) 제안 선택', exact=True).check()
+        self.page.get_by_label('상담내용 제안 선택', exact=True).check()
         self.page.once('dialog', lambda dialog: dialog.accept())
         self.page.locator('#ai-apply').click()
         expect(self.page.locator('#ai-result-message')).to_contain_text('저장 대기열에 반영')

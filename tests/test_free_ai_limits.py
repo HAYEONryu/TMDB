@@ -51,12 +51,14 @@ class FreeAILimitTests(Fixtures, TransactionTestCase):
         self.prepare(); self.customer = self.customers()[0]; self.assign(self.customer)
         self.customer.notes = '가짜 상담 관심'; self.customer.save()
         self.other_customer = self.customers(offset=10)[0]; self.assign(self.other_customer, self.other)
+        self.other_customer.notes='가상 상담 기록';self.other_customer.save(update_fields=['notes'])
 
     def more_tasks(self, count):
         result = []
         for i in range(count):
             actor = user(f'01000000{i+10:03}', initial=False)
             customer = self.customers(offset=100+i)[0]; self.assign(customer, actor)
+            customer.notes='가상 상담 기록';customer.save(update_fields=['notes'])
             task=reserve(actor, self.body(customer=customer))[0]
             AIRequest.objects.filter(pk=task.pk).update(created_at=self.now+timedelta(microseconds=i))
             result.append(task)

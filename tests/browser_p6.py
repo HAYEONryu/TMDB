@@ -54,33 +54,33 @@ class P6BrowserTests(Fixtures,StaticLiveServerTestCase):
     def completed(self):expect(self.page.locator('#employee-message')).to_have_text('재콜을 완료했습니다.')
 
     def test_complete_saves_row_first_leaves_today_and_preserves_history(self):
-        page=self.page;self.open('today');self.edit('완료 전 가상 상담 저장');self.row().get_by_role('button',name='재콜 완료',exact=True).click();self.completed();expect(page.locator('#page-info')).to_contain_text('검색 2건')
+        page=self.page;self.open('today');self.edit('완료 전 가상 상담 저장');self.row().get_by_role('checkbox',name='재콜 완료',exact=True).click();self.completed();expect(page.locator('#page-info')).to_contain_text('검색 2건')
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[0].pk).notes),'완료 전 가상 상담 저장');self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'COMPLETED');self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),2)
         self.open();self.row().get_by_role('button',name='상담·재콜 이력',exact=True).click();expect(page.locator('#history-content')).to_contain_text('완료');expect(page.locator('#history-content')).to_contain_text(self.employee.name)
         page.locator('#history-kind').select_option('consultations');expect(page.locator('#history-page')).to_contain_text('전체 2건');expect(page.locator('#history-content')).to_contain_text('완료 전 가상 상담 저장');expect(page.locator('#history-content')).to_contain_text('재콜일정');page.screenshot(path=str(self.evidence/'p6-history-desktop.png'),full_page=True)
         page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);box=page.locator('#history-dialog').bounding_box();self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],390);page.screenshot(path=str(self.evidence/'p6-history-mobile.png'),full_page=True)
 
     def test_completion_flushes_only_target_and_other_row_remains_pending(self):
-        self.open();self.edit('다른 행 가상 대기',self.rows[1]);self.edit('대상 행 가상 저장');self.row().get_by_role('button',name='재콜 완료',exact=True).click();self.completed();expect(self.page.locator('#queue-status')).to_contain_text('저장 대기 1행')
+        self.open();self.edit('다른 행 가상 대기',self.rows[1]);self.edit('대상 행 가상 저장');self.row().get_by_role('checkbox',name='재콜 완료',exact=True).click();self.completed();expect(self.page.locator('#queue-status')).to_contain_text('저장 대기 1행')
         self.assertEqual(self.sent[0]['rows'][0]['customer_id'],str(self.rows[0].pk));self.assertEqual(len(self.sent[0]['rows']),1);self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[1].pk).notes),'')
         self.page.locator('#save-now').click();expect(self.page.locator('#queue-status')).to_have_text('모든 변경 저장됨');self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[1].pk).notes),'다른 행 가상 대기')
 
     def test_lost_completion_response_reload_retry_preserves_new_callback(self):
         self.open();page=self.page
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
-        page.route('**/callback-complete',lose,times=1);self.row().get_by_role('button',name='재콜 완료',exact=True).click();expect(page.locator('#callback-pending')).to_be_visible()
+        page.route('**/callback-complete',lose,times=1);self.row().get_by_role('checkbox',name='재콜 완료',exact=True).click();expect(page.locator('#callback-pending')).to_be_visible()
         customer=self.db(lambda:Customer.objects.get(pk=self.rows[0].pk));body=self.mutation(customer);body['changes']={'callback_due_at':(timezone.now()+timedelta(days=1)).isoformat()};self.db(lambda:update_row(self.employee,body))
         new=self.db(lambda:Callback.objects.get(customer=customer,status='PENDING'));page.once('dialog',lambda dialog:dialog.accept());page.reload();expect(page.locator('#callback-pending')).to_be_visible();page.locator('#callback-retry').click();self.completed()
-        self.assertEqual(self.completions[0],self.completions[1]);self.assertEqual(self.db(lambda:Callback.objects.get(pk=new.pk).status),'PENDING');self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),2);expect(self.row().get_by_role('button',name='재콜 완료',exact=True)).to_be_enabled()
+        self.assertEqual(self.completions[0],self.completions[1]);self.assertEqual(self.db(lambda:Callback.objects.get(pk=new.pk).status),'PENDING');self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),2);expect(self.row().get_by_role('checkbox',name='재콜 완료',exact=True)).to_be_enabled()
 
     def test_save_failure_blocks_completion_and_recall_rejects_old_assignment(self):
-        self.open();self.context.set_offline(True);self.edit('오프라인 가상 상담');self.row().get_by_role('button',name='재콜 완료',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('재콜은 완료하지 않았습니다');self.assertEqual(self.completions,[])
+        self.open();self.context.set_offline(True);self.edit('오프라인 가상 상담');self.row().get_by_role('checkbox',name='재콜 완료',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('재콜은 완료하지 않았습니다');self.assertEqual(self.completions,[])
         self.context.set_offline(False);self.page.locator('#save-now').click();expect(self.page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         customer=self.db(lambda:Customer.objects.get(pk=self.rows[0].pk));self.db(lambda:change_assignee(self.admin,customer.pk,self.assignee_body(customer)))
-        self.row().get_by_role('button',name='재콜 완료',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('할당이 변경');self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'PENDING')
+        self.row().get_by_role('checkbox',name='재콜 완료',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('할당이 변경');self.assertEqual(self.db(lambda:Callback.objects.get(pk=self.callback.pk).status),'PENDING')
 
     def test_dashboards_selected_site_manual_refresh_and_mobile(self):
-        page=self.page;expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 할당받은 고유 DB');expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 재콜할 DB')
+        page=self.page;expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 배정 이력');expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 재콜할 DB')
         page.locator('#employee-dashboard-site').select_option(str(self.second.pk));expect(page.locator('#dashboard-statistics dd').first).to_have_text('0')
         page.locator('#employee-dashboard-site').select_option(str(self.site.pk));expect(page.locator('#dashboard-statistics dd').first).to_have_text('2');page.screenshot(path=str(self.evidence/'p6-employee-dashboard.png'),full_page=True)
         self.login(self.admin);expect(page.locator('#dashboard-statistics')).to_contain_text('오늘 할당 고유 DB');expect(page.locator('#dashboard-statistics')).to_contain_text('현재 보유 전체');before=self.db(lambda:__import__('apps.sites.models',fromlist=['GlobalSettings']).GlobalSettings.objects.get(pk=1).version)

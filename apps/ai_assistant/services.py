@@ -112,6 +112,9 @@ def reserve(actor, body):
             return existing, False
         if feature == Feature.WEEKLY_BRIEFING and day.weekday() != 6: failure("AI_SUNDAY_ONLY", "주간 브리핑은 일요일에 접수할 수 있습니다.")
         if customer and customer.version != body["expected_version"]: failure("VERSION_CONFLICT", "상담정보를 다시 확인해 주세요.")
+        if customer:
+            from .prerequisites import require_consultation
+            require_consultation(customer)
         start = datetime.combine(day, time.min, KST) if customer else now-timedelta(days=30)
         scope = str(customer.pk if customer else employee.pk if employee else site.pk if site else "GLOBAL")
         period = day.isoformat()

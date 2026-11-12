@@ -77,6 +77,7 @@ class AIOperatingLimitTests(Fixtures, TransactionTestCase):
         task, _ = reserve(self.employee, self.body())
         second = self.customers(offset=20)[0]
         self.assign(second, self.other)
+        second.notes='가상 상담 기록';second.save(update_fields=['notes'])
         with self.assertRaises(AccessError) as error:
             reserve(self.other, self.body(customer=second))
         self.assertEqual(error.exception.code, "AI_BUDGET_LIMIT")

@@ -42,7 +42,7 @@ class GeminiBrowserKeyTests(P12BrowserTests):
             self.responses.append((response.headers,response.body()))
             self.worker();route.fulfill(response=response)
         self.page.route('**/api/ai/customer-tasks',generate,times=1)
-        self.page.get_by_role('button',name='상담 요약',exact=True).click()
+        self.page.get_by_role('button',name='AI 도움',exact=True).click();self.page.get_by_role('button',name='핵심 요약',exact=True).click()
         expect(self.page.locator('#ai-content')).to_contain_text('상담 핵심')
         expect(self.page.locator('#ai-content')).not_to_contain_text('테스트 전용 가짜 응답')
         self.inspect()

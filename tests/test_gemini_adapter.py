@@ -210,6 +210,7 @@ class GeminiQueueTests(Fixtures, TransactionTestCase):
         month = AIBudgetMonth.objects.create(month=datetime.now(KST).date().replace(day=1), charged_usd=Decimal('5')-amount)
         task = self.task()
         second = self.customers(offset=20)[0]; self.assign(second, self.other)
+        second.notes='가상 상담 기록';second.save(update_fields=['notes'])
         with self.assertRaises(AccessError) as error: reserve(self.other, self.body(customer=second))
         self.assertEqual(error.exception.code, 'AI_BUDGET_LIMIT')
         month.refresh_from_db(); self.assertEqual(month.charged_usd+month.reserved_usd, 5)

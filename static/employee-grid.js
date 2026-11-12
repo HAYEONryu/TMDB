@@ -79,18 +79,28 @@ function column(field){
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
+const actionHelp='이력: 저장된 상담 변경·재콜 기록을 필요할 때 조회합니다.\n삭제 요청: 고객 삭제를 관리자에게 요청합니다. 승인 전에는 고객이 삭제되지 않습니다.\nAI 도움: 항목 정리·핵심 요약·다음 질문과 기존 AI 결과를 선택합니다. 준비가 부족하면 안내만 표시하고 생성하지 않습니다.\n재콜 완료는 재콜일정 셀의 완료 체크를 사용하세요. 날짜 삭제는 완료가 아니라 일정 취소입니다.';
+const actionBlocked=row=>queue.paused||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||ai?.busy||!!callbacks?.pending.value||!!deletions?.pending.value;
+function callbackCell(cell){
+  const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span');
+  wrap.className='callback-cell';wrap.append(text('span',display('callback_due_at',cell.getValue())));
+  if(row.callback_id){
+    const label=document.createElement('label'),check=document.createElement('input');check.type='checkbox';check.setAttribute('aria-label','재콜 완료');check.disabled=!!actionBlocked(row);label.className='callback-complete';label.title='실제로 재콜을 마쳤을 때 체크하세요. 이 행의 변경을 먼저 저장하고 재콜을 완료합니다.';
+    label.append(check,document.createTextNode(' 완료'));label.onclick=event=>event.stopPropagation();check.onkeydown=event=>event.stopPropagation();
+    check.onchange=async()=>{if(!check.checked)return;check.disabled=true;commitEditor();await callbacks.run(row.id);renderStatus();};wrap.append(label);
+  }
+  return wrap;
+}
 function actions(cell){
-  const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력'),complete=text('button','재콜 완료');
-  history.className=complete.className='btn btn-sm btn-outline-secondary me-2';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};
-  complete.disabled=!row.callback_id||queue.paused||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||ai?.busy||!!callbacks?.pending.value;complete.onclick=()=>{commitEditor();callbacks.run(row.id);};
+  const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','이력');
+  history.className='btn btn-sm btn-outline-secondary me-2';history.setAttribute('aria-label','상담·재콜 이력');history.title='저장된 상담 변경과 재콜 이력을 조회합니다.';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};
   const requested=!!row.pending_deletion_request_id||deletions?.isConfirmed(row),button=text('button',deletions?.busyId===row.id?'요청 중':requested?'요청완료':'삭제 요청');button.className='btn btn-sm btn-outline-danger';
-  button.disabled=!!requested||queue.paused||!queue.canEdit(row)||deletions?.busy||!!deletions?.pending.value||callbacks?.busy||ai?.busy||!!callbacks?.pending.value;button.onclick=()=>{commitEditor();deletions.run(row.id);};wrap.append(history,complete,button);
-  for(const [feature,label] of [['CLEANUP','AI 상담 정리'],['SUMMARY','상담 요약'],['NEXT_QUESTIONS','다음 질문 제안']]){const control=text('button',label);control.className='btn btn-sm btn-outline-primary ms-2';control.disabled=!ai?.canGenerate()||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||!!callbacks?.pending.value||!!deletions?.pending.value;control.onclick=()=>{commitEditor();ai.run(row.id,feature);};wrap.append(control);}
-  const previous=text('button','AI 결과');previous.className='btn btn-sm btn-outline-secondary ms-2';previous.disabled=queue.paused||ai?.busy;previous.onclick=()=>{commitEditor();ai.history(row.id);};wrap.append(previous);return wrap;
+  button.disabled=!!requested||actionBlocked(row);button.title='관리자에게 삭제 승인을 요청합니다.';button.onclick=()=>{commitEditor();deletions.run(row.id);};wrap.append(history,button);
+  const control=text('button','AI 도움');control.className='btn btn-sm btn-outline-primary ms-2';control.title='기능 설명·사용 준비·기존 AI 결과를 확인합니다.';control.disabled=queue.paused||ai?.busy||callbacks?.busy||deletions?.busy;control.onclick=()=>{commitEditor();ai.open(row.id);};wrap.append(control);return wrap;
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
   rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
-  columns:[...customerFields().map(column),{title:'작업',field:'_actions',headerSort:false,minWidth:950,formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
+  columns:[...customerFields().map(field=>({...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})})),{title:'작업',field:'_actions',headerSort:false,minWidth:300,headerTooltip:actionHelp,titleFormatter:()=>{const label=text('span','작업');label.title=actionHelp;label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=readOnly?'조회 전용':queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
@@ -109,6 +119,7 @@ function renderStatus(){
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
     const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
     const action=row.getCell('_actions');if(action)action.setValue(JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]));
+    const callback=row.getCell('callback_due_at');if(callback&&!callback.getElement().classList.contains('tabulator-editing'))callback.getElement().replaceChildren(callbackCell(callback));
     row.getElement().classList.toggle('pending-row',!!entry);row.getElement().classList.toggle('failed-row',!!entry&&['failed','conflict','blocked','review','retry'].includes(entry.state));
   }
 }

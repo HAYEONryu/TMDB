@@ -43,6 +43,7 @@ TEST_AI = AIConfig(enabled=True, configured=True, provider="test-only", model="f
 class P9Tests(Fixtures, TransactionTestCase):
     def setUp(self):
         self.prepare(); self.customer = self.customers()[0]; self.assignment = self.assign(self.customer)
+        self.customer.notes='가상 상담 기록';self.customer.save(update_fields=['notes'])
 
     def body9(self, feature="SUMMARY", **values):
         self.customer.refresh_from_db()
@@ -131,6 +132,7 @@ class P9Tests(Fixtures, TransactionTestCase):
         with self.assertRaises(AccessError) as error:self.task(feature="CLEANUP")
         self.assertEqual(error.exception.code,"AI_BUSY")
         second=self.customers(offset=2)[0]; self.assign(second,self.other)
+        second.notes='가상 상담 기록';second.save(update_fields=['notes'])
         reserve(self.other,{**self.body9(),"customer_id":str(second.pk),"assignment_id":str(second.current_assignment_id)})
         self.guide(); one,two=claim(),claim(); self.assertIsNotNone(one); self.assertIsNotNone(two); self.assertIsNone(claim())
         finish(one.pk,one.lease_token,outcome="unknown"); self.assertIsNone(claim())
@@ -212,6 +214,7 @@ class P9Tests(Fixtures, TransactionTestCase):
         for source,target in [(first,second),(second,third),(third,first)]: AIResultSource.objects.create(result=target.result,previous_result=source.result)
         AIResult.objects.filter(pk=second.result.pk).update(guide_status='PUBLISHED',published_at=timezone.now())
         other=self.customers(site=self.second)[0]; self.assign(other,self.other)
+        other.notes='가상 상담 기록';other.save(update_fields=['notes'])
         untouched=reserve(self.other,{**self.body9(),'customer_id':str(other.pk),'assignment_id':str(other.current_assignment_id)})[0]; run_once()
         before=AIBudgetMonth.objects.get().charged_usd; count=AIQuotaBucket.objects.get(user=self.employee).successful_count
         self.hard()
@@ -315,6 +318,7 @@ class P9Tests(Fixtures, TransactionTestCase):
         # A failed report slot is available for an explicit new request.
         self.assertIsNone(AIReportSlot.objects.get().current_request_id)
         other=self.customers(offset=9)[0]; self.assign(other,self.other)
+        other.notes='가상 상담 기록';other.save(update_fields=['notes'])
         staff_bodies=[self.body9(),{**self.body9(),'customer_id':str(other.pk),'assignment_id':str(other.current_assignment_id)}]
         config=AIConfig(**{**{f:getattr(TEST_AI,f) for f in TEST_AI.__dataclass_fields__},'monthly_budget_usd':Decimal('0.000900')})
         with override_settings(AI_CONFIG=config):
@@ -324,6 +328,7 @@ class P9Tests(Fixtures, TransactionTestCase):
 
     def test_simultaneous_claims_only_two_different_tasks(self):
         self.task(); other=self.customers(offset=8)[0]; self.assign(other,self.other)
+        other.notes='가상 상담 기록';other.save(update_fields=['notes'])
         reserve(self.other,{**self.body9(),'customer_id':str(other.pk),'assignment_id':str(other.current_assignment_id)})
         self.guide()
         def job():

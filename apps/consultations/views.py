@@ -30,10 +30,15 @@ def history(request,customer_id):
             'created_at':row.created_at.isoformat(),'created_by':row.created_by.name,'updated_at':row.updated_at.isoformat(),'updated_by':row.updated_by.name,
             'completed_at':row.completed_at.isoformat() if row.completed_at else None,'completed_by':row.completed_by.name if row.completed_by_id else None,'cancelled_at':row.cancelled_at.isoformat() if row.cancelled_at else None}
     else:
-        query=customer.consultation_revisions.select_related('actor').order_by('-saved_at','-pk')
+        query=customer.consultation_revisions.select_related('actor').defer('notes').order_by('-saved_at','-pk')
         if request.user.role != User.Role.ADMIN:
             query=query.exclude(changed_fields=['admin_notes'])
-        serialize=lambda row:{'id':str(row.pk),'saved_at':row.saved_at.isoformat(),'actor':row.actor.name if row.actor_id else None,'source':row.source,
-            'customer_version':row.customer_version,'assignment_id':str(row.assignment_id) if row.assignment_id else None,'changed_fields':row.changed_fields,'before_values':row.before_values,'after_values':row.after_values,'notes':row.notes}
+        def serialize(row):
+            # The comparison shows changed fields only. Keep the full immutable
+            # revision in the DB for audit/AI, without sending repeated notes.
+            fields=row.changed_fields or list(row.after_values)
+            return {'id':str(row.pk),'saved_at':row.saved_at.isoformat(),'actor':row.actor.name if row.actor_id else None,'source':row.source,
+                'customer_version':row.customer_version,'assignment_id':str(row.assignment_id) if row.assignment_id else None,'changed_fields':row.changed_fields,
+                'before_values':{k:v for k,v in row.before_values.items() if k in fields},'after_values':{k:v for k,v in row.after_values.items() if k in fields}}
     total=query.count()
     return JsonResponse({'kind':kind,'page':page,'page_size':50,'total':total,'has_next':page*50<total,'data':[visible_values(serialize(row), admin=request.user.role==User.Role.ADMIN) for row in query[(page-1)*50:page*50]]})

@@ -1,6 +1,7 @@
 import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
-const $=id=>document.getElementById(id),features={CLEANUP:'AI 상담 정리',SUMMARY:'상담 요약',NEXT_QUESTIONS:'다음 질문 제안'},active=new Set(['RESERVED','RUNNING','UNKNOWN']);
+const $=id=>document.getElementById(id),features={CLEANUP:'항목 정리',SUMMARY:'핵심 요약',NEXT_QUESTIONS:'다음 질문'},active=new Set(['RESERVED','RUNNING','UNKNOWN']);
+const descriptions={CLEANUP:'상담내용을 정돈하고 통화결과·재콜·방문 등의 항목을 제안합니다. 비교 후 선택한 항목만 저장할 수 있습니다.',SUMMARY:'상담 핵심·관심과 우려·약속·확인 사항을 읽기 전용으로 보여줍니다. 고객정보를 바꾸지 않습니다.',NEXT_QUESTIONS:'저장된 상담을 바탕으로 다음 통화에서 물어볼 질문을 제안합니다. 고객정보를 바꾸지 않습니다.'};
 const el=(tag,value)=>{const node=document.createElement(tag);if(value!==undefined)node.textContent=value;return node;};
 export class EmployeeAI {
   constructor({userId,request,queue,flush,notice,changed,labels,display,validate}){
@@ -15,10 +16,21 @@ export class EmployeeAI {
   track(data){this.value={task_id:data.task_id||data.id,customer_id:data.customer_id,assignment_id:data.assignment_id,feature:data.feature,status:data.status,result_id:data.result_id||null};try{sessionStorage.setItem(this.storageKey,JSON.stringify(this.value));}catch{}}
   async refreshAvailability(){
     if(this.queue.paused)return;if(this.availabilityLoading)return this.availabilityLoading;
-    this.availabilityLoading=(async()=>{try{const data=await this.request('/api/ai/availability');if(!this.queue.paused)this.availability=data;}catch(error){this.notice(error.message);}this.update();})();
+    this.availabilityLoading=(async()=>{try{const data=await this.request('/api/ai/availability');if(!this.queue.paused)this.availability=data;}catch(error){this.availability=null;this.notice(error.message);}this.update();})();
     try{await this.availabilityLoading;}finally{this.availabilityLoading=null;}
   }
   canGenerate(){return !!this.availability?.generation_available&&!this.busy&&!this.pending.value&&!this.queue.paused&&!active.has(this.value?.status);}
+  async open(id){
+    if(this.busy||this.queue.paused)return;this.show('choose');this.choosing=id;this.drawChoices();
+    await this.refreshAvailability();if(this.mode==='choose'&&this.choosing===id&&$('ai-dialog').open)this.drawChoices();
+  }
+  drawChoices(){
+    const body=$('ai-content');body.replaceChildren();$('ai-result-message').textContent=this.availability?.generation_available?'생성할 기능을 선택하세요. 상담내용 저장과 준비 조건을 확인한 후에만 요청합니다.':this.availability?.message||'AI 사용 준비를 확인하고 있습니다.';
+    for(const [feature,label] of Object.entries(features)){
+      const section=el('section'),button=el('button',label);section.className='ai-feature-choice';button.className='btn btn-outline-primary';button.onclick=()=>this.run(this.choosing,feature);section.append(button,el('p',descriptions[feature]));body.append(section);
+    }
+    const history=el('button','기존 AI 결과 보기');history.className='btn btn-outline-secondary';history.onclick=()=>this.history(this.choosing);body.append(history,el('p','기존 결과 조회는 새 생성이나 사용 횟수를 소모하지 않습니다. 새 생성은 직원 AI 3종 합산 하루 40회와 공용 무료 한도를 적용합니다.'));
+  }
   update(){
     const data=this.availability,server=data?.server_limit;$('ai-usage').textContent=data?`AI 하루 합산 · 성공 ${data.successful_count??0}회 · 예약 ${data.reserved_count??0}회 · 남은 ${data.remaining_count??0}회 / ${data.daily_limit??40}회${server?` · 서버 공용 남은 ${server.remaining_count}회 / ${server.daily_limit}회 (대기·진행 포함)` :''}`: 'AI 사용 가능 여부 확인 중';
     $('ai-availability').textContent=data?data.message:'';$('ai-task-open').hidden=!this.value;$('ai-pending').hidden=!this.pending.value||this.queue.paused;
@@ -30,17 +42,21 @@ export class EmployeeAI {
   clear(){this.pending.clear();this.update();}
   show(mode){this.sequence++;this.mode=mode;this.result=null;$('ai-content').replaceChildren();$('ai-history').replaceChildren();$('ai-apply').hidden=true;$('ai-result-message').textContent='';if(!$('ai-dialog').open)$('ai-dialog').showModal();this.stop();}
   async run(id,feature){
-    if(this.busy||this.queue.paused)return false;this.busy=true;this.update();
+    if(this.busy||this.queue.paused)return false;
+    if(id){await this.refreshAvailability();if(this.busy||this.queue.paused)return false;if(!this.canGenerate()){const message=this.pending.value?'이전 AI 요청의 접수 결과를 먼저 확인해 주세요. AI 요청 결과 다시 확인을 이용하세요.':active.has(this.value?.status)?'진행 중인 AI 작업의 결과를 AI 작업 확인에서 먼저 확인해 주세요.':this.availability?.message||'AI 사용 준비를 확인할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.';this.notice(message);$('ai-result-message').textContent=message;alert(message);return false;}}
+    this.busy=true;this.update();
     try{
       let value;
       if(id){
         if(this.pending.value)throw new Error('먼저 이전 AI 요청의 접수 결과를 확인해 주세요.');
         if(!await this.flush(id))throw new Error('해당 행을 저장하지 못했습니다. AI 요청은 접수하지 않았습니다.');
         const row=this.queue.rows.get(id);if(!row)throw new Error('현재 고객정보를 다시 확인해 주세요.');
+        const preparation=await this.request('/api/ai/customer-readiness?'+new URLSearchParams({feature,customer_id:id,assignment_id:row.assignment_id,expected_version:row.version}));
+        if(!preparation.ready){this.notice(preparation.message);$('ai-result-message').textContent=preparation.message;alert(preparation.message);return false;}
         value={endpoint:'/api/ai/customer-tasks',body:{feature,customer_id:id,assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:newRequestId()}};
       }
       const data=await this.pending.execute(value);if(this.queue.paused)return false;this.track(data);this.show('task');this.busy=false;this.update();await this.poll();return true;
-    }catch(error){this.notice(error.message);return false;}
+    }catch(error){this.notice(error.message);if(id){$('ai-result-message').textContent=error.message;alert(error.message);}return false;}
     finally{this.busy=false;this.update();await this.refreshAvailability();}
   }
   viewTask(){if(!this.value||this.queue.paused)return;this.show('task');this.poll();}

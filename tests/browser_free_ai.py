@@ -43,7 +43,7 @@ class FreeAIBrowserTests(previous.GeminiBrowserKeyTests):
             self.responses.append((response.headers,response.body()))
             self.worker();route.fulfill(response=response)
         self.page.route('**/api/ai/customer-tasks',generate,times=1)
-        self.page.get_by_role('button',name='상담 요약',exact=True).click()
+        self.page.get_by_role('button',name='AI 도움',exact=True).click();self.page.get_by_role('button',name='핵심 요약',exact=True).click()
         expect(self.page.locator('#ai-content')).to_contain_text('상담 핵심')
         self.inspect()
         self.database(self.fill_global)
@@ -51,7 +51,7 @@ class FreeAIBrowserTests(previous.GeminiBrowserKeyTests):
         expect(self.page.locator('#ai-usage')).to_contain_text('남은 39회 / 40회')
         expect(self.page.locator('#ai-usage')).to_contain_text('서버 공용 남은 0회 / 500회')
         expect(self.page.locator('#ai-availability')).to_contain_text('개인 잔여 횟수가 있어도')
-        expect(self.page.get_by_role('button',name='상담 요약',exact=True)).to_be_disabled()
+        self.page.get_by_role('button',name='AI 도움',exact=True).click();self.page.get_by_role('button',name='핵심 요약',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('공용 AI 사용 한도 소진')
         self.inspect()
 
     def test_admin_generation_review_and_publication_never_receive_server_key(self):
@@ -94,7 +94,7 @@ class FreeAIBrowserTests(previous.GeminiBrowserKeyTests):
             self.assertEqual(self.database(run_once)['processed'],0)
             route.fulfill(response=response)
         self.page.route('**/api/ai/customer-tasks',generate,times=1)
-        self.page.get_by_role('button',name='상담 요약',exact=True).click()
+        self.page.get_by_role('button',name='AI 도움',exact=True).click();self.page.get_by_role('button',name='핵심 요약',exact=True).click()
         expect(self.page.locator('#ai-result-message')).to_contain_text('분당 요청·입력 토큰 한도에 맞춰 대기 중')
         self.page.reload()
         expect(self.page.locator('#ai-usage')).to_contain_text('예약 1회')

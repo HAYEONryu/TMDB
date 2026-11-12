@@ -26,6 +26,7 @@ urlpatterns = [
     path("api/ai/guides/<uuid:result_id>/publish",admin_ai.guide_write,{"publish":True}),
     path("api/sites/<uuid:site_id>/published-guide",admin_ai.published),
     path('api/ai/customer-tasks',ai_views.customer_task),
+    path('api/ai/customer-readiness',ai_views.customer_readiness),
     path('api/ai/customer-results',ai_views.customer_results),
     path('api/ai/tasks/<uuid:task_id>', ai_views.task_detail),
     path('api/ai/results/<uuid:result_id>', ai_views.result_detail),
