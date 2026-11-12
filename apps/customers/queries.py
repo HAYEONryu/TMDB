@@ -104,6 +104,13 @@ def apply_conditions(query, params, *, omit=None, admin=False):
             error()
         if field == omit:
             continue
+        if isinstance(condition,dict) and set(condition)=={'blank'}:
+            if type(condition['blank']) is not bool:error()
+            empty=Q(**{field+'__isnull':True})
+            if field not in DATE_FIELDS and field!='call_result':empty|=Q(**{field:''})
+            if field=='contract_status':empty|=Q(contract_status='UNKNOWN')
+            query=query.filter(empty) if condition['blank'] else query.exclude(empty)
+            continue
         if field in CHOICE_FIELDS and not (field=='route' and isinstance(condition,dict) and set(condition)=={'contains'}):
             exclude = False
             if isinstance(condition, dict) and set(condition) <= {"values", "exclude"}:
@@ -217,6 +224,7 @@ def filter_options(actor, params):
     search = params.get("option_q", "")
     if len(search) > 200:
         error()
+    if field=='phone_normalized':search=re.sub(r'[\s-]','',search)
     if search:
         query = query.filter(**{field + "__icontains": search})
     values = query.order_by(field).values_list(field, flat=True).distinct()

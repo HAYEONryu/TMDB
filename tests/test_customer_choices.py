@@ -35,7 +35,7 @@ class CustomerChoiceTests(Fixtures, TestCase):
             'housing_status':['무주택','1주택','다주택','생애최초'],
             'call_result':['가망고객','삭제 요망','거절','다음현장 연락 요청','부재']}
         for field, labels in expected.items():
-            self.assertEqual(list(customer_schema()[field].values()),labels)
+            self.assertEqual(list(customer_schema()[field].values()),['-',*labels])
             for actor in [self.admin,self.employee]:
                 for value in CURRENT_CHOICES[field]:self.assertTrue(self.save(field,value,actor)['ok'])
         self.assertFalse(CustomerDeletionRequest.objects.exists())

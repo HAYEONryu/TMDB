@@ -4,7 +4,7 @@ import {customerLabels as labels,choiceLabel} from './customer-columns.js';
 const sources={MANUAL:'업무 저장',IMPORT:'엑셀 등록',BASELINE:'도입 기준 기록',AI_APPLIED:'AI 추천 적용',SYSTEM_DELETE_NOTE:'삭제 승인 문구'};
 export function installHistory(request){
   const schema=JSON.parse(document.querySelector('#customer-schema').textContent);
-  const value=(field,item)=>item==null||item===''?'(빈 값)':['visit_at','callback_due_at'].includes(field)?date(item):choiceLabel(schema,field,item);
+  const value=(field,item)=>item==null||item===''?'-':['visit_at','callback_due_at'].includes(field)?date(item):choiceLabel(schema,field,item);
   const dialog=document.querySelector('#history-dialog'),body=document.querySelector('#history-content');let row,kind='callbacks',page=1,generation=0;
   const load=async()=>{
     const token=++generation;

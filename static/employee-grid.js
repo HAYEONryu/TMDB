@@ -8,15 +8,15 @@ import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
-import {choiceFilter} from './choice-filter.js';
+import {openGridFilter,filterDescription,markFilterHeaders} from './grid-filter.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
-const multiline=new Set(['notes','memo']),textFields=new Set(['notes','memo','route','residence']);
+const multiline=new Set(['notes','memo']);
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
-const fullDate=value=>{if(!value)return '';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
+const fullDate=value=>{if(!value)return '-';const local=localDate(value),weekday=new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',weekday:'short'}).format(new Date(value));return `${local.slice(0,10)} (${weekday}) ${local.slice(11)}`;};
 const display=(field,value)=>dates.has(field)?fullDate(value):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
 let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},defaultSite='',loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
 async function request(url,body){
@@ -74,8 +74,8 @@ function editor(cell,onRendered,success,cancel){
 }
 function column(field){
   return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
-    formatter:cell=>{const value=cell.getValue();if(field==='assigned_at'){const span=text('span',value?localDate(value).slice(5,10).replace('-','/'):'');if(value)span.title=display(field,value)+' (한국 시각)';return span;}return text('span',display(field,value));},
-    titleFormatter:()=>{const wrap=text('span',labels[field]),button=text('button','▾');button.type='button';button.className='column-filter';button.setAttribute('aria-label',labels[field]+' 필터');button.onclick=e=>{e.stopPropagation();guarded(()=>openFilter(field)).catch(error);};wrap.append(button);return wrap;},
+    formatter:cell=>{const value=cell.getValue();if(field==='assigned_at'){const span=text('span',value?localDate(value).slice(5,10).replace('-','/'):'-');if(value)span.title=display(field,value)+' (한국 시각)';return span;}return text('span',display(field,value));},
+    titleFormatter:()=>{const wrap=text('span',labels[field]),button=text('button','▾');button.type='button';button.className='column-filter';button.setAttribute('aria-label',labels[field]+' 필터');button.dataset.filterField=field;button.setAttribute('aria-haspopup','dialog');button.setAttribute('aria-controls','filter-dialog');button.setAttribute('aria-pressed','false');button.onclick=e=>{e.stopPropagation();guarded(()=>openFilter(field)).catch(error);};wrap.append(button);return wrap;},
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
@@ -134,8 +134,8 @@ async function load(){
     await table.setData(data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )})));
     $('#page-info').textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
-    $('#active-filters').replaceChildren(...Object.keys(state.filters).map(field=>{const button=text('button',labels[field]+' 조건 해제 ×');button.className='btn btn-sm btn-outline-primary';button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error);return button;}));
-    loadedState=structuredClone(state);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
+    $('#active-filters').replaceChildren(...Object.keys(state.filters).map(field=>{const button=text('button',labels[field]+': '+filterDescription(field,state.filters[field],display)+' ×');button.className='btn btn-sm btn-outline-primary';button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error);return button;}));
+    loadedState=structuredClone(state);markFilterHeaders(state.filters);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
   }catch(e){if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);}throw e;}
   finally{loading=false;}
 }
@@ -192,28 +192,16 @@ window.addEventListener('offline',()=>{for(const entry of queue.all())if(['dirty
 async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){accessRevoked=true;readOnly=false;queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}if(environmentProblem){if(!accessRevoked){readOnly=true;renderStatus();}return;}await queue.resume();}catch(e){error(e);}}
 window.addEventListener('online',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});window.addEventListener('focus',resume);
 window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial){accessRevoked=true;readOnly=false;queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');}});
-async function openFilter(field){
-  const dialog=$('#filter-dialog'),area=$('#filter-content');$('#filter-title').textContent=labels[field]+' 필터';$('#filter-error').textContent='';area.replaceChildren();let condition;
-  if(schema[field]){
-    condition=await choiceFilter({area,field,schema,current:state.filters[field],request,params,display});
-  }else if(dates.has(field)){
-    for(const [key,title] of [['from','시작일'],['to','종료일']]){const label=text('label',title),input=document.createElement('input');input.type='date';input.id='filter-'+key;input.value=state.filters[field]?.[key]||'';label.append(input);area.append(label);}
-    condition=()=>{const values={};for(const key of ['from','to'])if($('#filter-'+key).value)values[key]=$('#filter-'+key).value;return Object.keys(values).length?values:undefined;};
-  }else if(textFields.has(field)){
-    const label=text('label','포함할 내용'),input=document.createElement('input');input.id='filter-contains';input.maxLength=10000;input.value=state.filters[field]?.contains||'';label.append(input);area.append(label);condition=()=>input.value?{contains:input.value}:undefined;
-  }else{
-    const current=state.filters[field];let exclude=current?.exclude??!current,selected=new Set(current?.values??current??[]),page=1,search='',generation=0;
-    const label=text('label','후보값 검색'),input=document.createElement('input'),searchButton=text('button','후보 검색'),all=text('button','전체 선택'),none=text('button','전체 해제'),list=document.createElement('div'),nav=document.createElement('div'),info=text('span',''),previous=text('button','이전 후보'),next=text('button','다음 후보');
-    input.type='search';input.maxLength=200;label.append(input);list.id='filter-options';nav.className='d-flex gap-2 align-items-center';nav.append(previous,info,next);area.append(label,searchButton,all,none,list,nav);
-    for(const button of [searchButton,all,none,previous,next])button.className='btn btn-sm btn-outline-secondary m-1';
-    const draw=async()=>{const token=++generation,query=params();query.set('field',field);query.set('option_q',search);query.set('option_page',page);
-      try{const data=await request('/api/customers/filter-options?'+query);if(token!==generation)return;list.replaceChildren(...data.values.map(value=>{const key=value??'',label=document.createElement('label'),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=exclude?!selected.has(key):selected.has(key);checkbox.onchange=()=>{if(checkbox.checked!==exclude)selected.add(key);else selected.delete(key);};label.append(checkbox,document.createTextNode(' '+display(field,value)));return label;}));info.textContent=`후보 ${data.total}개 · ${page}페이지`;previous.disabled=page<=1;next.disabled=!data.has_next;}catch(e){$('#filter-error').textContent=e.message;}};
-    all.onclick=()=>{exclude=true;selected.clear();list.querySelectorAll('input').forEach(c=>{c.checked=true;});};none.onclick=()=>{exclude=false;selected.clear();list.querySelectorAll('input').forEach(c=>{c.checked=false;});};searchButton.onclick=()=>{search=input.value;page=1;draw();};previous.onclick=()=>{page--;draw();};next.onclick=()=>{page++;draw();};
-    condition=()=>exclude&&!selected.size?undefined:{values:[...selected],exclude};await draw();
-  }
-  const apply=async value=>{if(value?.values?.length>1000){$('#filter-error').textContent='한 열은 최대 1,000개 값을 선택·제외할 수 있습니다.';return;}const previous=state.filters[field];if(value===undefined)delete state.filters[field];else state.filters[field]=value;state.page=1;try{await load();dialog.close();}catch(e){if(previous===undefined)delete state.filters[field];else state.filters[field]=previous;$('#filter-error').textContent=e.message;}};
-  $('#filter-reset').onclick=()=>apply(undefined);$('#filter-apply').onclick=()=>apply(condition());dialog.showModal();
+function openFilter(field){
+  void openGridFilter({field,label:labels[field],schema,current:state.filters[field],request:request,params,display,
+    apply:async condition=>{
+      const previous=structuredClone(state);
+      if(condition===undefined)delete state.filters[field];else state.filters[field]=condition;
+      state.page=1;
+      try{await load();}catch(problem){state=previous;throw problem;}
+    }}).catch(error);
 }
+
 await ready;
 callbacks=new CallbackAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:async row=>{if(row)queue.setRows([row]);await load();},notice,changed:renderStatus});callbacks.update();
 deletions=new DeletionAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:load,notice,changed:renderStatus});deletions.update();

@@ -193,7 +193,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         for field,choices in CURRENT_CHOICES.items():
             cell=page.locator(f'#customer-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click()
-            self.assertEqual(page.locator('.tabulator-edit-list-item').all_text_contents(),list(choices.values()))
+            self.assertEqual(page.locator('.tabulator-edit-list-item').all_text_contents(),['-',*choices.values()])
             page.get_by_text(list(choices.values())[0],exact=True).click();page.locator('h1').click()
         page.locator('#save').click();expect(page.locator('#message')).to_have_text('저장했습니다.')
         self.login(self.employee);page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
@@ -201,7 +201,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         for field,choices in CURRENT_CHOICES.items():
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click();select=cell.locator('select')
-            self.assertEqual(select.locator('option:not([disabled])').all_text_contents(),list(choices.values()))
+            self.assertEqual(select.locator('option:not([disabled])').all_text_contents(),['-',*choices.values()])
             select.select_option(list(choices)[1]);page.locator('h1').click()
         page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         updated=self.db(lambda:Customer.objects.get(pk=customer.pk))
@@ -226,7 +226,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
                 page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
                 select=page.get_by_label('필터 값',exact=True)
                 expect(select).to_be_visible()
-                self.assertEqual(select.locator(':scope > option').all_text_contents(),['전체','(빈 값)',*choices.values()])
+                self.assertEqual(select.locator(':scope > option').all_text_contents(),['전체','-',*choices.values()])
                 select.select_option(json.dumps(next(iter(choices)),ensure_ascii=False))
                 page.locator('#filter-apply').click()
                 expect(page.locator('#page-info')).to_contain_text('검색 1건')

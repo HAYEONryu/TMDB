@@ -9,7 +9,8 @@ FIELD_LABELS = {'call_result':'통화결과','contract_status':'계약여부','r
 
 def customer_schema():
     from .models import Customer
-    return {**CURRENT_CHOICES, '_legacy': {
+    return {**{field:{'UNKNOWN' if field=='contract_status' else '':'-',**choices}
+               for field,choices in CURRENT_CHOICES.items()}, '_legacy': {
         'call_result':dict(Customer.CallResult.choices), 'contract_status':dict(Customer.ContractStatus.choices)}}
 
 

@@ -5,13 +5,12 @@ import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
-import {choiceFilter} from './choice-filter.js';
+import {openGridFilter,filterDescription,markFilterHeaders} from './grid-filter.js';
 
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
 const schema = JSON.parse($("#customer-schema").textContent);
 const editableFields = ["customer_name", "phone_normalized", "call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"];
-const textFields = new Set(['notes','memo','admin_notes','route','residence']);
 const multiline = new Set(['notes','memo','admin_notes']);
 const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
 const pending = new Map();
@@ -63,10 +62,10 @@ function dateEditor(cell, onRendered, success, cancel) {
 function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
-    headerSort:false, formatter:cell => text("span", field === "assignee_name" && !cell.getValue() ? "" : dates.has(field) ? localDate(cell.getValue()).replace("T"," ") : display(field, cell.getValue())),
-    titleFormatter:() => { const wrap = text("span", labels[field]); const button = text("button", "▾"); button.className="column-filter"; button.type="button"; button.setAttribute("aria-label", labels[field]+" 필터"); button.addEventListener("click", event => {event.stopPropagation(); guarded(() => openFilter(field)).catch(showError);}); wrap.append(button); return wrap; }};
-  if(field==="assigned_at")definition.formatter=cell=>{const value=localDate(cell.getValue()),span=text("span",value?value.slice(5,10).replace("-","/"):"");if(value)span.title=`${value.slice(0,10)} (${new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",weekday:"short"}).format(new Date(cell.getValue()))}) ${value.slice(11).replace(":","시")}분`;return span;};
-  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"미할당");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
+    headerSort:false, formatter:cell => text("span", dates.has(field) ? localDate(cell.getValue()).replace("T"," ")||"-" : display(field, cell.getValue())),
+    titleFormatter:() => { const wrap = text("span", labels[field]); const button = text("button", "▾"); button.className="column-filter"; button.type="button"; button.setAttribute("aria-label", labels[field]+" 필터");button.dataset.filterField=field;button.setAttribute("aria-haspopup","dialog");button.setAttribute("aria-controls","filter-dialog");button.setAttribute("aria-pressed","false"); button.addEventListener("click", event => {event.stopPropagation(); guarded(() => openFilter(field)).catch(showError);}); wrap.append(button); return wrap; }};
+  if(field==="assigned_at")definition.formatter=cell=>{const value=localDate(cell.getValue()),span=text("span",value?value.slice(5,10).replace("-","/"):"-");if(value)span.title=`${value.slice(0,10)} (${new Intl.DateTimeFormat("ko-KR",{timeZone:"Asia/Seoul",weekday:"short"}).format(new Date(cell.getValue()))}) ${value.slice(11).replace(":","시")}분`;return span;};
+  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
     ...(schema[field] ? {editorParams:{values:schema[field],clearable:false,autocomplete:false}} : {}),
@@ -111,9 +110,9 @@ async function load() {
     await table.setData(data.data.map(row=>({...row,...pending.get(row.id)?.changes})));
     $("#page-info").textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $("#counts").textContent=data.counts?`전체 DB ${data.counts.total} · 미할당 ${data.counts.unassigned} · 휴지통 ${data.counts.trash}`:"";
-    $("#active-filters").replaceChildren(...Object.keys(state.filters).map(field=>{const button=text("button",labels[field]+" 조건 해제 ×");button.className="btn btn-sm btn-outline-primary";button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(showError);return button;}));
+    $("#active-filters").replaceChildren(...Object.keys(state.filters).map(field=>{const button=text("button",labels[field]+": "+filterDescription(field,state.filters[field],display)+" ×");button.className="btn btn-sm btn-outline-primary";button.onclick=()=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(showError);return button;}));
     if(state.assignee){const button=text("button","담당직원 조건 해제 ×");button.className="btn btn-sm btn-outline-primary";button.onclick=()=>guarded(async()=>{state.assignee="";await load();}).catch(showError);$("#active-filters").append(button);}
-    loadedState=structuredClone(state);
+    loadedState=structuredClone(state);markFilterHeaders(state.filters);
     if (!siteInfo.items.length) notice("등록된 현장이 없습니다. 현장을 생성해 주세요.");
   } catch(error) {
     if(loadedState){state=structuredClone(loadedState);$("#site").value=state.site;$("#sort").value=state.sort;$("#page-size").value=String(state.size);}
@@ -223,41 +222,14 @@ $("#bulk-confirm").onclick=async()=>{
   finally{button.disabled=false;busy=false;status();}
 };
 
-async function openFilter(field) {
-  const dialog=$("#filter-dialog"), area=$("#filter-content");$("#filter-title").textContent=labels[field]+" 필터";$("#filter-error").textContent="";area.replaceChildren();
-  let getCondition;
-  if(schema[field]){
-    getCondition=await choiceFilter({area,field,schema,current:state.filters[field],request:api,params,display});
-  }else if(dates.has(field)){
-    for(const [key,title] of [["from","시작일"],["to","종료일"]]){const label=text("label",title);const input=document.createElement("input");input.type="date";input.id="filter-"+key;input.value=state.filters[field]?.[key]||"";label.append(input);area.append(label);}
-    getCondition=()=>{const result={};for(const key of ["from","to"])if($("#filter-"+key).value)result[key]=$("#filter-"+key).value;return Object.keys(result).length?result:undefined;};
-  }else if(textFields.has(field)){
-    const label=text("label","포함할 내용");const input=document.createElement("input");input.id="filter-contains";input.maxLength=10000;input.value=state.filters[field]?.contains||"";label.append(input);area.append(label);getCondition=()=>input.value?{contains:input.value}:undefined;
-  }else{
-    const current=state.filters[field];let exclude=current?.exclude??!current, selected=new Set(current?.values??current??[]), page=1, search="", generation=0;
-    const searchLabel=text("label","후보값 검색"), input=document.createElement("input");input.type="search";input.maxLength=200;searchLabel.append(input);
-    const searchButton=text("button","후보 검색"), all=text("button","전체 선택"), none=text("button","전체 해제"), list=document.createElement("div"), nav=document.createElement("div"), info=text("span","");
-    for(const button of [searchButton,all,none])button.className="btn btn-sm btn-outline-secondary m-1";
-    list.id="filter-options";nav.className="d-flex gap-2 align-items-center";area.append(searchLabel,searchButton,all,none,list,nav);
-    const previous=text("button","이전 후보"), next=text("button","다음 후보");previous.className=next.className="btn btn-sm btn-outline-secondary";nav.append(previous,info,next);
-    const draw=async()=>{
-      const token=++generation; const query=params();query.set("field",field);query.set("option_q",search);query.set("option_page",page);
-      try{const data=await api("/api/customers/filter-options?"+query);if(token!==generation)return;
-        list.replaceChildren(...data.values.map(value=>{const key=value??"";const label=document.createElement("label"),checkbox=document.createElement("input");checkbox.type="checkbox";checkbox.checked=exclude?!selected.has(key):selected.has(key);checkbox.onchange=()=>{if(checkbox.checked!==exclude)selected.add(key);else selected.delete(key);};label.append(checkbox,document.createTextNode(" "+display(field,value)));return label;}));
-        info.textContent=`후보 ${data.total}개 · ${page}페이지`;previous.disabled=page<=1;next.disabled=!data.has_next;
-      }catch(error){$("#filter-error").textContent=error.message;}
-    };
-    all.onclick=()=>{exclude=true;selected.clear();list.querySelectorAll("input").forEach(checkbox=>{checkbox.checked=true;});};none.onclick=()=>{exclude=false;selected.clear();list.querySelectorAll("input").forEach(checkbox=>{checkbox.checked=false;});};
-    searchButton.onclick=()=>{search=input.value;page=1;draw();};previous.onclick=()=>{page--;draw();};next.onclick=()=>{page++;draw();};
-    getCondition=()=>exclude&&!selected.size?undefined:{values:[...selected],exclude};await draw();
-  }
-  $("#filter-reset").onclick=async()=>{delete state.filters[field];state.page=1;dialog.close();await load().catch(showError);};
-  $("#filter-apply").onclick=async()=>{
-    const condition=getCondition();if(condition?.values?.length>1000){$("#filter-error").textContent="한 열은 최대 1,000개 값까지 선택·제외할 수 있습니다.";return;}
-    const old=state.filters[field];if(condition===undefined)delete state.filters[field];else state.filters[field]=condition;
-    state.page=1;
-    try{await load();dialog.close();}catch(error){if(old===undefined)delete state.filters[field];else state.filters[field]=old;$("#filter-error").textContent=error.message;}
-  };dialog.showModal();
+function openFilter(field){
+  void openGridFilter({field,label:labels[field],schema,current:state.filters[field],request:api,params,display,
+    apply:async condition=>{
+      const previous=structuredClone(state);
+      if(condition===undefined)delete state.filters[field];else state.filters[field]=condition;
+      state.page=1;
+      try{await load();}catch(problem){state=previous;throw problem;}
+    }}).catch(showError);
 }
 async function openAssignee(id){
   if(assigneeOperation.value)return;assigneeRow=rows.get(id);if(!assigneeRow)return;
