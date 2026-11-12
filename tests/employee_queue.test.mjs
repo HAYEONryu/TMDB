@@ -15,6 +15,19 @@ function fixture(){
   const r=row();q.setRows([r]);return {q,r,records,sends,setNow:n=>{now=n;}};
 }
 
+test('name edits trim, coalesce, respect the first deadline, and keep contacts read-only',async()=>{
+  const {q,r,sends,setNow}=fixture();r.customer_name='이전 이름';q.setRows([r]);
+  assert.equal(q.stage(r,'phone_normalized','01099990000'),false);
+  q.stage(r,'customer_name','  수정 이름  ');
+  setNow(61000);q.stage(r,'customer_name','  최종 이름  ');
+  assert.equal(q.entry(r.id).pending_since,1000);
+  setNow(91000);await q.flush();
+  assert.deepEqual(sends[0].rows[0].changes,{customer_name:'최종 이름'});
+  assert.equal(q.rows.get(r.id).customer_name,'최종 이름');
+  q.stage(q.rows.get(r.id),'customer_name','  ');await q.flush(true);
+  assert.equal(q.rows.get(r.id).customer_name,'');
+});
+
 test('new public customer text fields share one save while private memo is never staged',async()=>{
   const {q,r,sends}=fixture();
   assert.equal(q.stage(r,'admin_notes','must not stage'),false);

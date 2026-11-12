@@ -29,7 +29,7 @@ def distribution(customers, now, period):
         grouped = customers.values(result=F("call_result"), contract=F("contract_status")).annotate(count=Count("pk"))
     else:
         latest = ConsultationRevision.objects.filter(customer_id=OuterRef("pk"), source__in=HUMAN_SAVES,
-            saved_at__gte=start, saved_at__lt=end, saved_at__lte=now).order_by("-saved_at", "-customer_version", "-pk")
+            saved_at__gte=start, saved_at__lt=end, saved_at__lte=now).exclude(changed_fields=['customer_name']).order_by("-saved_at", "-customer_version", "-pk")
         grouped = (customers.annotate(period_saved=Exists(latest),
             result=Subquery(latest.values("after_values__call_result")[:1], output_field=JSONField()),
             contract=Subquery(latest.values("after_values__contract_status")[:1], output_field=JSONField()))
@@ -58,6 +58,7 @@ def manager_report(site_id, now, result_period):
     # Actual author, including former/inactive employees with attributable work.
     saves = (ConsultationRevision.objects.filter(customer__site_id=site_id, source__in=HUMAN_SAVES,
              saved_at__gte=seven_start, saved_at__lte=now)
+             .exclude(changed_fields=['customer_name'])
              .filter(Q(actor__role=User.Role.EMPLOYEE)|Q(assignment__employee_id=F("actor_id"))))
     # One customer per actual employee author across the entire seven-day span,
     # even when notes/callbacks were saved repeatedly or on different days.

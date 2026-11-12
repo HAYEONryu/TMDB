@@ -12,7 +12,7 @@ import {choiceFilter} from './choice-filter.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
-const editable=new Set(['call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
+const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']),textFields=new Set(['notes','memo','route','residence']);
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
@@ -38,6 +38,7 @@ function error(error){notice(error.message);}
 function commitEditor(){activeEditor?.finish();}
 function validate(field,value,row){
   normalized(field,value);
+  if(field==='customer_name'&&Array.from((value||'').trim()).length>100)throw new Error('고객명은 최대 100자입니다.');
   if(schema[field]&&!Object.hasOwn(schema[field],value??'')&&value!==(row[field]??''))throw new Error('선택값을 확인해 주세요.');
   if(field==='notes'&&Array.from(value||'').length>Math.max(10000,Array.from(queue.rows.get(row.id)?.notes||'').length))throw new Error('비고는 최대 10,000자입니다. 기존의 긴 비고는 현재 길이까지 보존할 수 있습니다.');
   if(field==='housing_status'&&Array.from(value||'').length>200)throw new Error('주택보유상황은 최대 200자입니다.');
@@ -55,11 +56,12 @@ function editor(cell,onRendered,success,cancel){
   input.value=dates.has(field)?localDate(original):original??'';
   let done=false,touched=false,valid=true;
   const stage=()=>{
+    if(done)return original;
     touched=true;const value=dates.has(field)?input.value||null:input.value;
     try{validate(field,value,row);queue.markInvalid(row.id,field,'');valid=true;input.setCustomValidity('');queue.stage(row,field,value);}
     catch(e){valid=false;input.setCustomValidity(e.message);queue.markInvalid(row.id,field,e.message);notice(e.message);}return value;
   };
-  const finish=()=>{if(done)return;if(touched&&!valid){input.reportValidity();return false;}done=true;activeEditor=null;success(touched?stage():original);return true;};
+  const finish=()=>{if(done)return;if(touched&&!valid){input.reportValidity();return false;}const value=touched?stage():original;done=true;activeEditor=null;success(value);return true;};
   input.addEventListener('input',stage);input.addEventListener('change',stage);
   input.addEventListener('blur',()=>{if(!finish())setTimeout(()=>input.focus(),0);});
   input.addEventListener('keydown',event=>{

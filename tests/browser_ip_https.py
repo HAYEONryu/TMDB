@@ -96,6 +96,8 @@ class IPHttpsBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page.locator("#page-info")).to_contain_text("검색 1건")
         expect(page.locator("#employee-message")).to_be_empty()
         self.assertTrue(page.evaluate("isSecureContext && !!crypto.subtle && !!navigator.locks"))
+        name=page.locator('.tabulator-row [tabulator-field="customer_name"]').first
+        name.click();name.locator('input').fill('가상 HTTPS 이름 정정');page.locator('h1').click()
         cell = page.locator('.tabulator-row [tabulator-field="notes"]').first
         cell.dblclick()
         cell.locator("textarea").fill("가상 HTTPS 저장")
@@ -104,5 +106,6 @@ class IPHttpsBrowserTests(Fixtures, StaticLiveServerTestCase):
         with page.expect_response("**/api/employee/batch-update") as response:
             page.locator("#save-now").click()
         self.assertEqual(response.value.status, 200)
+        self.assertEqual(response.value.request.post_data_json['rows'][0]['changes']['customer_name'],'가상 HTTPS 이름 정정')
         expect(page.locator("#queue-status")).to_have_text("모든 변경 저장됨")
         self.assertEqual(errors, [])

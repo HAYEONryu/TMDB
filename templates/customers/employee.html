@@ -6,7 +6,7 @@
 <section id="employee" data-view="{{ employee_view }}" data-user-id="{{ user.pk }}">
   <div class="page-heading"><p class="eyebrow">직원 작업 공간</p><h1 class="h2">{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %}</h1>
   <p class="text-secondary">{% if employee_view == 'today' %}연락할 고객과 새로 받은 고객을 순서대로 확인하세요.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div>
-  <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>상담 칸을 두 번 클릭하면 편집할 수 있어요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요.</span></p>
+  <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>고객명과 상담 칸을 두 번 클릭하면 편집할 수 있어요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요. 고객명은 최대 100자이며 빈 값도 가능합니다.</span></p>
   <div class="grid-toolbar card card-body mb-3"><div class="d-flex flex-wrap gap-3 align-items-end">
     <label>현장<select id="site" class="form-select mt-1"></select></label>
     <form data-async id="search-form" class="d-flex gap-2 align-items-end"><label>고객명·연락처 검색<input id="search" type="search" maxlength="200" placeholder="이름 또는 전화번호" class="form-control mt-1"></label><button class="btn btn-outline-secondary" type="submit">검색</button></form>

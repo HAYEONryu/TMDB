@@ -21,8 +21,8 @@ from apps.sites.models import Site
 from apps.sites.services import locked_actor
 
 IDENTITY_FIELDS = {"customer_name", "phone_normalized"}
-ADMIN_ONLY_FIELDS = IDENTITY_FIELDS | {"admin_notes"}
-EDITABLE_FIELDS = {"call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo"} | ADMIN_ONLY_FIELDS
+ADMIN_ONLY_FIELDS = {"phone_normalized", "admin_notes"}
+EDITABLE_FIELDS = {"customer_name", "call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo"} | ADMIN_ONLY_FIELDS
 
 
 def digest(value):
@@ -150,7 +150,7 @@ def update_row(actor, body, *, employee_only=False):
             return visible_values(receipt.result, admin=actor.role == User.Role.ADMIN)
         try:
             if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and set(body["changes"]) & ADMIN_ONLY_FIELDS:
-                raise AccessError("FORBIDDEN", "고객명·연락처·관리자 비고는 관리자만 수정할 수 있습니다.", 403)
+                raise AccessError("FORBIDDEN", "연락처·관리자 비고는 관리자만 수정할 수 있습니다.", 403)
             if customer.version != body["expected_version"]:
                 raise AccessError("VERSION_CONFLICT", "다른 변경이 저장되었습니다. 서버값과 비교해 주세요.", 409)
             values = normalized_changes(customer, body["changes"])
@@ -204,7 +204,8 @@ def update_row(actor, body, *, employee_only=False):
                     callback = Callback.objects.create(customer=customer, due_at=due, created_by=actor, updated_by=actor)
             customer.version += 1
             customer.save(update_fields=[*[f for f in actual if f != "callback_due_at"], "version", "updated_at"])
-            if assignment and assignment.first_activity_at is None and set(actual) - ADMIN_ONLY_FIELDS:
+            # Correcting identity alone is not a consultation, regardless of role.
+            if assignment and assignment.first_activity_at is None and set(actual) - IDENTITY_FIELDS - {"admin_notes"}:
                 assignment.first_activity_at = now
                 assignment.save(update_fields=["first_activity_at", "updated_at"])
             after = snapshot(customer, callback if callback and callback.status == "PENDING" else None)

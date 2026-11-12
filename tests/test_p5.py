@@ -99,7 +99,7 @@ class EmployeeTests(Fixtures,TestCase):
     def test_validation_limits_and_readonly_columns(self):
         for body in [{'entries':[]},{'entries':[self.item()]*101},{'entries':[self.item(key=1)]},{'entries':[self.item(expected_version=True)]}]:
             self.assertEqual(self.post('/api/employee/queue-check',body).status_code,422)
-        row=self.mutation(self.customer);row['changes']={'customer_name':'금지'}
+        row=self.mutation(self.customer);row['changes']={'phone_normalized':'01080009999'}
         self.assertEqual(self.post('/api/employee/batch-update',{'rows':[row]}).json()['results'][0]['error']['code'],'FORBIDDEN')
         self.assertEqual(self.post('/api/employee/batch-update',{'rows':[row]*101}).status_code,422)
 

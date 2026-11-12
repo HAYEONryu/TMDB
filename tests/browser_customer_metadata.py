@@ -97,7 +97,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.assertNotIn('관리자 비고',page.locator('#history-content').inner_text())
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
-    def test_requested_column_order_admin_identity_edit_and_staff_readonly_identity(self):
+    def test_requested_column_order_admin_identity_and_employee_name_edit(self):
         customer=self.db(lambda:Customer.objects.create(site=self.site,customer_name='가상 원본',
             phone_normalized='01094000001',admin_notes='SYNTHETIC_PRIVATE_GRID'))
         self.db(lambda:self.assign(customer))
@@ -126,15 +126,17 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
         self.assertEqual(header('employee-grid'),[[field,label] for field,label in zip(fields,labels) if field!='admin_notes'])
-        for field in ['customer_name','phone_normalized','assignee_name','assigned_at']:
+        for field in ['phone_normalized','assignee_name','assigned_at']:
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click();expect(cell.locator('input,textarea,select')).to_have_count(0)
         self.assertEqual(page.locator('#employee-grid [tabulator-field="admin_notes"]').count(),0)
         response=self.context.request.get(self.live_server_url+f'/api/customers?site_id={self.site.pk}').text()
         self.assertNotIn('admin_notes',response);self.assertNotIn('SYNTHETIC_PRIVATE_GRID',response)
+        self.edit('employee-grid','customer_name',' 직원 이름 정정 ')
         self.edit('employee-grid','notes','직원 상담 입력')
         page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
-        self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).notes),'직원 상담 입력')
+        current=self.db(lambda:Customer.objects.get(pk=customer.pk))
+        self.assertEqual((current.customer_name,current.notes),('직원 이름 정정','직원 상담 입력'))
         self.edit('employee-grid','notes','정정 전 직원 대기')
         def correct_again():
             row=Customer.objects.get(pk=customer.pk)
@@ -150,6 +152,34 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.once('dialog',lambda dialog:dialog.accept());page.locator('#employee-discard').click()
         expect(page.locator('#employee-grid .tabulator-row [tabulator-field="customer_name"]').first).to_have_text('가상 재정정')
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).notes),'직원 상담 입력')
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
+
+    def test_employee_name_edit_autosaves_and_offline_draft_is_encrypted(self):
+        customer=self.db(lambda:Customer.objects.create(site=self.site,customer_name='가상 이전 이름',phone_normalized='01094000001'))
+        self.db(lambda:self.assign(customer))
+        self.login(self.employee);page=self.page
+        page.goto(self.live_server_url+f'/app/employee/today?site_id={self.site.pk}')
+        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        cell=page.locator('#employee-grid .tabulator-row [tabulator-field="customer_name"]').first
+        cell.click();cell.locator('input').fill('가'*101)
+        expect(page.locator('#queue-status')).to_contain_text('입력 오류')
+        cell.locator('input').press('Escape')
+        expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
+        page.clock.install()
+        self.context.set_offline(True)
+        self.edit('employee-grid','customer_name','가상 비밀 이름 정정')
+        expect(page.locator('#queue-status')).to_contain_text('저장 대기')
+        page.wait_for_function("""async()=>{const db=await new Promise(ok=>{const r=indexedDB.open('tm-employee-queue-v1');r.onsuccess=()=>ok(r.result)});return await new Promise(ok=>{const r=db.transaction('entries').objectStore('entries').getAll();r.onsuccess=()=>{db.close();ok(r.result.some(e=>e.user_id===document.querySelector('#employee').dataset.userId))}})}""")
+        raw=page.evaluate("""async()=>{const db=await new Promise(ok=>{const r=indexedDB.open('tm-employee-queue-v1');r.onsuccess=()=>ok(r.result)});return await new Promise(ok=>{const r=db.transaction('entries').objectStore('entries').getAll();r.onsuccess=()=>{db.close();ok(JSON.stringify(r.result))}})}""")
+        self.assertNotIn('가상 비밀 이름 정정',raw);self.assertNotIn('customer_name',raw)
+        self.context.set_offline(False)
+        page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).customer_name),'가상 비밀 이름 정정')
+        self.edit('employee-grid','customer_name',' ')
+        with page.expect_request('**/api/employee/batch-update') as request:page.clock.run_for(95000)
+        self.assertEqual(request.value.post_data_json['rows'][0]['changes'],{'customer_name':''})
+        expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).customer_name),'')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
     def test_admin_and_employee_four_fixed_selects_and_legacy_display(self):

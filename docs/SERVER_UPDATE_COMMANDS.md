@@ -4,6 +4,8 @@
 
 직원의 오늘 신규 고객 수에서 회수·이관·삭제를 제외하는 화면 수정만 반영하려면 [해당 HTTPS 서버 반영 명령](EMPLOYEE_TODAY_COUNTS.md#https-서버-반영)을 사용한다. 그 수정에는 새 migration이 없다. 이전 고객 선택값 migration이 미적용인 서버는 아래 전체 반영 절차를 따른다.
 
+직원 고객명 편집도 새 migration 없이 이미지 갱신으로 반영한다. [최신 고객 그리드 권한·서버 반영](CUSTOMER_GRID_EDITING.md#기존-docker-서버-반영)을 따른다.
+
 현재 필요한 고객 migration은 `0004_customer_selection_options`까지다. `0004`가 이미 적용됐다면 아래 migration 명령은 추가 변경 없이 끝난다. 미적용이면 `0003` 중복 정책 등 선행 migration도 함께 적용한다. **DB 변경 전에는 현재 DB의 새 백업과 별도 DB 복구 확인을 완료한다.** [백업·복구 방법](OPERATIONS.md#암호화-백업)을 따른다.
 
 기존 `.env`·`.env.ai`·`compose.server.yaml`을 그대로 사용하며 PostgreSQL 컨테이너와 데이터 볼륨은 유지한다. 서버의 Docker·Compose와 PostgreSQL 서비스가 준비된 상태에서 실행한다. 호스트의 Python이나 `.venv`는 사용하지 않는다.

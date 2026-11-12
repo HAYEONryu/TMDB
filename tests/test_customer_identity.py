@@ -46,8 +46,8 @@ class CustomerIdentityTests(Fixtures,TestCase):
         self.assertFalse(noop['changed']);self.assertEqual(noop['version'],2)
         self.assertEqual(ConsultationRevision.objects.filter(customer=self.customer).count(),1)
 
-    def test_employee_cannot_forge_identity_or_private_note_changes(self):
-        for changes in [{'customer_name':'forged','notes':'must not save'},
+    def test_employee_cannot_forge_contact_or_private_note_changes(self):
+        for changes in [{'customer_name':'must not save','phone_normalized':'01093000002','notes':'must not save'},
                         {'phone_normalized':'01093000002'},{'admin_notes':'forged'}]:
             result=update_row(self.employee,self.mutation(changes))
             self.assertFalse(result['ok']);self.assertEqual(result['error']['code'],'FORBIDDEN')
@@ -56,12 +56,48 @@ class CustomerIdentityTests(Fixtures,TestCase):
         self.assertEqual(self.customer.notes,'이전가상고객은 다음 연락을 희망합니다.')
 
     def test_optional_name_and_required_valid_contact_and_type_limits(self):
-        for changes in [{'customer_name':None},{'customer_name':42},{'customer_name':'가'*101},
-                        {'phone_normalized':''},{'phone_normalized':1093000002},{'phone_normalized':'01193000002'}]:
+        for actor in [self.admin,self.employee]:
+            for changes in [{'customer_name':None},{'customer_name':42},{'customer_name':'가'*101}]:
+                result=update_row(actor,self.mutation(changes))
+                self.assertEqual(result['error']['code'],'VALIDATION_ERROR')
+            result=update_row(actor,self.mutation({'customer_name':'  '}))
+            self.assertTrue(result['ok']);self.assertEqual(result['row']['customer_name'],'')
+        for changes in [{'phone_normalized':''},{'phone_normalized':1093000002},{'phone_normalized':'01193000002'}]:
             result=update_row(self.admin,self.mutation(changes))
             self.assertEqual(result['error']['code'],'VALIDATION_ERROR')
-        result=update_row(self.admin,self.mutation({'customer_name':'  '}))
-        self.assertTrue(result['ok']);self.assertEqual(result['row']['customer_name'],'')
+
+    def test_employee_name_correction_is_audited_idempotent_and_not_consultation_progress(self):
+        body=self.mutation({'customer_name':' 직원 정정 '})
+        response=login(self.employee).post('/api/employee/batch-update',{'rows':[body]},content_type='application/json',
+                                         HTTP_X_TM_QUEUE_USER=str(self.employee.pk))
+        result=response.json()['results'][0]
+        self.assertTrue(result['ok']);self.assertEqual(result['row']['customer_name'],'직원 정정')
+        self.assertNotIn('admin_notes',result['row'])
+        revision=ConsultationRevision.objects.get(customer=self.customer)
+        self.assertEqual((revision.actor_id,revision.before_values['customer_name'],revision.after_values['customer_name']),
+                         (self.employee.pk,'이전가상고객','직원 정정'))
+        self.assignment.refresh_from_db();self.assertIsNone(self.assignment.first_activity_at)
+        self.assertEqual(update_row(self.employee,body),result)
+        self.assertFalse(update_row(self.employee,self.mutation({'customer_name':' 직원 정정 '}))['changed'])
+        self.assertEqual(ConsultationRevision.objects.filter(customer=self.customer).count(),1)
+        saved=update_row(self.employee,self.mutation({'customer_name':'상담 동시 정정','notes':'실제 상담 변경'}))
+        self.assertTrue(saved['ok']);self.assignment.refresh_from_db();self.assertIsNotNone(self.assignment.first_activity_at)
+
+    def test_employee_name_correction_rejects_foreign_unassigned_recalled_and_stale_rows(self):
+        from apps.accounts.access import AccessError
+        from apps.assignments.services import change_assignee
+        unassigned=self.customers(offset=60)[0]
+        foreign=self.customers(offset=61)[0];self.assign(foreign,self.other)
+        for target in [unassigned,foreign]:
+            with self.assertRaises(AccessError) as denied:update_row(self.employee,self.mutation({'customer_name':'거절'},target))
+            self.assertEqual(denied.exception.code,'FORBIDDEN')
+        stale=self.mutation({'customer_name':'오래된 이름'})
+        update_row(self.admin,self.mutation({'customer_name':'관리자 최신 이름'}))
+        self.assertEqual(update_row(self.employee,stale)['error']['code'],'VERSION_CONFLICT')
+        self.customer.refresh_from_db();late=self.mutation({'customer_name':'회수 후 저장'})
+        change_assignee(self.admin,self.customer.pk,self.assignee_body(self.customer))
+        with self.assertRaises(AccessError) as denied:update_row(self.employee,late)
+        self.assertEqual(denied.exception.code,'ASSIGNMENT_CHANGED')
 
     def test_global_live_duplicate_rejects_entire_row_but_trash_is_allowed(self):
         other=Customer.objects.create(site=self.site,phone_normalized='01093000002')
@@ -83,11 +119,11 @@ class CustomerIdentityTests(Fixtures,TestCase):
         self.assertNotIn('admin_notes',result['server_row'])
         self.assertNotIn('SYNTHETIC_PRIVATE_ADMIN_NOTE',json.dumps(result))
 
-    def test_admin_can_edit_unassigned_customer_and_employee_http_endpoint_rejects_identity(self):
+    def test_admin_can_edit_unassigned_customer_and_employee_http_endpoint_allows_own_name(self):
         unassigned=Customer.objects.create(site=self.site,phone_normalized='01093000009')
         self.assertTrue(update_row(self.admin,self.mutation({'customer_name':'미할당 정정'},unassigned))['ok'])
         response=login(self.employee).post('/api/customers/batch-update',{'rows':[self.mutation({'customer_name':'forged'})]},content_type='application/json')
-        self.assertEqual(response.json()['results'][0]['error']['code'],'FORBIDDEN')
+        self.assertTrue(response.json()['results'][0]['ok'])
 
     def test_old_names_remain_redacted_in_employee_and_manager_ai_inputs(self):
         now=timezone.now()
@@ -95,12 +131,13 @@ class CustomerIdentityTests(Fixtures,TestCase):
             customer_version=1,saved_at=now-timedelta(minutes=1),source='MANUAL',changed_fields=['notes'],
             notes=self.customer.notes,after_values={'notes':self.customer.notes,'call_result':None,'contract_status':'UNKNOWN'})
         update_row(self.admin,self.mutation({'customer_name':'정정가상고객','phone_normalized':'01093000002'}))
+        update_row(self.employee,self.mutation({'customer_name':'직원정정가상고객'}))
         self.customer.refresh_from_db();now=timezone.now()
         for feature in [Feature.CLEANUP,Feature.SUMMARY,Feature.NEXT_QUESTIONS,Feature.WEEKLY_BRIEFING]:
             payload,_=build(feature,customer=self.customer if feature!=Feature.WEEKLY_BRIEFING else None,
                 site=self.site,start=now-timedelta(days=7),end=now,korean_date=timezone.localdate())
             encoded=json.dumps(payload,ensure_ascii=False)
-            for private in ['이전가상고객','정정가상고객','01093000001','01093000002','SYNTHETIC_PRIVATE_ADMIN_NOTE']:
+            for private in ['이전가상고객','정정가상고객','직원정정가상고객','01093000001','01093000002','SYNTHETIC_PRIVATE_ADMIN_NOTE']:
                 self.assertNotIn(private,encoded)
 
 

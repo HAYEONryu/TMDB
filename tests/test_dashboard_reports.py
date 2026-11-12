@@ -48,6 +48,21 @@ class DashboardReportTests(Fixtures, TransactionTestCase):
         self.assertEqual(staff[str(self.employee.pk)]['assigned_today_unique'],2)
         self.assertEqual(staff[str(self.other.pk)]['assigned_today_unique'],1)
 
+    def test_name_only_correction_does_not_inflate_consultation_records_or_period_results(self):
+        from apps.customers.services import update_row
+        customer=self.customers()[0];self.assign(customer)
+        self.assertTrue(update_row(self.employee,self.mutation(customer,notes='가상 변경')|{'changes':{'customer_name':'가상 정정'}})['ok'])
+        data=self.report('today')['manager']
+        employee=next(row for row in data['staff'] if row['id']==str(self.employee.pk))
+        self.assertEqual(employee['consultation_records_7d'],0)
+        self.assertEqual(data['distribution']['total'],0)
+        customer.refresh_from_db()
+        self.assertTrue(update_row(self.employee,self.mutation(customer)|{'changes':{'customer_name':'가상 재정정','notes':'상담 기록'}})['ok'])
+        data=self.report('today')['manager']
+        employee=next(row for row in data['staff'] if row['id']==str(self.employee.pk))
+        self.assertEqual(employee['consultation_records_7d'],1)
+        self.assertEqual(data['distribution']['total'],1)
+
     def test_seven_day_records_use_author_include_applied_save_exclude_system_import_and_future(self):
         customer=self.customers()[0];self.assign(customer,self.other)
         self.revision(customer,self.employee)
