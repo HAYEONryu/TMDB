@@ -162,7 +162,7 @@ async function load(){
     $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
     renderFilterChips($('#active-filters'),state.filters,labels,display,field=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error));
     loadedState=structuredClone(state);markFilterHeaders(state.filters);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
-  }catch(e){if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);}throw e;}
+  }catch(e){if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);$('#search').value=state.q;}throw e;}
   finally{loading=false;}
 }
 function choice(dialog,actions){
@@ -207,7 +207,7 @@ $('#site').onchange=event=>{const site=event.target.value;event.target.value=sta
 $('#sort').onchange=event=>{const sort=event.target.value;event.target.value=state.sort;guarded(async()=>{state.sort=sort;state.page=1;$('#sort').value=sort;await load();}).catch(error);};
 $('#page-size').onchange=event=>{const size=Number(event.target.value);event.target.value=String(state.size);guarded(async()=>{state.size=size;state.page=1;$('#page-size').value=String(size);await load();}).catch(error);};
 $('#search-form').onsubmit=event=>{event.preventDefault();guarded(async()=>{state.q=$('#search').value;state.page=1;await load();}).catch(error);};
-$('#clear-filters').onclick=()=>guarded(async()=>{state.filters={};state.page=1;await load();}).catch(error);
+$('#clear-filters').onclick=()=>guarded(async()=>{state.filters={};state.q='';$('#search').value='';state.page=1;await load();}).catch(error);
 $('#previous').onclick=()=>guarded(async()=>{state.page--;await load();}).catch(error);$('#next').onclick=()=>guarded(async()=>{state.page++;await load();}).catch(error);
 document.addEventListener('click',event=>{const link=event.target.closest('a[href]');if(!link||link.target||event.ctrlKey||event.metaKey)return;if(new URL(link.href).origin!==location.origin)return;event.preventDefault();guarded(()=>{location.href=link.href;}).catch(error);},true);
 document.addEventListener('submit',event=>{const form=event.target;if(form.action?.endsWith('/auth/logout')){event.preventDefault();event.stopImmediatePropagation();guarded(()=>{HTMLFormElement.prototype.submit.call(form);},true).catch(error);}},true);

@@ -126,9 +126,10 @@ async function load() {
     renderFilterChips($("#active-filters"),state.filters,labels,display,field=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(showError));
     if(state.assignee){const button=text("button","담당직원 조건 해제 ×");button.type='button';button.className="filter-chip";button.onclick=()=>guarded(async()=>{state.assignee="";await load();}).catch(showError);$("#active-filters").append(button);}
     loadedState=structuredClone(state);markFilterHeaders(state.filters);
+    if($('#open-imports'))$('#open-imports').href='/app/admin/imports?'+new URLSearchParams({site_id:state.site});
     if (!siteInfo.items.length) notice("등록된 현장이 없습니다. 현장을 생성해 주세요.");
   } catch(error) {
-    if(loadedState){state=structuredClone(loadedState);$("#site").value=state.site;$("#sort").value=state.sort;$("#page-size").value=String(state.size);}
+    if(loadedState){state=structuredClone(loadedState);$("#site").value=state.site;$("#sort").value=state.sort;$("#page-size").value=String(state.size);$('#search').value=state.q;}
     throw error;
   } finally { busy=false; status(); }
 }

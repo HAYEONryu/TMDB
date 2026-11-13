@@ -125,7 +125,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         page=self.page;page.goto(self.live_server_url+"/app/admin/imports")
         page.locator("#upload-file").set_input_files({"name":"wrong.xlsx","mimeType":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","buffer":workbook([row()],headers=HEADERS[::-1])})
         page.get_by_role("button",name="파일 검증",exact=True).click()
-        expect(page.locator("#upload-message")).to_contain_text("고객명·연락처·고객 거주지·주택상황·비고·관리자 비고 순서")
+        expect(page.locator("#upload-message")).to_contain_text("고객명·연락처·고객 거주지·주택보유상황·비고·관리자 비고 순서")
         self.upload(workbook([row()]));batch_id=self.batch_id();captured=[]
         def lose(route):
             captured.append(route.request.post_data_json);self.assertEqual(route.fetch().status,200);route.abort("failed")

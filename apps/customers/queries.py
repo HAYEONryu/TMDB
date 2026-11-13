@@ -92,7 +92,11 @@ def apply_conditions(query, params, *, omit=None, admin=False):
     if len(q) > 200:
         error()
     if q.strip():
-        query = query.filter(Q(customer_name__icontains=q.strip()) | Q(phone_normalized__contains=re.sub(r"[\s-]", "", q.strip())))
+        match = Q(customer_name__icontains=q.strip())
+        phone_query = re.sub(r"[\s-]", "", q.strip())
+        if re.search(r"[0-9]", phone_query):
+            match |= Q(phone_normalized__contains=phone_query)
+        query = query.filter(match)
     try:
         filters = json.loads(params.get("filters", "{}"))
     except (ValueError, TypeError):
@@ -224,7 +228,9 @@ def filter_options(actor, params):
     search = params.get("option_q", "")
     if len(search) > 200:
         error()
-    if field=='phone_normalized':search=re.sub(r'[\s-]','',search)
+    if field=='phone_normalized':
+        if search.strip() and not re.search(r'[0-9]',search):query=query.none()
+        search=re.sub(r'[\s-]','',search)
     if search:
         query = query.filter(**{field + "__icontains": search})
     values = query.order_by(field).values_list(field, flat=True).distinct()

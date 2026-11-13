@@ -10,12 +10,12 @@ export function choiceFilter({area,field,schema,current,request,params,display,o
     base.set('','미입력');
     for(const [value,label] of Object.entries(schema[field]))if(!empty(value))base.set(key(value),label);
   }
-  const operator=node('fieldset',undefined,'filter-operator');operator.append(node('legend','선택한 값 처리'));
+  const operator=node('fieldset',undefined,'filter-operator');operator.append(node('legend','선택한 값 처리','visually-hidden'));
   for(const [value,label] of [['include','선택한 값만 보기'],['exclude','선택한 값 제외']]){
     const wrap=node('label'),radio=node('input');radio.type='radio';radio.name='filter-operator';radio.value=value;radio.checked=exclude===(value==='exclude');
     radio.onchange=()=>{exclude=value==='exclude';changed=true;onChange();};wrap.append(radio,node('span',label));operator.append(wrap);
   }
-  const searchLabel=node('label','값 검색','filter-input-label'),searchGroup=node('div',undefined,'filter-search'),search=node('input'),searchButton=node('button','검색','btn btn-outline-secondary');
+  const searchLabel=node('label','값 검색','visually-hidden'),searchGroup=node('div',undefined,'filter-search'),search=node('input'),searchButton=node('button','검색','btn btn-outline-secondary');
   search.id='filter-option-search';search.type='search';search.maxLength=200;search.className='form-control';search.placeholder=field==='phone_normalized'?'연락처 입력':'찾을 값을 입력하세요';searchLabel.htmlFor=search.id;
   searchButton.type='button';searchGroup.append(search,searchButton);
   const selection=node('div',undefined,'filter-selection'),count=node('strong'),clear=node('button','선택 해제','filter-text-button'),selectedNames=node('p');
@@ -28,7 +28,7 @@ export function choiceFilter({area,field,schema,current,request,params,display,o
   area.append(operator,searchLabel,searchGroup,selection,toolbar,list,error,more);
   const records=()=>new Map([...base].filter(([value,label])=>!term||label.toLocaleLowerCase().includes(term.toLocaleLowerCase())||value.toLocaleLowerCase().includes(term.toLocaleLowerCase())).concat([...loaded]));
   const updateSelection=()=>{
-    count.textContent=`선택 ${selected.size.toLocaleString()}개`;clear.disabled=!selected.size;
+    selection.hidden=!selected.size;count.textContent=`선택 ${selected.size.toLocaleString()}개`;clear.disabled=!selected.size;
     const names=[...selected].slice(0,3).map(value=>base.get(value)||loaded.get(value)||title(value));
     selectedNames.textContent=names.join(', ')+(selected.size>3?` 외 ${selected.size-3}개`:'');selectedNames.hidden=!selected.size;
     for(const input of list.querySelectorAll('input'))input.checked=selected.has(input.value);

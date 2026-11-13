@@ -117,7 +117,6 @@ export async function openGridFilter({field,label,schema,current,request,params,
     const label=node('label','포함할 내용','filter-input-label'),input=node('input');input.id='filter-contains';input.className='form-control';input.maxLength=10000;input.placeholder=label.textContent+'을 입력하세요';input.value=current?.contains||'';input.oninput=changed;label.htmlFor=input.id;label.append(input);panel.append(label,node('p','입력한 글자가 포함된 고객을 찾습니다.','filter-input-help'));
     hasValue=()=>!!input.value.trim();read=()=>{if(!hasValue())throw new Error('찾을 내용을 입력해 주세요.');return {contains:input.value};};
   }else{
-    panel.append(node('h3','값 선택'));
     const choices=choiceFilter({area:panel,field,schema,current,request:safeRequest,params,display,onChange:changed,isCurrent:alive});
     read=choices.read;hasValue=choices.hasValue;
   }

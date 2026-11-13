@@ -61,3 +61,15 @@ class GridFilterTests(Fixtures,TestCase):
         self.assertEqual(response.json()['values'],[self.blank.phone_normalized])
         response=self.client.get('/api/customers/filter-options',{'site_id':str(self.site.pk),'field':'phone_normalized','option_q':foreign.phone_normalized})
         self.assertEqual(response.json()['total'],0)
+        response=self.client.get('/api/customers/filter-options',{'site_id':str(self.site.pk),'field':'phone_normalized','option_q':'---'})
+        self.assertEqual(response.json()['total'],0)
+
+    def test_symbol_only_search_never_expands_to_every_phone(self):
+        for actor in [self.admin,self.employee]:
+            client=login(actor)
+            for term in ['---','-',' - - ','...','()']:
+                self.assertEqual(self.rows({},client,q=term),set())
+            self.assertEqual(self.rows({},client,q='010-8000-0001'),{str(self.filled.pk)})
+            self.assertEqual(len(self.rows({},client,q='   ')),2)
+        self.blank.customer_name='---';self.blank.save(update_fields=['customer_name'])
+        self.assertEqual(self.rows({},q='---'),{str(self.blank.pk)})

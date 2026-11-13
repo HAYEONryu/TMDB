@@ -209,7 +209,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.assertIsNone(updated.deleted_at)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
-    def test_fixed_filters_use_select_for_both_roles_and_legacy_values_are_scoped(self):
+    def test_fixed_filters_share_multi_select_and_legacy_values_are_scoped(self):
         import json
         from apps.customers.choices import CURRENT_CHOICES
         def prepare_rows():
@@ -224,27 +224,28 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
             expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
             for field,choices in CURRENT_CHOICES.items():
                 page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
-                select=page.get_by_label('필터 값',exact=True)
-                expect(select).to_be_visible()
-                self.assertEqual(select.locator(':scope > option').all_text_contents(),['전체','-',*choices.values()])
-                select.select_option(json.dumps(next(iter(choices)),ensure_ascii=False))
+                options=page.locator('#filter-options')
+                expect(options).to_be_visible()
+                for title in ['미입력',*choices.values()]:expect(options.get_by_role('checkbox',name=title,exact=True)).to_have_count(1)
+                options.get_by_role('checkbox',name=next(iter(choices.values())),exact=True).check()
                 page.locator('#filter-apply').click()
                 expect(page.locator('#page-info')).to_contain_text('검색 1건')
                 page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
-                expect(page.get_by_label('필터 값',exact=True)).to_have_value(json.dumps(next(iter(choices)),ensure_ascii=False))
+                expect(page.locator('#filter-options').get_by_role('checkbox',name=next(iter(choices.values())),exact=True)).to_be_checked()
                 page.locator('#filter-reset').click()
                 expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
                 page.locator('#clear-filters').click()
                 expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
             page.get_by_role('button',name='계약여부 필터',exact=True).click()
-            page.get_by_label('필터 값',exact=True).select_option('EMPTY');page.locator('#filter-apply').click()
+            page.locator('#filter-mode input[value="EMPTY"]').check();page.locator('#filter-apply').click()
             expect(page.locator('#page-info')).to_contain_text(f'검색 {1 if actor==self.admin else 0}건')
             page.locator('#clear-filters').click()
             expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
             page.get_by_role('button',name='루트 필터',exact=True).click()
-            select=page.get_by_label('필터 값',exact=True)
-            if actor==self.employee:self.assertNotIn('다른직원 이전값',select.inner_text())
-            select.select_option(json.dumps('티엠 소개',ensure_ascii=False));page.locator('#filter-apply').click()
+            options=page.locator('#filter-options')
+            expect(options).to_have_attribute('aria-busy','false')
+            if actor==self.employee:self.assertNotIn('다른직원 이전값',options.inner_text())
+            options.get_by_role('checkbox',name='이전값: 티엠 소개',exact=True).check();page.locator('#filter-apply').click()
             expect(page.locator('#page-info')).to_contain_text('검색 1건')
             expect(page.locator(f'#{grid} .tabulator-row [tabulator-field="route"]').first).to_have_text('이전값: 티엠 소개')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])

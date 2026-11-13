@@ -23,5 +23,5 @@
   </section>
   <a href="/app/admin/customers" class="btn btn-link mt-3">DB 관리로 돌아가기</a>
 </section>
-<dialog id="commit-dialog"><h2 class="h5">업로드 확정</h2><p id="confirm-counts"></p><p>현재 DB 상태로 다시 검증합니다. 검증 이후 등록된 연락처는 실패 처리하고 기존 상담정보를 유지합니다.</p><div class="dialog-actions"><button id="commit-cancel" class="btn btn-outline-secondary">취소</button><button id="commit-confirm" class="btn btn-primary">등록 확정</button></div></dialog>
+<dialog id="commit-dialog"><h2 class="h5">업로드 확정</h2><p>등록 현장: <strong id="confirm-site"></strong></p><p id="confirm-counts" class="fw-semibold"></p><p>현장명과 등록 예정 건수를 확인해 주세요. 현재 DB 상태로 다시 검증하며, 검증 이후 등록된 연락처는 실패 처리하고 기존 상담정보를 유지합니다.</p><div class="dialog-actions"><button id="commit-cancel" class="btn btn-outline-secondary">취소</button><button id="commit-confirm" class="btn btn-primary">등록 확정</button></div></dialog>
 {% endblock %}

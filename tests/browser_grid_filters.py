@@ -80,14 +80,14 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
         for actor in [self.admin,self.employee]:
             self.open_grid(actor)
             for field in ['notes','memo','residence',*(['admin_notes'] if actor==self.admin else [])]:
-                self.open_filter(field);page.locator('#filter-mode input[value=\"EMPTY\"]').check();self.apply(1)
+                self.open_filter(field);page.locator('#filter-mode input[value="EMPTY"]').check();self.apply(1)
                 self.open_filter(field);expect(page.locator('#filter-mode input[value="EMPTY"]')).to_be_checked()
-                page.locator('#filter-mode input[value=\"FILLED\"]').check();self.apply(1)
-                self.open_filter(field);page.locator('#filter-mode input[value=\"MATCH\"]').check()
+                page.locator('#filter-mode input[value="FILLED"]').check();self.apply(1)
+                self.open_filter(field);page.locator('#filter-mode input[value="MATCH"]').check()
                 page.locator('#filter-contains').fill({'notes':'핵심','memo':'일반','residence':'서울','admin_notes':'관리자'}[field]);self.apply(1)
                 expect(page.locator('#active-filters')).to_contain_text('포함:');self.clear()
             for field in ['visit_at','callback_due_at','assigned_at']:
-                self.open_filter(field);page.locator('#filter-mode input[value=\"EMPTY\"]').check();self.apply(0 if field=='assigned_at' else 1);self.clear()
+                self.open_filter(field);page.locator('#filter-mode input[value="EMPTY"]').check();self.apply(0 if field=='assigned_at' else 1);self.clear()
             self.open_filter('visit_at')
             expect(page.locator('#filter-from')).to_have_attribute('type','text')
             page.locator('#filter-from').press_sequentially('20261114');page.locator('#filter-to').fill('20261113')
@@ -159,6 +159,36 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.db(restore)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
+    def test_uniform_conditions_and_multi_selection_preserve_empty_contract_values(self):
+        self.seed();page=self.page
+        for actor in [self.admin,self.employee]:
+            self.open_grid(actor)
+            for field in ['contract_status','customer_name','notes','visit_at']:
+                self.open_filter(field)
+                self.assertEqual(page.locator('#filter-mode label').all_text_contents(),['전체 보기','조건 지정','미입력만','입력된 항목만'])
+                expect(page.locator('#filter-apply')).to_be_disabled()
+                page.locator('#filter-mode input[value="EMPTY"]').check();expect(page.locator('.filter-condition')).not_to_be_visible();self.apply(1)
+                self.open_filter(field);expect(page.locator('#filter-mode input[value="EMPTY"]')).to_be_checked()
+                page.locator('#filter-mode input[value="FILLED"]').check();self.apply(1);self.clear()
+            self.open_filter('contract_status')
+            options=page.locator('#filter-options')
+            options.get_by_role('checkbox',name='미입력',exact=True).check();options.get_by_role('checkbox',name='계약',exact=True).check()
+            expect(page.locator('#filter-summary')).to_contain_text('미입력, 계약');self.apply(2)
+            self.open_filter('contract_status')
+            expect(options.get_by_role('checkbox',name='미입력',exact=True)).to_be_checked();expect(options.get_by_role('checkbox',name='계약',exact=True)).to_be_checked()
+            page.locator('.filter-operator input[value="exclude"]').check();self.apply(0)
+            self.open_filter('contract_status');page.locator('#filter-mode input[value="ALL"]').check();self.apply(2)
+            expect(page.locator('#active-filters button')).to_have_count(0)
+            for field in ['contract_status','notes','visit_at']:
+                self.open_filter(field)
+                for width in [1440,390,320]:
+                    page.set_viewport_size({'width':width,'height':844})
+                    expect(page.locator('#filter-apply')).to_be_in_viewport(ratio=1)
+                    self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+                    page.screenshot(path=str(artifact_path(f'filter-{actor.role.lower()}-{field}-{width}.png')),full_page=False)
+                page.keyboard.press('Escape');page.set_viewport_size({'width':1440,'height':960})
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
+
     def test_candidate_search_paging_inclusion_exclusion_and_cancel(self):
         def create():
             rows=self.customers(105)
@@ -173,7 +203,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             page.get_by_role('button',name='보이는 값 모두 선택',exact=True).click();self.apply(105)
             self.open_filter('customer_name');page.locator('.filter-operator input[value="exclude"]').check();self.apply(0)
             self.clear(105);self.open_filter('customer_name')
-            page.get_by_label('값 검색',exact=True).fill('가상고객0104');page.get_by_role('button',name='검색',exact=True).click()
+            page.get_by_label('값 검색',exact=True).fill('가상고객0104');page.locator('#filter-dialog').get_by_role('button',name='검색',exact=True).click()
             expect(page.locator('#filter-options input')).to_have_count(1)
             page.locator('#filter-options input').check();self.apply(1)
             self.open_filter('customer_name');page.locator('#filter-mode input[value="ALL"]').check()
@@ -184,7 +214,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             for field in ['phone_normalized','assignee_name']:
                 self.open_filter(field);expect(page.locator('#filter-options input').first).to_be_visible()
                 if field=='phone_normalized':
-                    page.locator('#filter-option-search').fill('010-8000-0104');page.get_by_role('button',name='검색',exact=True).click()
+                    page.locator('#filter-option-search').fill('010-8000-0104');page.locator('#filter-dialog').get_by_role('button',name='검색',exact=True).click()
                     expect(page.locator('#filter-options input')).to_have_count(1)
                 page.locator('#filter-options input').first.check();self.apply(1 if field=='phone_normalized' else 105);self.clear(105)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])

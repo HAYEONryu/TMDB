@@ -1,4 +1,4 @@
-const employeePages=new Set(['/app/employee','/app/employee/today','/app/employee/mine']);
+const employeePages=new Set(['/app/employee','/app/employee/today','/app/employee/mine','/app/guides']);
 
 // Carry an explicit non-default site through both the menu and dashboard links.
 // Keep the default URL behavior and never change the global site setting.

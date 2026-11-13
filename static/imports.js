@@ -11,7 +11,16 @@ function buttons(){
   for(const id of ["refresh-result","new-upload","result-kind","commit-confirm","commit-cancel"])$("#"+id).disabled=busy;
   $("#result-previous").disabled=busy||page<=1;$("#result-next").disabled=busy||page>=(result?.last_page||1);
 }
-function url(){const value=new URL(location.href);if(batchId)value.searchParams.set("batch_id",batchId);else value.searchParams.delete("batch_id");history.replaceState(null,"",value);}
+function url(){
+  const value=new URL(location.href),site=$('#upload-site').value;
+  if(batchId)value.searchParams.set("batch_id",batchId);else value.searchParams.delete("batch_id");
+  if(site)value.searchParams.set('site_id',site);else value.searchParams.delete('site_id');
+  history.replaceState(null,"",value);
+  for(const link of document.querySelectorAll('a[href]')){
+    const target=new URL(link.href,location.href);if(target.origin!==location.origin||target.pathname!=='/app/admin/customers')continue;
+    if(site)target.searchParams.set('site_id',site);else target.searchParams.delete('site_id');link.href=target.pathname+target.search+target.hash;
+  }
+}
 function requestKey(){
   const name=`tm:import:${userId}:${batchId}`;
   if(!key){try{key=sessionStorage.getItem(name);}catch{}}
@@ -44,13 +53,13 @@ $("#upload-form").onsubmit=event=>{event.preventDefault();run(async()=>{
   const body=new FormData();body.append("site_id",$("#upload-site").value);body.append("file",file);
   const data=await api("/api/imports/validate",body);batchId=data.id;page=1;key=undefined;url();await loadResult();$("#upload-file").value="";
 });};
-$("#upload-site").onchange=buttons;
+$("#upload-site").onchange=()=>{url();buttons();message('');};
 $("#refresh-result").onclick=()=>run(loadResult);
 $("#result-kind").onchange=()=>run(async()=>{page=1;await loadResult();});
 $("#result-previous").onclick=()=>run(async()=>{page--;await loadResult();});
 $("#result-next").onclick=()=>run(async()=>{page++;await loadResult();});
 $("#new-upload").onclick=()=>{batchId=null;result=null;key=undefined;$("#import-result").hidden=true;$("#upload-file").value="";page=1;url();buttons();message("다른 파일을 선택해 검증해 주세요.");};
-$("#commit-upload").onclick=()=>{$("#confirm-counts").textContent=`검증 시 등록 가능 ${result.validation_summary.ready}건을 확정하시겠습니까?`;$("#commit-dialog").showModal();};
+$("#commit-upload").onclick=()=>{if(busy||!result?.can_commit)return;$('#confirm-site').textContent=result.site_name;$("#confirm-counts").textContent=`등록 예정 ${result.validation_summary.ready.toLocaleString()}건`;$("#commit-dialog").showModal();};
 $("#commit-cancel").onclick=()=>$("#commit-dialog").close();
 $("#commit-confirm").onclick=()=>run(async()=>{
   try{const data=await api(`/api/imports/${batchId}/commit`,{site_id:result.site_id,idempotency_key:requestKey()});$("#commit-dialog").close();await loadResult();message(data.message);}
@@ -65,5 +74,15 @@ $("#commit-confirm").onclick=()=>run(async()=>{
 document.addEventListener("click",event=>{if(busy&&event.target.closest("a[href]")){event.preventDefault();message("요청 처리 중입니다. 결과를 확인한 뒤 이동해 주세요.");}},true);
 window.addEventListener("beforeunload",event=>{if(busy){event.preventDefault();event.returnValue="";}});
 busy=true;buttons();
-try{const sites=await api("/api/sites");$("#upload-site").replaceChildren(...sites.items.map(site=>option(site.id,site.name)));if(sites.default_site_id)$("#upload-site").value=sites.default_site_id;if(!sites.items.length)message("등록된 현장이 없습니다. DB 관리에서 먼저 현장을 생성해 주세요.");if(batchId)await loadResult();}
-catch(error){message(error.message);if(error.status===404){batchId=null;key=undefined;url();}}finally{busy=false;buttons();}
+try{
+  const sites=await api("/api/sites"),selected=new URL(location.href).searchParams.get('site_id');
+  $("#upload-site").replaceChildren(...sites.items.map(site=>option(site.id,site.name)));
+  if(selected&&sites.items.some(site=>site.id===selected))$('#upload-site').value=selected;
+  else if(sites.default_site_id)$('#upload-site').value=sites.default_site_id;
+  if(batchId)await loadResult();
+  else if(selected&&!sites.items.some(site=>site.id===selected)){
+    $('#upload-site').prepend(option('','현장을 다시 선택해 주세요'));$('#upload-site').value='';message('선택한 현장이 삭제되었거나 존재하지 않습니다. 등록할 현장을 다시 선택해 주세요.');
+  }else{if(selected||sites.default_site_id)$('#upload-site').value=selected||sites.default_site_id;url();}
+  if(!sites.items.length)message("등록된 현장이 없습니다. DB 관리에서 먼저 현장을 생성해 주세요.");
+}
+catch(error){message(error.message);if(error.status===404){batchId=null;key=undefined;$('#upload-site').prepend(option('','현장을 다시 선택해 주세요'));$('#upload-site').value='';url();}}finally{busy=false;buttons();}
