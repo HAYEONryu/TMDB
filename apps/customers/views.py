@@ -1,13 +1,13 @@
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_GET, require_POST
-from apps.accounts.access import AccessError, require_role
+from apps.accounts.access import AccessError, require_role, actor_identity
 from apps.accounts.models import User
 from apps.common.http import api_errors, identifier, json_object
 from apps.customers.models import Customer
 from apps.customers.choices import customer_schema
 from apps.customers.queries import customer_list, filter_options
-from apps.customers.services import update_row, trash_operation
+from apps.customers.services import create_customer, update_row, trash_operation
 
 
 @require_GET
@@ -26,6 +26,15 @@ def options(request):
     from apps.customers.employee import optional_queue_identity
     optional_queue_identity(request)
     return JsonResponse(filter_options(request.user, request.GET))
+
+
+@require_POST
+@require_role(User.Role.ADMIN)
+@api_errors
+def create(request):
+    actor_identity(request)
+    result, status = create_customer(request.user, json_object(request))
+    return JsonResponse(result, status=status)
 
 
 @require_POST

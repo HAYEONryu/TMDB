@@ -10,6 +10,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.callbacks.models import Callback
 from apps.common.http import identifier
+from apps.common.receipts import fingerprint, replay, remember
 from apps.common.validation import normalize_phone
 from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
@@ -105,6 +106,38 @@ def safe_row(customer_id, actor=None):
     query = Customer.objects.filter(pk=customer_id)
     if not admin:query = query.defer('admin_notes')
     return serialize(enriched(query).get(), admin=admin)
+
+
+@retry_transient_write
+def create_customer(actor, body):
+    if not isinstance(body, dict) or set(body) != {"site_id", "values", "idempotency_key"}:
+        invalid("고객 추가 형식을 확인해 주세요.")
+    site_id, key = identifier(body["site_id"]), identifier(body["idempotency_key"])
+    body_hash = fingerprint(body)
+    with business_write():
+        actor = locked_actor(actor, admin=True)
+        previous = replay(actor, "CUSTOMER_CREATE", key, body_hash)
+        if previous is not None:
+            return previous
+        site = Site.objects.select_for_update().filter(pk=site_id).first()
+        if site is None:
+            raise AccessError("SITE_DELETED", "현장이 삭제되었거나 존재하지 않습니다.", 409)
+        customer = Customer(site=site)
+        values = normalized_changes(customer, body["values"])
+        if "phone_normalized" not in values:
+            invalid("연락처는 010으로 시작하는 11자리 텍스트로 입력해 주세요.")
+        if Customer.objects.filter(deleted_at=None, phone_normalized=values["phone_normalized"]).exists():
+            raise AccessError("DUPLICATE_PHONE", "전체 현장의 휴지통 제외 고객 중 같은 연락처가 있습니다.", 409)
+        due = values.pop("callback_due_at", None)
+        for field, value in values.items():
+            setattr(customer, field, value)
+        customer.save(force_insert=True)
+        if due is not None:
+            Callback.objects.create(customer=customer, due_at=due, created_by=actor, updated_by=actor)
+        OperationEvent.objects.create(actor=actor, operation="CUSTOMER_CREATED", occurred_at=timezone.now(), affected_count=1)
+        return remember(actor, "CUSTOMER_CREATE", key, body_hash,
+            {"ok": True, "customer_id": str(customer.pk), "row": safe_row(customer.pk, actor)},
+            status=201, target_ids=[customer.pk, site.pk])
 
 
 @retry_transient_write

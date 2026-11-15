@@ -16,6 +16,8 @@ const editableFields = ["customer_name", "phone_normalized", "call_result", "vis
 const multiline = new Set(['notes','memo','admin_notes']);
 const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
 const pending = new Map();
+let newRow=null, emptyStateHidden=true;
+const hasChanges=()=>!!newRow||pending.size>0;
 const assigneeOperation=new PendingOperation("assignee",$("#management").dataset.userId,/^\/api\/customers\/[0-9a-f-]+\/assignee$/);
 let state = {site:"", page:1, size:50, q:new URL(location.href).searchParams.get("q")||"", sort:new URL(location.href).searchParams.get("sort")||"-created_at", category:new URL(location.href).searchParams.get("dashboard_category")||"", filters:{},assignee:new URL(location.href).searchParams.get("assignee_id")||""}, busy = false, lastPage = 1,assigneeRow;
 let siteInfo, rows = new Map(), conflictId, bulkBody, loadedState,callbacks,hard,renameTarget,activeDateEditor;
@@ -29,8 +31,10 @@ const normalize = (field, value) => dates.has(field) ? (value ? new Date(value.i
 const params = () => new URLSearchParams({site_id:state.site, view:trash?"trash":"all", q:state.q, filters:JSON.stringify(state.filters),...(state.category?{dashboard_category:state.category}:{}),...(state.assignee?{assignee_id:state.assignee}:{})});
 function status() {
   const blocked=busy||callbacks?.busy||!!callbacks?.pending.value||hard?.busy||!!hard?.pending.value||(!trash&&!!assigneeOperation.value);
-  $("#dirty-count").textContent = pending.size ? `미저장 ${pending.size}행` : "변경사항 없음";
-  if ($("#save")) $("#save").disabled = blocked || !pending.size;
+  $("#dirty-count").textContent = hasChanges() ? `미저장 ${pending.size+(newRow?1:0)}행` : "변경사항 없음";
+  if ($("#save")) $("#save").disabled = blocked || !hasChanges();
+  if($("#add-row"))$("#add-row").disabled=blocked||!!newRow||!loadedState||!siteInfo?.items.some(site=>site.id===state.site);
+  if($("#new-row-help")){$("#new-row-help").hidden=!newRow;$("#cancel-new-row").disabled=blocked;$("#new-row-error").textContent=newRow?.error||"";}
   $("#bulk").disabled = blocked || !rows.size;
   $("#previous").disabled = blocked || state.page <= 1;
   $("#next").disabled = blocked || state.page >= lastPage;
@@ -45,9 +49,11 @@ function status() {
 }
 function rowStyle(row) {
   const item = pending.get(row.getData().id);
-  row.getElement().classList.toggle("pending-row", !!item);
-  row.getElement().classList.toggle("failed-row", !!item?.error);
+  row.getElement().classList.toggle("pending-row", !!item||!!row.getData()._new);
+  row.getElement().classList.toggle("new-customer-row", !!row.getData()._new);
+  row.getElement().classList.toggle("failed-row", !!item?.error||!!(row.getData()._new&&newRow?.error));
   row.getElement().classList.toggle("deletion-requested-row", !!row.getData().pending_deletion_request_id);
+  if(row.getData()._new){const checkbox=row.getElement().querySelector('input[type=checkbox]');if(checkbox)checkbox.disabled=true;}
 }
 function refreshRows() {
   table.getRows().forEach(row=>{const item=pending.get(row.getData().id);row.getCell("_status")?.setValue(item?`${item.mutation}:${item.error?.code||"pending"}`:"saved");row.reformat();});
@@ -78,25 +84,27 @@ function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
     headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue()))};
-  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
-  if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
+  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{if(cell.getRow().getData()._new)return text("span","미할당");const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
+  if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain && !(cell.getRow().getData()._new&&newRow?.body),
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
     ...(schema[field] ? {editorParams:{values:schema[field],clearable:false,autocomplete:false}} : {}),
     ...(multiline.has(field) ? {variableHeight:true} : {})});
   return definition;
 }
-const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:" ", selectableRows:true,
+const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:" ", selectableRows:true, selectableRowsCheck:row=>!row.getData()._new,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
     ...customerFields({admin:true}).map(column),
     ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
-    {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
+    {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{if(cell.getRow().getData()._new)return text('span','저장 후 작업 가능');const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
     ...(!trash ? [{title:"저장상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
+      if(cell.getRow().getData()._new)return text("span",newRow?.body?"결과 확인 필요 · 저장 재시도":newRow?.error?"추가 실패 · 입력 확인":"새 고객 · 미저장");
       const item = pending.get(cell.getRow().getData().id); const wrap = text("span", item ? item.uncertain?"결과 확인 필요 ":item.error?"저장 실패 ":"미저장" : "저장됨");
       if (item?.error) { const button = text("button", "확인"); button.className="btn btn-sm btn-outline-secondary"; button.addEventListener("click",()=>openConflict(cell.getRow().getData().id)); wrap.append(button); } return wrap;
     }}] : [])]});
 const ready = new Promise(resolve => table.on("tableBuilt",resolve));
 table.on("cellEdited", cell => {
   const data = cell.getRow().getData(), field=cell.getField(), base=rows.get(data.id);
+  if(data._new&&newRow){if(newRow.error)notice('새 고객 입력을 수정했습니다. 저장을 눌러 주세요.');newRow.error="";cell.getRow().reformat();status();return;}
   if (!editableFields.includes(field) || !base) return;
   let item = pending.get(data.id) || {base:structuredClone(base), changes:{}, mutation:newRequestId()};
   const value = cell.getValue();
@@ -141,8 +149,53 @@ async function load() {
     queryUI.failure(error);throw error;
   } finally { if(generation===loadGeneration){busy=false; status();} }
 }
+async function discardNewRow() {
+  if(!newRow)return;
+  const id=newRow.id;newRow=null;
+  await table.deleteRow(id);$('#list-state').hidden=emptyStateHidden;status();
+}
+$('#add-row')?.addEventListener('click',async()=>{
+  if(!commitEditor()||busy||newRow||!state.site)return;
+  const data={id:`new-${newRequestId()}`,_new:true,customer_name:'',phone_normalized:'',call_result:null,contract_status:'UNKNOWN',visit_at:null,callback_due_at:null,
+    notes:'',housing_status:'',residence:'',route:'',memo:'',admin_notes:''};
+  newRow={id:data.id,site:state.site,error:'',body:null};
+  emptyStateHidden=$('#list-state').hidden;$('#list-state').hidden=true;
+  status();notice('맨 위의 새 행에 고객정보를 입력해 주세요. 연락처는 필수입니다.');
+  const row=await table.addRow(data,true);await table.scrollToRow(row,'top',false);
+  await table.scrollToColumn('customer_name','left',false);row.getCell('customer_name').edit();
+});
+$('#cancel-new-row')?.addEventListener('click',async()=>{
+  if(busy||!newRow||!commitEditor())return;
+  if(newRow.body&&!window.confirm('이미 고객이 등록되었을 수 있습니다. 입력 행만 폐기합니다. 계속할까요?'))return;
+  const uncertain=!!newRow.body;await discardNewRow();
+  notice(uncertain?'입력 행을 폐기했습니다. 현재 목록을 조회해 등록 여부를 확인해 주세요.':'고객 추가를 취소했습니다.');
+});
+async function saveNewRow() {
+  busy=true;status();notice('새 고객 저장 중…');
+  try {
+    // Keep this exact payload after a lost response; retrying must not create a second customer.
+    if(!newRow.body){
+      const data=table.getRow(newRow.id).getData();
+      newRow.body={site_id:newRow.site,values:Object.fromEntries(editableFields.map(field=>[field,data[field]])),idempotency_key:newRequestId()};
+    }
+    const result=await actorRequest('/api/customers/create',newRow.body);
+    rows.set(result.row.id,structuredClone(result.row));
+    await discardNewRow();await table.addRow(result.row,true);
+    return true;
+  } catch(error) {
+    if(newRow){
+      const definitive=error.status>=400&&error.status<500&&![401,403,429].includes(error.status);
+      if(definitive)newRow.body=null;
+      newRow.error=error.message+(definitive?' 입력을 수정하고 저장해 주세요.':' 같은 요청으로 결과를 확인하려면 저장을 다시 눌러 주세요. 확인 전에는 새 행을 수정할 수 없습니다.');
+      table.getRow(newRow.id)?.reformat();notice(newRow.error);
+    }else showError(error);
+    return false;
+  } finally {busy=false;status();}
+}
 async function save() {
-  if(!commitEditor()||busy)return false; if (!pending.size) return true;
+  if(!commitEditor()||busy)return false; if (!hasChanges()) return true;
+  if(newRow&&!await saveNewRow())return false;
+  if(!pending.size){try{await load();notice("고객을 추가했습니다. 현재 검색·필터 조건에 따라 목록에 표시됩니다.");}catch(error){showError(error);}return true;}
   busy=true; status(); notice("저장 중…");
   const entries=[...pending.entries()];
   const payload={rows:entries.map(([id,item])=>({customer_id:id,assignment_id:item.base.assignment_id,mutation_id:item.mutation,expected_version:item.base.version,changes:item.changes}))};
@@ -166,7 +219,7 @@ async function guarded(action) {
   if(!commitEditor()||busy||callbacks?.busy||hard?.busy)return false;
   if(hard?.pending.value){notice('먼저 영구 삭제 결과를 확인하거나 대기 정보를 폐기해 주세요.');return false;}
   if(callbacks?.pending.value&&!await callbacks.run())return false;
-  if (pending.size) {
+  if (hasChanges()) {
     const decision=await new Promise(resolve=>{
       const dialog=$("#dirty-dialog"); let settled=false;
       const finish=value=>{if(settled)return;settled=true;dialog.close();resolve(value);};
@@ -175,7 +228,7 @@ async function guarded(action) {
     });
     if (decision==="stay") return false;
     if (decision==="save" && !await save()) return false;
-    if (decision==="discard") { const original=[...pending.values()].map(item=>item.base);pending.clear();await table.updateData(original);refreshRows();status(); }
+    if (decision==="discard") { await discardNewRow();const original=[...pending.values()].map(item=>item.base);pending.clear();if(original.length)await table.updateData(original);refreshRows();status(); }
   }
   await action(); return true;
 }
@@ -187,14 +240,14 @@ $("#search-form").addEventListener("submit",event=>{event.preventDefault();const
 $("#previous").onclick=()=>runQuery(async()=>{state.page--;await load();}).catch(showError);
 $("#next").onclick=()=>runQuery(async()=>{state.page++;await load();}).catch(showError);
 
-window.addEventListener("beforeunload",event=>{const valid=commitEditor();if(!valid||pending.size||hard?.pending.value){event.preventDefault();event.returnValue="";}});
+window.addEventListener("beforeunload",event=>{const valid=commitEditor();if(!valid||hasChanges()||hard?.pending.value){event.preventDefault();event.returnValue="";}});
 document.addEventListener("click",event=>{
-  const link=event.target.closest("a[href]"); if(!link)return;if(!commitEditor()){event.preventDefault();event.stopImmediatePropagation();return;}if(!pending.size&&!busy&&!hard?.busy&&!hard?.pending.value)return;
+  const link=event.target.closest("a[href]"); if(!link)return;if(!commitEditor()){event.preventDefault();event.stopImmediatePropagation();return;}if(!hasChanges()&&!busy&&!hard?.busy&&!hard?.pending.value)return;
   event.preventDefault(); event.stopImmediatePropagation(); guarded(()=>{location.href=link.href;}).catch(showError);
 },true);
 document.querySelector('form[action="/auth/logout"]')?.addEventListener("submit",event=>{
   if(!commitEditor()){event.preventDefault();event.stopImmediatePropagation();return;}
-  if (!pending.size&&!busy&&!hard?.busy&&!hard?.pending.value)return;event.preventDefault();event.stopImmediatePropagation();const form=event.target;guarded(()=>form.submit()).catch(showError);
+  if (!hasChanges()&&!busy&&!hard?.busy&&!hard?.pending.value)return;event.preventDefault();event.stopImmediatePropagation();const form=event.target;guarded(()=>form.submit()).catch(showError);
 },true);
 document.querySelectorAll("[data-close]").forEach(button=>button.onclick=()=>button.closest("dialog").close());
 $("#create-site")?.addEventListener("click",()=>guarded(()=>{$("#site-error").textContent="";$("#site-name").value="";$("#site-dialog").showModal();}).catch(showError));
@@ -267,7 +320,7 @@ async function executeAssignee(value){
 if(!trash){$("#assignee-cancel").onclick=()=>$("#assignee-dialog").close();$("#assignee-confirm").onclick=()=>executeAssignee({endpoint:`/api/customers/${assigneeRow.id}/assignee`,body:{site_id:state.site,employee_id:$("#assignee-target").value||null,assignment_id:assigneeRow.assignment_id,expected_version:assigneeRow.version,idempotency_key:newRequestId()}});
   $("#assignee-retry").onclick=()=>executeAssignee();$("#assignee-discard").onclick=async()=>{assigneeOperation.clear();await load().catch(showError);notice("대기 정보를 폐기했습니다. 현재 담당자를 확인해 주세요.");};}
 await ready;
-callbacks=new CallbackAction({userId:$('#management').dataset.userId,request:actorRequest,flush:async()=>!pending.size||save(),getRow:id=>rows.get(id),refresh:load,notice,changed:status});callbacks.update();
+callbacks=new CallbackAction({userId:$('#management').dataset.userId,request:actorRequest,flush:async()=>!hasChanges()||save(),getRow:id=>rows.get(id),refresh:load,notice,changed:status});callbacks.update();
 hard=new HardDelete({userId:$('#management').dataset.userId,request:actorRequest,refresh:async siteDeleted=>{if(siteDeleted){await loadSites();state.page=1;state.filters={};state.q='';state.assignee='';$('#search').value='';const url=new URL(location.href);if(state.site)url.searchParams.set('site_id',state.site);else url.searchParams.delete('site_id');url.searchParams.delete('assignee_id');history.replaceState(null,'',url);}await load();},notice,changed:status});hard.update();
 $('#delete-site')?.addEventListener('click',()=>guarded(()=>{const site=siteInfo.items.find(site=>site.id===state.site);if(site)hard.openSite(site);}).catch(showError));
 if(trash)await table.addColumn({title:'영구 삭제',field:'_hard',headerSort:false,minWidth:130,formatter:cell=>{const button=text('button','영구 삭제');button.className='hard-customer btn btn-sm btn-outline-danger';button.onclick=()=>guarded(()=>hard.openCustomer(cell.getRow().getData())).catch(showError);return button;}});

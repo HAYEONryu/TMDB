@@ -20,6 +20,8 @@ input:focus { outline: 3px solid #c4cfdf; border-color: #243a5c; }
 .tabulator .tabulator-cell[tabulator-field="notes"] { white-space:pre-wrap; }
 .tabulator .tabulator-col .column-filter { border:0; background:transparent; margin-left:8px; color:#243a5c; }
 .tabulator-row.pending-row { background:#fff9df !important; }
+.tabulator-row.new-customer-row .tabulator-cell {background:#eef5ff;}
+#new-row-help[hidden] {display:none;}
 .tabulator-row.failed-row { background:#fff0ed !important; }
 .tabulator input[type=checkbox], #filter-content input[type=checkbox] { display:inline-block; width:auto; }
 .tabulator textarea { width:100%; min-height:70px; }

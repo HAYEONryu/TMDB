@@ -69,6 +69,7 @@ urlpatterns = [
     path("api/sites/<uuid:site_id>/counts", site_views.counts),
     path("api/settings/default-site", site_views.default_site),
     path("api/customers", customer_views.customers),
+    path("api/customers/create", customer_views.create),
     path("api/customers/filter-options", customer_views.options),
     path("api/customers/batch-update", customer_views.batch_update),
     path("api/customers/soft-delete", customer_views.soft_delete),
