@@ -143,7 +143,7 @@ class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
         page.reload();expect(page.locator("#assignee-pending")).to_be_visible()
         with page.expect_request("**/assignee") as replay:page.locator("#assignee-retry").click()
         expect(page.locator("#assignee-pending")).not_to_be_visible();self.assertEqual(replay.value.post_data_json,requests[0]);self.assertEqual(self.db(lambda:Assignment.objects.count()),2)
-        page.get_by_role("button",name="담당직원 조건 해제 ×",exact=True).click();page.locator("#sort").select_option("customer_name")
+        page.get_by_role("button",name="담당직원 유입 조건 조건 제거",exact=True).click();page.locator("#sort").select_option("customer_name")
         expect(page.locator('.tabulator-row [tabulator-field="customer_name"]').first).to_have_text(customer.customer_name)
         page.get_by_role("button",name="담당 변경",exact=True).first.click();page.locator("#assignee-confirm").click();expect(page.locator("#message")).to_contain_text("같은 담당자")
         self.assertEqual(self.db(lambda:Assignment.objects.count()),2)

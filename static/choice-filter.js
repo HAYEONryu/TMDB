@@ -67,9 +67,9 @@ export function choiceFilter({area,field,schema,current,request,params,display,o
   draw();void load(true);
   return {
     hasValue:()=>!!selected.size||(!changed&&current?.contains!==undefined),
-    read:()=>{
+    read:({allowEmpty=false}={})=>{
       if(!changed&&current?.contains!==undefined)return current;
-      if(!selected.size)throw new Error('값을 1개 이상 선택해 주세요.');
+      if(!selected.size&&!allowEmpty)throw new Error('값을 1개 이상 선택해 주세요.');
       if(selected.size===1&&selected.has(''))return {blank:!exclude};
       return {values:[...selected].map(value=>field==='contract_status'&&value===''?'UNKNOWN':value),exclude};
     }

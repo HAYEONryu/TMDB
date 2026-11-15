@@ -69,7 +69,7 @@ class EmployeeDashboardTests(Fixtures, TransactionTestCase):
         Customer.objects.filter(pk=other.pk).update(notes='SYNTHETIC_OTHER_OWNER',visit_at=self.now)
         report=self.report()
         self.assertEqual((report['held_total'],report['callbacks_today'],report['callbacks_past_due'],report['visits_today']),(3,1,1,1))
-        for category,ids in [('held',[today.pk,past.pk,future.pk]),('callbacks_today',[today.pk]),('overdue',[past.pk]),('visits',[today.pk]),('new_today',[])]:
+        for category,ids in [('held',[today.pk,past.pk,future.pk]),('callbacks_today',[today.pk]),('overdue',[past.pk,today.pk]),('visits',[today.pk]),('new_today',[])]:
             result=self.listing(category)
             self.assertCountEqual([r['id'] for r in result['data']],map(str,ids))
             self.assertNotIn('SYNTHETIC_PRIVATE_ADMIN',str(result));self.assertNotIn('admin_notes',str(result));self.assertNotIn('SYNTHETIC_OTHER_OWNER',str(result))

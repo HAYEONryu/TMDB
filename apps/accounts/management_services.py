@@ -39,15 +39,21 @@ def user_list(params):
 
 
 def transfer_list(params):
-    if set(params)-{"page"}:invalid("이관 목록 조회 조건을 확인해 주세요.")
+    if set(params)-{"page","site_id"}:invalid("이관 목록 조회 조건을 확인해 주세요.")
     try:page=int(params.get("page",1))
     except (ValueError,TypeError):page=0
     if not 1<=page<=1000000:invalid("페이지를 확인해 주세요.")
+    as_of=timezone.now()
     query=transfer_query().select_related("site","current_assignment__employee").order_by("site_id","pk")
+    if params.get('site_id'):
+        from apps.sites.models import Site
+        site_id=identifier(params['site_id'])
+        if not Site.objects.filter(pk=site_id).exists():raise AccessError('SITE_DELETED','현장을 확인해 주세요.',409)
+        query=query.filter(site_id=site_id)
     total=query.count()
     return {"items":[{"id":str(c.pk),"customer_name":c.customer_name,"phone":c.phone_normalized,"site_id":str(c.site_id),"site_name":c.site.name,
         "employee_id":str(c.current_assignment.employee_id),"employee_name":c.current_assignment.employee.name} for c in query[(page-1)*50:page*50]],
-        "total":total,"page":page,"last_page":max(1,(total+49)//50)}
+        "total":total,"page":page,"last_page":max(1,(total+49)//50),"as_of":as_of.isoformat()}
 
 
 def normalized(name,phone,role,active):

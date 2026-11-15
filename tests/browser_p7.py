@@ -34,6 +34,8 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         context.on('request',lambda request:self.external.append(request.url) if urlsplit(request.url).hostname not in ['localhost','127.0.0.1'] else None)
         context.on('request',lambda request:self.requests.append((request.url,request.post_data_json)) if request.method=='POST' and any(part in request.url for part in ['deletion-request','/approve','hard-delete']) else None)
     def tearDown(self):
+        if getattr(self._outcome.result,'outcomes',{}).get(self.id()) in ['failed','error']:
+            self.page.screenshot(path=str(self.evidence/'failure-state.png'),full_page=True)
         self.browser.close();self.playwright.stop();self.assertEqual(self.errors,[]);self.assertEqual(self.external,[]);super().tearDown()
     def db(self,action):
         def run():
@@ -58,9 +60,28 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         page=page or self.page;page.once('dialog',lambda dialog:dialog.accept());self.row(customer,page).get_by_role('button',name='삭제 요청',exact=True).click();expect(self.row(customer,page).get_by_role('button',name='요청완료',exact=True)).to_be_disabled()
 
     def test_row_request_saves_only_target_and_keeps_editing_until_approval(self):
-        self.open(view='today');self.edit('다른 행 대기',self.rows[1]);self.edit('삭제 요청 전 가상 상담');self.submit_ui();expect(self.page.locator('#queue-status')).to_contain_text('저장 대기 1행')
+        self.open(view='today')
+        expect(self.page.locator('#employee-grid [tabulator-field="assignee_name"]')).to_have_count(0)
+        original_color=self.row().locator('[tabulator-field="customer_name"]').evaluate('cell=>getComputedStyle(cell).color')
+        self.edit('다른 행 대기',self.rows[1]);self.edit('삭제 요청 전 가상 상담');self.submit_ui();expect(self.page.locator('#queue-status')).to_contain_text('저장 대기 1행')
+        expect(self.row().locator('.tabulator-cell').first).to_have_css('background-color','rgb(254, 215, 170)')
+        expect(self.row(self.rows[1])).not_to_have_class('deletion-requested-row')
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[1].pk).notes),'');self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[0].pk).notes),'삭제 요청 전 가상 상담');self.assertIsNone(self.db(lambda:Customer.objects.get(pk=self.rows[0].pk).deleted_at))
         self.edit('승인 전 추가 가상 상담');self.page.locator('#save-now').click();expect(self.page.locator('#queue-status')).to_have_text('모든 변경 저장됨');self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.rows[0].pk).notes),'승인 전 추가 가상 상담');self.assertEqual(self.page.locator('#employee-grid input[type=checkbox]').count(),0)
+        self.open()
+        expect(self.page.locator('#employee-grid [tabulator-field="assignee_name"]')).to_have_count(0)
+        self.assertEqual(set(self.row().locator('.tabulator-cell').evaluate_all('cells=>cells.map(cell=>getComputedStyle(cell).backgroundColor)')),{'rgb(254, 215, 170)'})
+        expect(self.row().locator('[tabulator-field="customer_name"]')).to_have_css('color',original_color)
+        self.page.screenshot(path=str(self.evidence/'p7-deletion-request-employee.png'),full_page=True)
+        context,admin=self.admin_page()
+        admin.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
+        expect(admin.locator('#page-info')).to_contain_text('검색 3건')
+        row=admin.locator('#customer-grid .tabulator-row').filter(has_text=self.rows[0].customer_name)
+        row.locator('input[type=checkbox]').check();row.hover()
+        self.assertEqual(set(row.locator('.tabulator-cell').evaluate_all('cells=>cells.map(cell=>getComputedStyle(cell).backgroundColor)')),{'rgb(254, 215, 170)'})
+        expect(admin.locator('#customer-grid .tabulator-col[tabulator-field="assignee_name"]')).to_be_visible()
+        admin.screenshot(path=str(self.evidence/'p7-deletion-request-admin.png'),full_page=True)
+        context.close()
 
     def test_cancel_confirmation_and_offline_save_do_not_submit(self):
         self.open();self.page.once('dialog',lambda dialog:dialog.dismiss());self.row().get_by_role('button',name='삭제 요청',exact=True).click();self.assertEqual(self.requests,[])

@@ -1,3 +1,4 @@
+from tests.browser_filter_helpers import open_detail_filter
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -98,7 +99,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.locator('#site').select_option(str(self.second.pk))
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
         expect(page.locator('.tabulator-row [tabulator-field="customer_name"]').first).to_have_text('가상고객0031')
-        page.get_by_role('button',name='루트 필터',exact=True).click()
+        open_detail_filter(page,'route')
         page.locator('#filter-mode input[value="EMPTY"]').check();page.locator('#filter-apply').click()
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
         page.locator('#clear-filters').click()

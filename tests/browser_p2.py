@@ -1,3 +1,4 @@
+from tests.browser_filter_helpers import open_detail_filter
 from scripts.verification_evidence import artifact_path
 import os
 from pathlib import Path
@@ -149,19 +150,19 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         page.get_by_role("button",name="저장",exact=True).click()
         expect(page.locator("#message")).to_have_text("저장했습니다.")
         expect(page.locator('.tabulator-row [tabulator-field="visit_at"]').first).to_have_text("2026-11-04 14:30")
-        page.get_by_role("button",name="방문예약 날짜 필터",exact=True).click()
+        open_detail_filter(page,'visit_at')
         page.get_by_label("시작일",exact=True).fill("2026-11-04")
         page.get_by_label("종료일",exact=True).fill("2026-11-04")
         page.get_by_role("button",name="필터 적용",exact=True).click()
         expect(page.locator("#page-info")).to_contain_text("검색 1건")
-        page.get_by_role("button",name="전체 필터 해제",exact=True).click()
+        page.get_by_role("button",name="조건 초기화",exact=True).click()
         expect(page.locator("#page-info")).to_contain_text("검색 65건")
-        page.get_by_role("button",name="주택보유상황 필터",exact=True).click()
+        open_detail_filter(page,'housing_status')
         expect(page.locator("#filter-dialog")).to_be_visible()
         page.locator('#filter-options').get_by_role('checkbox',name='1주택',exact=True).check()
         page.get_by_role("button",name="필터 적용",exact=True).click()
         expect(page.locator("#page-info")).to_contain_text("검색 33건")
-        page.get_by_role("button",name="전체 필터 해제",exact=True).click()
+        page.get_by_role("button",name="조건 초기화",exact=True).click()
         expect(page.locator("#page-info")).to_contain_text("검색 65건")
         page.locator('.tabulator-row [tabulator-field="notes"]').first.scroll_into_view_if_needed()
         self.aligned_grid()
@@ -192,7 +193,7 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         expect(working.locator("#site")).to_have_value(str(self.site.pk))
         page.get_by_role("link",name="대시보드",exact=True).click()
         expect(page.locator("#default-site")).to_have_value(str(self.site.pk))
-        expect(page.locator("#site-counts")).to_contain_text("전체 DB 65")
+        expect(page.locator("#site-counts")).to_contain_text("현재 고객 65명")
         page.locator("#default-site").select_option(selected)
         page.get_by_role("button",name="기본 현장 설정",exact=True).click()
         expect(page.locator("#site-message")).to_contain_text("다음 화면부터 적용")

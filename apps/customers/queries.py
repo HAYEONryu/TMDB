@@ -11,6 +11,7 @@ from apps.assignments.models import Assignment
 from apps.callbacks.models import Callback
 from apps.common.http import identifier
 from apps.customers.models import Customer, CustomerDeletionRequest
+from apps.customers.cohorts import CATEGORIES, category_filter
 from apps.sites.models import GlobalSettings, Site
 
 KST = ZoneInfo("Asia/Seoul")
@@ -47,7 +48,8 @@ def enriched(query):
         pending_deletion_request_id=Subquery(deletion.values("pk")[:1]))
 
 
-def scoped(actor, params):
+def scoped(actor, params, now=None):
+    now = now or timezone.now()
     view = params.get("view", "all" if actor.role == User.Role.ADMIN else "mine")
     if view not in {"all", "mine", "today", "trash"}:
         error()
@@ -80,21 +82,26 @@ def scoped(actor, params):
         current_ids = Assignment.objects.filter(employee_id=actor.pk, ended_at__isnull=True).order_by("pk").distinct("pk").values("pk")
         query = query.filter(current_assignment_id__in=current_ids)
     if view == "today":
-        today = timezone.localdate()
+        today = timezone.localdate(now, KST)
         start = datetime.combine(today, time.min, KST)
         end = start + timedelta(days=1)
         query = query.filter(Q(assigned_at__gte=start, assigned_at__lt=end) | Q(callback_due_at__lt=end))
+    category = params.get('dashboard_category')
+    if category:
+        if category not in CATEGORIES or view == 'trash':error()
+        query = category_filter(query, category, now)
     return query, site_id, view
 
 
-def apply_conditions(query, params, *, omit=None, admin=False):
+def apply_conditions(query, params, *, omit=None, admin=False, now=None):
+    now = now or timezone.now()
     q = params.get("q", "")
     if len(q) > 200:
         error()
     if q.strip():
         match = Q(customer_name__icontains=q.strip())
         phone_query = re.sub(r"[\s-]", "", q.strip())
-        if re.search(r"[0-9]", phone_query):
+        if phone_query and re.fullmatch(r"[0-9\s-]+", q.strip()):
             match |= Q(phone_normalized__contains=phone_query)
         query = query.filter(match)
     try:
@@ -103,10 +110,20 @@ def apply_conditions(query, params, *, omit=None, admin=False):
         error()
     if not isinstance(filters, dict) or len(filters) > 15:
         error()
+    allowed = (CHOICE_FIELDS | DATE_FIELDS | TEXT_FIELDS | {"admin_notes"}) if admin else (CHOICE_FIELDS | DATE_FIELDS | TEXT_FIELDS) - {"assignee_name"}
     for field, condition in filters.items():
-        if field not in CHOICE_FIELDS | DATE_FIELDS | TEXT_FIELDS | ({"admin_notes"} if admin else set()):
+        if field not in allowed:
             error()
         if field == omit:
+            continue
+        if isinstance(condition, dict) and "preset" in condition:
+            if field != "callback_due_at" or set(condition) != {"preset"} or not isinstance(condition["preset"], str) or condition["preset"] not in {"today", "overdue"}:
+                error()
+            if condition["preset"] == "overdue":
+                query = query.filter(callback_due_at__lt=now)
+            else:
+                start = datetime.combine(timezone.localdate(now, KST), time.min, KST)
+                query = query.filter(callback_due_at__gte=start, callback_due_at__lt=start + timedelta(days=1))
             continue
         if isinstance(condition,dict) and set(condition)=={'blank'}:
             if type(condition['blank']) is not bool:error()
@@ -186,11 +203,12 @@ def integer(params, name, default):
 
 
 def customer_list(actor, params):
-    if set(params) - {"site_id", "view", "q", "page", "page_size", "sort", "filters", "assignee_id"}:
+    if set(params) - {"site_id", "view", "q", "page", "page_size", "sort", "filters", "assignee_id", "dashboard_category"}:
         error()
-    query, site_id, view = scoped(actor, params)
+    now = timezone.now()
+    query, site_id, view = scoped(actor, params, now)
     admin = actor.role == User.Role.ADMIN
-    query = apply_conditions(query, params, admin=admin)
+    query = apply_conditions(query, params, admin=admin, now=now)
     sort = params.get("sort", "priority" if view=="today" else "-created_at")
     if sort!="priority" and (not isinstance(sort, str) or sort.lstrip("-") not in SORT_FIELDS | TEXT_FIELDS | ({"admin_notes"} if admin else set()) or sort.startswith("--")):
         error()
@@ -200,7 +218,6 @@ def customer_list(actor, params):
         error("페이지는 1 이상, 행 수는 50 또는 100이어야 합니다.")
     total = query.count()
     if sort=="priority":
-        now=timezone.now()
         end=datetime.combine(timezone.localdate(now,KST)+timedelta(days=1),time.min,KST)
         query=query.annotate(priority=Case(When(callback_due_at__lt=now,then=Value(0)),When(callback_due_at__lt=end,then=Value(1)),default=Value(2),output_field=IntegerField()))
         ordered=query.order_by("priority",F("callback_due_at").asc(nulls_last=True),F("assigned_at").asc(nulls_last=True),"id")
@@ -214,17 +231,18 @@ def customer_list(actor, params):
             unassigned=Count("pk", filter=Q(deleted_at__isnull=True, current_assignment__isnull=True)),
             trash=Count("pk", filter=Q(deleted_at__isnull=False)))
     return {"data": [serialize(row, admin=admin) for row in rows], "total": total, "page": page, "page_size": size,
-            "last_page": max(1, (total+size-1)//size), "site_id": str(site_id) if site_id else None, "counts": counts}
+            "last_page": max(1, (total+size-1)//size), "site_id": str(site_id) if site_id else None, "counts": counts, "as_of":now.isoformat()}
 
 
 def filter_options(actor, params):
-    if set(params) - {"site_id", "view", "q", "filters", "field", "option_q", "option_page", "assignee_id"}:
+    if set(params) - {"site_id", "view", "q", "filters", "field", "option_q", "option_page", "assignee_id", "dashboard_category"}:
         error()
     field = params.get("field")
-    if field not in CHOICE_FIELDS:
+    if field not in CHOICE_FIELDS or (field == "assignee_name" and actor.role != User.Role.ADMIN):
         error()
-    query, _, _ = scoped(actor, params)
-    query = apply_conditions(query, params, omit=field, admin=actor.role == User.Role.ADMIN)
+    now = timezone.now()
+    query, _, _ = scoped(actor, params, now)
+    query = apply_conditions(query, params, omit=field, admin=actor.role == User.Role.ADMIN, now=now)
     search = params.get("option_q", "")
     if len(search) > 200:
         error()

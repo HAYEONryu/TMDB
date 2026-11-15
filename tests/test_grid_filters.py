@@ -73,3 +73,57 @@ class GridFilterTests(Fixtures,TestCase):
             self.assertEqual(len(self.rows({},client,q='   ')),2)
         self.blank.customer_name='---';self.blank.save(update_fields=['customer_name'])
         self.assertEqual(self.rows({},q='---'),{str(self.blank.pk)})
+
+    def test_callback_server_presets_midnight_overdue_overlap_and_completed_exclusion(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        now=datetime(2026,11,15,10,30,tzinfo=KST)
+        start=now.replace(hour=0,minute=0)
+        due=[start-timedelta(microseconds=1),start,now-timedelta(microseconds=1),now,
+             start+timedelta(days=1)-timedelta(microseconds=1),start+timedelta(days=1)]
+        callbacks=self.customers(len(due),offset=20)
+        for row,at in zip(callbacks,due):
+            self.assign(row,at=start-timedelta(days=2))
+            Callback.objects.create(customer=row,due_at=at,created_by=self.employee,updated_by=self.employee)
+        completed=self.customers(offset=40)[0];self.assign(completed,at=start-timedelta(days=2))
+        Callback.objects.create(customer=completed,due_at=start,status='COMPLETED',completed_at=now,
+            completed_by=self.employee,created_by=self.employee,updated_by=self.employee)
+        # Existing fixture has a pending callback from two days earlier.
+        with patch('apps.customers.queries.timezone.now',return_value=now):
+            for actor in [self.admin,self.employee]:
+                client=login(actor)
+                today=self.rows({'callback_due_at':{'preset':'today'}},client)
+                self.assertEqual(today,{str(row.pk) for row in callbacks[1:5]})
+                overdue=self.rows({'callback_due_at':{'preset':'overdue'}},client)
+                self.assertEqual(overdue,{str(row.pk) for row in callbacks[:3]}|{str(self.filled.pk)})
+                self.assertEqual(today&overdue,{str(row.pk) for row in callbacks[1:3]})
+                self.assertEqual(self.rows({'callback_due_at':{'from':'2026-11-15','to':'2026-11-15'}},client),today)
+            mine=self.rows({'callback_due_at':{'preset':'today'}},view='today')
+            self.assertEqual(mine,{str(row.pk) for row in callbacks[1:5]})
+        with patch('apps.customers.queries.timezone.now',return_value=start):
+            self.assertIn(str(callbacks[1].pk),self.rows({'callback_due_at':{'preset':'today'}}))
+            self.assertNotIn(str(callbacks[1].pk),self.rows({'callback_due_at':{'preset':'overdue'}}))
+        with patch('apps.customers.queries.timezone.now',return_value=start+timedelta(days=1)):
+            # Exercise the query directly so moving the clock to tomorrow does
+            # not also expire the HTTP client's login session.
+            from apps.customers.queries import customer_list
+            result=customer_list(self.employee,{'site_id':str(self.site.pk),'filters':json.dumps({'callback_due_at':{'preset':'today'}})})
+            self.assertEqual({row['id'] for row in result['data']},{str(callbacks[5].pk)})
+
+    def test_preset_validation_and_staff_assignee_filters_and_candidates_rejected(self):
+        for field,value in [('visit_at',{'preset':'today'}),('callback_due_at',{'preset':'week'}),
+                            ('callback_due_at',{'preset':[]}),('callback_due_at',{'preset':'today','to':'2026-11-15'}),
+                            ('assignee_name',{'blank':False})]:
+            self.assertEqual(self.client.get('/api/customers',{'filters':json.dumps({field:value})}).status_code,422)
+        self.assertEqual(self.client.get('/api/customers/filter-options',{'field':'assignee_name'}).status_code,422)
+        self.assertEqual(self.rows({'assignee_name':{'values':[self.employee.name]}},login(self.admin)),{str(self.blank.pk),str(self.filled.pk)})
+
+    def test_name_partial_phone_whitespace_and_cross_field_intersection_on_each_view(self):
+        self.blank.customer_name='가나다 고객';self.blank.save()
+        for actor,view in [(self.admin,'all'),(self.employee,'mine'),(self.employee,'today')]:
+            client=login(actor)
+            for term in ['010-8000-0001','010 8000 0001','010 - 8000 - 0001']:
+                self.assertEqual(self.rows({},client,q=term,view=view),{str(self.filled.pk)})
+            self.assertEqual(self.rows({},client,q='나다',view=view),{str(self.blank.pk)})
+            self.assertEqual(self.rows({'call_result':{'values':['INTERESTED','NO_ANSWER']}},client,q='나다',view=view),set())
+            self.assertEqual(self.rows({'call_result':{'values':['INTERESTED','NO_ANSWER']}},client,q='0001',view=view),{str(self.filled.pk)})

@@ -12,13 +12,14 @@ from apps.common.http import api_errors,identifier
 from apps.customers.employee import optional_queue_identity
 from apps.customers.models import Customer
 from apps.customers.queries import KST
+from apps.customers.cohorts import current_customers
 from apps.sites.models import Site,GlobalSettings
 
 
 def employee_counts(person,site_id,start,end,now):
-    history=Assignment.objects.filter(customer__site_id=site_id,employee=person,assigned_at__gte=start,assigned_at__lt=end)
+    history=Assignment.objects.filter(customer__site_id=site_id,employee=person,assigned_at__gte=start,assigned_at__lt=end,assigned_at__lte=now)
     ids=history.values('customer_id').distinct()
-    live=Customer.objects.filter(site_id=site_id,deleted_at=None,current_assignment__employee=person,current_assignment__ended_at=None)
+    live=current_customers(site_id,now,person)
     held=live.filter(pk__in=ids)
     results={value:0 for value in [None,*Customer.CallResult.values]}
     for row in held.values('call_result').annotate(count=Count('pk')):results[row['call_result']]=row['count']
@@ -52,13 +53,15 @@ def dashboard(request):
         site=Site.objects.filter(pk=site_id).first() if site_id else None
         if site_id and not site:raise AccessError('SITE_DELETED','현장이 삭제되었거나 존재하지 않습니다.',409)
         now=timezone.now();start=datetime.combine(timezone.localdate(now,KST),time.min,KST);end=start+timedelta(days=1)
-        data={'site_id':str(site.pk) if site else None,'business_date':start.date().isoformat(),'as_of':now.isoformat()}
+        data={'site_id':str(site.pk) if site else None,'business_date':start.date().isoformat(),'as_of':now.isoformat(),'site_name':site.name if site else ''}
         if request.user.role==User.Role.ADMIN:
             rows=User.objects.filter(role='EMPLOYEE',is_active=True).order_by('created_at','pk')
             data['employees']=[employee_counts(p,site_id,start,end,now) for p in rows]
             query=Customer.objects.filter(site_id=site_id)
-            data['counts']=query.aggregate(total=Count('pk',filter=Q(deleted_at=None)),unassigned=Count('pk',filter=Q(deleted_at=None,current_assignment=None)),trash=Count('pk',filter=Q(deleted_at__isnull=False)))
-            data['transfer_needed']=query.filter(deleted_at=None,current_assignment__employee__is_active=False,current_assignment__first_activity_at__isnull=False).count()
+            from apps.customers.cohorts import valid_assignment
+            data['counts']=query.aggregate(total=Count('pk',filter=Q(deleted_at=None)),unassigned=Count('pk',filter=Q(deleted_at=None)&~valid_assignment(now)),trash=Count('pk',filter=Q(deleted_at__isnull=False)))
+            from apps.accounts.management_services import transfer_query
+            data['transfer_needed']=transfer_query().filter(site_id=site_id).count()
             from .dashboard_reports import manager_report
             data['manager']=manager_report(site_id,now,result_period)
         else:

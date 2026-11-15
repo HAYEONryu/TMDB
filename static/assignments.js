@@ -44,5 +44,5 @@ $("#assignment-retry").onclick=()=>run(()=>execute());
 $("#assignment-discard").onclick=()=>run(async()=>{operation.clear();checked=false;notice("대기 정보를 폐기했습니다. 현재 잔여 수를 확인한 뒤 작업해 주세요.");});
 window.addEventListener("beforeunload",event=>{if(busy||operation.value){event.preventDefault();event.returnValue="";}});
 status();
-try{const data=await api("/api/sites");$("#assignment-site").replaceChildren(...data.items.map(site=>option(site.id,site.name)));$("#assignment-site").value=operation.value?.body.site_id||data.default_site_id||"";if(!data.items.length)notice("등록된 현장이 없습니다. DB 관리에서 현장을 생성해 주세요.");}
+try{const data=await api("/api/sites");$("#assignment-site").replaceChildren(...data.items.map(site=>option(site.id,site.name)));$("#assignment-site").value=operation.value?.body.site_id||new URL(location.href).searchParams.get('site_id')||data.default_site_id||"";if(!data.items.length)notice("등록된 현장이 없습니다. DB 관리에서 현장을 생성해 주세요.");}
 catch(error){notice(error.message);}finally{busy=false;status();}

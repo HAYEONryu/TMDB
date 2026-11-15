@@ -6,6 +6,9 @@ from apps.assignments.models import Assignment
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer
 from apps.customers.queries import KST
+from apps.customers.cohorts import current_customers
+from apps.callbacks.models import Callback
+from apps.consultations.queries import consultation_saves
 
 HUMAN_SAVES = [ConsultationRevision.Source.MANUAL, ConsultationRevision.Source.AI_APPLIED]
 
@@ -28,8 +31,8 @@ def distribution(customers, now, period):
     if period == "all":
         grouped = customers.values(result=F("call_result"), contract=F("contract_status")).annotate(count=Count("pk"))
     else:
-        latest = ConsultationRevision.objects.filter(customer_id=OuterRef("pk"), source__in=HUMAN_SAVES,
-            saved_at__gte=start, saved_at__lt=end, saved_at__lte=now).exclude(changed_fields=['customer_name']).order_by("-saved_at", "-customer_version", "-pk")
+        latest = consultation_saves().filter(customer_id=OuterRef("pk"),
+            saved_at__gte=start, saved_at__lt=end, saved_at__lte=now).order_by("-saved_at", "-customer_version", "-pk")
         grouped = (customers.annotate(period_saved=Exists(latest),
             result=Subquery(latest.values("after_values__call_result")[:1], output_field=JSONField()),
             contract=Subquery(latest.values("after_values__contract_status")[:1], output_field=JSONField()))
@@ -56,17 +59,18 @@ def manager_report(site_id, now, result_period):
         today_operations=Count("pk", filter=Q(assigned_at__gte=today, assigned_at__lt=tomorrow)),
         seven_unique=Count("customer_id", distinct=True), seven_operations=Count("pk"))}
     # Actual author, including former/inactive employees with attributable work.
-    saves = (ConsultationRevision.objects.filter(customer__site_id=site_id, source__in=HUMAN_SAVES,
+    saves = (consultation_saves().filter(customer__site_id=site_id,
              saved_at__gte=seven_start, saved_at__lte=now)
-             .exclude(changed_fields=['customer_name'])
              .filter(Q(actor__role=User.Role.EMPLOYEE)|Q(assignment__employee_id=F("actor_id"))))
     # One customer per actual employee author across the entire seven-day span,
     # even when notes/callbacks were saved repeatedly or on different days.
     records = {row["actor_id"]: row["count"] for row in saves.values("actor_id").annotate(count=Count("customer_id", distinct=True))}
-    live = customers.filter(current_assignment__ended_at=None, current_assignment__isnull=False)
+    live = current_customers(site_id, now).annotate(overdue_callback=Exists(Callback.objects.filter(customer_id=OuterRef('pk'),status='PENDING',due_at__lt=now)))
     holdings = {row["current_assignment__employee_id"]: row for row in
         live.values("current_assignment__employee_id").annotate(held=Count("pk"),
             progressed=Count("pk", filter=Q(current_assignment__first_activity_at__isnull=False)),
+            today_held=Count("pk", filter=Q(current_assignment__assigned_at__gte=today)),
+            overdue=Count("pk", filter=Q(overdue_callback=True)),
             contracted=Count("pk", filter=Q(contract_status=Customer.ContractStatus.CONTRACTED)))}
     states = {}
     for row in live.values("current_assignment__employee_id", "call_result").annotate(count=Count("pk")):
@@ -84,9 +88,14 @@ def manager_report(site_id, now, result_period):
             "assignment_operations_7d": allocation.get("seven_operations", 0),
             "consultation_records_7d": records.get(person.pk, 0),
             "held_total": held.get("held", 0), "progressed_total": held.get("progressed", 0),
+            "current_assignment_today_held": held.get("today_held", 0), "callbacks_overdue": held.get("overdue", 0),
             "unprogressed_total": held.get("held", 0)-held.get("progressed", 0),
             "contracted_total": held.get("contracted", 0), "call_results": result_rows(states.get(person.pk, {}))})
-    return {"assigned_today_unique": history.filter(assigned_at__gte=today, assigned_at__lt=tomorrow).values("customer_id").distinct().count(),
+    staff.sort(key=lambda row:(-row["callbacks_overdue"], -row["unprogressed_total"], row["name"], row["id"]))
+    return {"current_assignment_today_held": sum(row["current_assignment_today_held"] for row in staff),
+            "callbacks_overdue": sum(row["callbacks_overdue"] for row in staff),
+            "held_total": sum(row["held_total"] for row in staff),
+            "assigned_today_unique": history.filter(assigned_at__gte=today, assigned_at__lt=tomorrow).values("customer_id").distinct().count(),
             "assignment_operations_today": sum(row["today_operations"] for row in allocations.values()),
             "records_start": seven_start.isoformat(), "records_end_exclusive": tomorrow.isoformat(),
             "staff": staff, "distribution": distribution(customers, now, result_period)}

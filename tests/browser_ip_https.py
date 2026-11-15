@@ -90,7 +90,7 @@ class IPHttpsBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.get_by_role("button", name="로그인", exact=True).click()
         expect(page).to_have_url(origin + "/app/employee")
         page.locator('#employee-dashboard-site').select_option(str(self.second.pk))
-        expect(page.locator('#dashboard-summary .overview-metric').nth(2).locator('dd')).to_have_text('1건')
+        expect(page.locator('#dashboard-summary .overview-metric').nth(3).locator('dd')).to_have_text('1명')
         page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
         expect(page.locator('#site')).to_have_value(str(self.second.pk))
         expect(page.locator("#page-info")).to_contain_text("검색 1건")

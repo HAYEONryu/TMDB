@@ -5,7 +5,8 @@ import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
-import {openGridFilter,renderFilterChips,columnFilterButton,markFilterHeaders} from './grid-filter.js';
+import {openGridFilter} from './grid-filter.js';
+import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
 
 const $ = selector => document.querySelector(selector);
@@ -16,7 +17,7 @@ const multiline = new Set(['notes','memo','admin_notes']);
 const dates = new Set(["visit_at", "callback_due_at", "assigned_at"]);
 const pending = new Map();
 const assigneeOperation=new PendingOperation("assignee",$("#management").dataset.userId,/^\/api\/customers\/[0-9a-f-]+\/assignee$/);
-let state = {site:"", page:1, size:50, q:"", sort:"-created_at", filters:{},assignee:new URL(location.href).searchParams.get("assignee_id")||""}, busy = false, lastPage = 1,assigneeRow;
+let state = {site:"", page:1, size:50, q:new URL(location.href).searchParams.get("q")||"", sort:new URL(location.href).searchParams.get("sort")||"-created_at", category:new URL(location.href).searchParams.get("dashboard_category")||"", filters:{},assignee:new URL(location.href).searchParams.get("assignee_id")||""}, busy = false, lastPage = 1,assigneeRow;
 let siteInfo, rows = new Map(), conflictId, bulkBody, loadedState,callbacks,hard,renameTarget,activeDateEditor;
 const actorRequest=(url,body)=>api(url,body,'POST',{'X-TM-Actor':$('#management').dataset.userId});
 const openHistory=installHistory(actorRequest);
@@ -25,7 +26,7 @@ const text = (tag, value) => { const el = document.createElement(tag); el.textCo
 const display = (field, value) => field === "phone_normalized" && value ? String(value).replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3") : choiceLabel(schema,field,value);
 const localDate = value => value ? new Intl.DateTimeFormat("sv-SE", {timeZone:"Asia/Seoul",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date(value)).replace(" ", "T") : "";
 const normalize = (field, value) => dates.has(field) ? (value ? new Date(value.includes("Z") || /[+-]\d\d:\d\d$/.test(value) ? value : value+":00+09:00").toISOString() : null) : field === "call_result" ? value || null : field === "contract_status" ? value || "UNKNOWN" : ['housing_status','residence','route'].includes(field) ? (value || "").trim() : (value || "").replace(/\r\n?/g,"\n");
-const params = () => new URLSearchParams({site_id:state.site, view:trash?"trash":"all", q:state.q, filters:JSON.stringify(state.filters),...(state.assignee?{assignee_id:state.assignee}:{})});
+const params = () => new URLSearchParams({site_id:state.site, view:trash?"trash":"all", q:state.q, filters:JSON.stringify(state.filters),...(state.category?{dashboard_category:state.category}:{}),...(state.assignee?{assignee_id:state.assignee}:{})});
 function status() {
   const blocked=busy||callbacks?.busy||!!callbacks?.pending.value||hard?.busy||!!hard?.pending.value||(!trash&&!!assigneeOperation.value);
   $("#dirty-count").textContent = pending.size ? `미저장 ${pending.size}행` : "변경사항 없음";
@@ -34,8 +35,7 @@ function status() {
   $("#previous").disabled = blocked || state.page <= 1;
   $("#next").disabled = blocked || state.page >= lastPage;
   $("#site").disabled = blocked; $("#page-size").disabled = blocked; $("#sort").disabled = blocked;
-  $("#filter-apply").disabled=busy;$("#filter-reset").disabled=busy;
-  for(const selector of ["#create-site","#clear-filters","#search-form button"]){const button=$(selector);if(button)button.disabled=blocked;}
+  for(const selector of ["#create-site","#open-filters","#search-form button"]){const button=$(selector);if(button)button.disabled=blocked;}
   if($('#rename-site'))$('#rename-site').disabled=blocked||!siteInfo?.items.some(site=>site.id===state.site);
   document.querySelectorAll(".assignee-action").forEach(button=>button.disabled=blocked);
   document.querySelectorAll('.callback-action').forEach(button=>{const row=table.getRow(button.dataset.customerId);button.disabled=blocked||!row||!row.getData().callback_id;});
@@ -47,6 +47,7 @@ function rowStyle(row) {
   const item = pending.get(row.getData().id);
   row.getElement().classList.toggle("pending-row", !!item);
   row.getElement().classList.toggle("failed-row", !!item?.error);
+  row.getElement().classList.toggle("deletion-requested-row", !!row.getData().pending_deletion_request_id);
 }
 function refreshRows() {
   table.getRows().forEach(row=>{const item=pending.get(row.getData().id);row.getCell("_status")?.setValue(item?`${item.mutation}:${item.error?.code||"pending"}`:"saved");row.reformat();});
@@ -76,8 +77,7 @@ function dateEditor(cell, onRendered, success, cancel) {
 function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
-    headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue())),
-    titleFormatter:() => { const wrap = text("span", labels[field]);wrap.append(columnFilterButton(field,labels[field],()=>guarded(()=>openFilter(field)).catch(showError)));return wrap; }};
+    headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue()))};
   if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain,
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
@@ -85,7 +85,7 @@ function column(field) {
     ...(multiline.has(field) ? {variableHeight:true} : {})});
   return definition;
 }
-const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:"표시할 고객정보가 없습니다.", selectableRows:true,
+const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:" ", selectableRows:true,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
     ...customerFields({admin:true}).map(column),
     ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
@@ -113,25 +113,33 @@ async function loadSites(selected) {
   state.site = selected ?? siteInfo.default_site_id ?? (trash?"all":"");
   $("#site").value=state.site;
 }
+let loadGeneration=0;
+const runQuery=createQueryScheduler(guarded);
+$('#search').value=state.q;
+const queryUI=createQueryUI({getState:()=>state,labels,display,view:trash?'trash':'all',grid:$('#customer-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(showError)});
+$('#list-retry').onclick=()=>runQuery(load).catch(showError);
 async function load() {
-  busy=true; status(); notice("");
+  const generation=++loadGeneration;
+  busy=true; status(); notice("");queryUI.start();
   try {
     const query=params(); query.set("page",state.page); query.set("page_size",state.size); query.set("sort",state.sort);
     const data=await api("/api/customers?"+query);
+    if(generation!==loadGeneration)return;
     if (data.last_page<state.page) { state.page=data.last_page; busy=false; return load(); }
     rows=new Map(data.data.map(row=>[row.id,structuredClone(row)])); lastPage=data.last_page;
     await table.setData(data.data.map(row=>({...row,...pending.get(row.id)?.changes})));
+    if(generation!==loadGeneration)return;
     $("#page-info").textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $("#counts").textContent=data.counts?`전체 DB ${data.counts.total} · 미할당 ${data.counts.unassigned} · 휴지통 ${data.counts.trash}`:"";
-    renderFilterChips($("#active-filters"),state.filters,labels,display,field=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(showError));
-    if(state.assignee){const button=text("button","담당직원 조건 해제 ×");button.type='button';button.className="filter-chip";button.onclick=()=>guarded(async()=>{state.assignee="";await load();}).catch(showError);$("#active-filters").append(button);}
-    loadedState=structuredClone(state);markFilterHeaders(state.filters);
+    loadedState=structuredClone(state);queryUI.success(data);
+    if(!state.assignee){const url=new URL(location.href);if(url.searchParams.has('assignee_id')){url.searchParams.delete('assignee_id');history.replaceState(null,'',url);}}
     if($('#open-imports'))$('#open-imports').href='/app/admin/imports?'+new URLSearchParams({site_id:state.site});
     if (!siteInfo.items.length) notice("등록된 현장이 없습니다. 현장을 생성해 주세요.");
   } catch(error) {
+    if(generation!==loadGeneration)return;
     if(loadedState){state=structuredClone(loadedState);$("#site").value=state.site;$("#sort").value=state.sort;$("#page-size").value=String(state.size);$('#search').value=state.q;}
-    throw error;
-  } finally { busy=false; status(); }
+    queryUI.failure(error);throw error;
+  } finally { if(generation===loadGeneration){busy=false; status();} }
 }
 async function save() {
   if(!commitEditor()||busy)return false; if (!pending.size) return true;
@@ -172,13 +180,13 @@ async function guarded(action) {
   await action(); return true;
 }
 $("#save")?.addEventListener("click",save);
-$("#site").addEventListener("change",async event=>{ const selected=event.target.value; if (!await guarded(async()=>{state.site=selected;state.page=1;await load();}).catch(showError)) event.target.value=state.site; });
-$("#sort").addEventListener("change",async event=>{const sort=event.target.value; await guarded(async()=>{state.sort=sort;state.page=1;await load();}).catch(showError);event.target.value=state.sort;});
-$("#page-size").addEventListener("change",async event=>{const size=Number(event.target.value);await guarded(async()=>{state.size=size;state.page=1;await load();}).catch(showError);event.target.value=String(state.size);});
-$("#search-form").addEventListener("submit",event=>{event.preventDefault();const q=$("#search").value;guarded(async()=>{state.q=q;state.page=1;await load();}).catch(showError);});
-$("#previous").onclick=()=>guarded(async()=>{state.page--;await load();}).catch(showError);
-$("#next").onclick=()=>guarded(async()=>{state.page++;await load();}).catch(showError);
-$("#clear-filters").onclick=()=>guarded(async()=>{state.filters={};state.assignee="";state.q="";$("#search").value="";state.page=1;await load();}).catch(showError);
+$("#site").addEventListener("change",async event=>{ const selected=event.target.value; if (!await runQuery(async()=>{state.site=selected;state.page=1;await load();}).catch(showError)) event.target.value=state.site; });
+$("#sort").addEventListener("change",async event=>{const sort=event.target.value; await runQuery(async()=>{state.sort=sort;state.page=1;await load();}).catch(showError);event.target.value=state.sort;});
+$("#page-size").addEventListener("change",async event=>{const size=Number(event.target.value);await runQuery(async()=>{state.size=size;state.page=1;await load();}).catch(showError);event.target.value=String(state.size);});
+$("#search-form").addEventListener("submit",event=>{event.preventDefault();const q=$("#search").value.trim();runQuery(async()=>{state.q=q;state.page=1;await load();}).then(moved=>{if(!moved)queryUI.render({search:true});}).catch(showError);});
+$("#previous").onclick=()=>runQuery(async()=>{state.page--;await load();}).catch(showError);
+$("#next").onclick=()=>runQuery(async()=>{state.page++;await load();}).catch(showError);
+
 window.addEventListener("beforeunload",event=>{const valid=commitEditor();if(!valid||pending.size||hard?.pending.value){event.preventDefault();event.returnValue="";}});
 document.addEventListener("click",event=>{
   const link=event.target.closest("a[href]"); if(!link)return;if(!commitEditor()){event.preventDefault();event.stopImmediatePropagation();return;}if(!pending.size&&!busy&&!hard?.busy&&!hard?.pending.value)return;
@@ -236,15 +244,11 @@ $("#bulk-confirm").onclick=async()=>{
   finally{button.disabled=false;busy=false;status();}
 };
 
-function openFilter(field){
-  void openGridFilter({field,label:labels[field],schema,current:state.filters[field],request:api,params,display,
-    apply:async condition=>{
-      const previous=structuredClone(state);
-      if(condition===undefined)delete state.filters[field];else state.filters[field]=condition;
-      state.page=1;
-      try{await load();}catch(problem){state=previous;throw problem;}
-    }}).catch(showError);
-}
+$('#open-filters').onclick=()=>{
+  if(!commitEditor()||busy)return;
+  openGridFilter({fields:customerFields({admin:true}),labels,schema,current:state.filters,request:api,params,display,
+    apply:filters=>runQuery(async()=>{state.filters=filters;state.page=1;await load();})});
+};
 async function openAssignee(id){
   if(assigneeOperation.value)return;assigneeRow=rows.get(id);if(!assigneeRow)return;
   busy=true;status();

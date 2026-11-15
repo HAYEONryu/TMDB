@@ -32,9 +32,9 @@ function render(){
   }));status();
 }
 async function transfers(target=transferPage){
-  const data=await api("/api/users/transfer-needed?"+new URLSearchParams({page:target}));transferPage=target;transferLast=data.last_page;
+  const data=await api("/api/users/transfer-needed?"+new URLSearchParams({page:target,...(new URL(location.href).searchParams.get('site_id')?{site_id:new URL(location.href).searchParams.get('site_id')}:{})}));transferPage=target;transferLast=data.last_page;
   $("#transfer-rows").replaceChildren(...data.items.map(person=>{const tr=document.createElement("tr");for(const value of [person.site_name,person.customer_name,person.phone.replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3"),person.employee_name]){const td=document.createElement("td");td.textContent=value;tr.append(td);}const td=document.createElement("td"),link=document.createElement("a");link.textContent="DB 관리에서 이관";link.href="/app/admin/customers?"+new URLSearchParams({site_id:person.site_id,assignee_id:person.employee_id});td.append(link);tr.append(td);return tr;}));
-  $("#transfer-page").textContent=`이관 필요 ${data.total}건 · ${transferPage} / ${transferLast}페이지`;status();
+  $("#transfer-page").textContent=`이관 필요 ${data.total}건 · ${transferPage} / ${transferLast}페이지${data.as_of?' · '+new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(data.as_of))+' 조회':''}`;status();
 }
 async function load(target=page,search=q){
   const data=await api("/api/users?"+new URLSearchParams({page:target,q:search}));page=target;lastPage=data.last_page;q=search;

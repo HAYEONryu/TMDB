@@ -8,7 +8,8 @@ import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
 import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
-import {openGridFilter,renderFilterChips,columnFilterButton,markFilterHeaders} from './grid-filter.js';
+import {openGridFilter} from './grid-filter.js';
+import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
@@ -18,7 +19,7 @@ const multiline=new Set(['notes','memo']);
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const display=(field,value)=>dates.has(field)?(value?(field==='visit_at'?localDate(value).replace('T',' '):localDate(value).slice(0,10)):'-'):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
-let state={site:'',page:1,size:50,q:'',sort:view==='today'?'priority':'-created_at',filters:{}},defaultSite='',loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
+let state={site:'',page:1,size:50,q:new URL(location.href).searchParams.get('q')||'',sort:new URL(location.href).searchParams.get('sort')||(view==='today'?'priority':'-created_at'),category:new URL(location.href).searchParams.get('dashboard_category')||'',filters:{}},defaultSite='',loadedState,lastPage=1,loading=true,navigating=false,activeEditor=null,comparison,callbacks,deletions,ai,queueReady=false,readOnly=false,accessRevoked=false;
 async function request(url,body){
   if(environmentProblem&&body!==undefined)throw new Error('현재 조회 전용입니다. 상담 편집·저장은 HTTPS와 지원되는 브라우저에서 이용해 주세요.');
   return withRequestTimeout(async signal=>{
@@ -33,7 +34,7 @@ async function request(url,body){
 const queue=new EmployeeQueue(userId,request);
 const environmentProblem=employeeSupportError();
 const statusLabels={dirty:'미저장',saving:'저장 중',offline:'오프라인 대기',retry:'저장 실패·재시도 대기',failed:'저장 실패',conflict:'충돌',blocked:'전송 불가',review:'수동 확인 필요',checking:'복구 확인 중',clearing:'보관 정리 중'};
-const params=()=>new URLSearchParams({site_id:state.site,view,q:state.q,filters:JSON.stringify(state.filters)});
+const params=()=>new URLSearchParams({site_id:state.site,view,q:state.q,filters:JSON.stringify(state.filters),...(state.category?{dashboard_category:state.category}:{})});
 function error(error){notice(error.message);}
 function commitEditor(){activeEditor?.finish();}
 function validate(field,value,row){
@@ -75,7 +76,6 @@ function editor(cell,onRendered,success,cancel){
 function column(field){
   return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
     formatter:cell=>text('span',display(field,cell.getValue())),
-    titleFormatter:()=>{const wrap=text('span',labels[field]);wrap.append(columnFilterButton(field,labels[field],()=>guarded(()=>openFilter(field)).catch(error)));return wrap;},
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
@@ -124,8 +124,14 @@ function actions(cell){
   button.disabled=!!requested||actionBlocked(row);button.title='관리자에게 삭제 승인을 요청합니다.';button.onclick=()=>{commitEditor();deletions.run(row.id);};wrap.append(history,button);
   const control=text('button','AI 도움');control.className='btn btn-sm btn-outline-primary ms-2';control.title='기능 설명·사용 준비·기존 AI 결과를 확인합니다.';control.disabled=queue.paused||ai?.busy||callbacks?.busy||deletions?.busy;control.onclick=()=>{commitEditor();ai.open(row.id);};wrap.append(control);return wrap;
 }
-const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:'표시할 고객정보가 없습니다.',selectableRows:false,clipboard:false,
-  rowFormatter:row=>{const e=queue.entry(row.getData().id);row.getElement().classList.toggle('pending-row',!!e);row.getElement().classList.toggle('failed-row',!!e&&['failed','conflict','blocked','review','retry'].includes(e.state));},
+function rowStyle(row){
+  const data=queue.rows.get(row.getData().id)||row.getData(),entry=queue.entry(data.id),element=row.getElement();
+  element.classList.toggle('pending-row',!!entry);
+  element.classList.toggle('failed-row',!!entry&&['failed','conflict','blocked','review','retry'].includes(entry.state));
+  element.classList.toggle('deletion-requested-row',!!data.pending_deletion_request_id||!!deletions?.isConfirmed(data));
+}
+const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:' ',selectableRows:false,clipboard:false,
+  rowFormatter:rowStyle,
   columns:[...customerFields().map(field=>({...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})})),{title:'작업',field:'_actions',headerSort:false,minWidth:300,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
@@ -146,24 +152,30 @@ function renderStatus(){
     const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
     const action=row.getCell('_actions');if(action)action.setValue(JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]));
     const callback=row.getCell('callback_due_at');if(callback&&!callback.getElement().classList.contains('tabulator-editing'))callback.getElement().replaceChildren(callbackCell(callback));
-    row.getElement().classList.toggle('pending-row',!!entry);row.getElement().classList.toggle('failed-row',!!entry&&['failed','conflict','blocked','review','retry'].includes(entry.state));
+    rowStyle(row);
   }
 }
 const eState=e=>[e.state,e.version,Object.keys(e.pending).length,e.error].join(':');
 queue.addEventListener('change',renderStatus);
+let loadGeneration=0;
+const runQuery=createQueryScheduler(guarded);
+$('#search').value=state.q;
+const queryUI=createQueryUI({getState:()=>state,labels,display,view,grid:$('#employee-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(error)});
+$('#list-retry').onclick=()=>runQuery(load).catch(error);
 async function load(){
-  loading=true;notice('');
+  const generation=++loadGeneration;
+  loading=true;notice('');queryUI.start();
   try{
     const query=params();query.set('page',state.page);query.set('page_size',state.size);query.set('sort',state.sort);
-    const data=await request('/api/customers?'+query);if(data.last_page<state.page){state.page=data.last_page;return await load();}
+    const data=await request('/api/customers?'+query);if(generation!==loadGeneration)return;if(data.last_page<state.page){state.page=data.last_page;return await load();}
     queue.setRows(data.data);lastPage=data.last_page;
     await table.setData(data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )})));
+    if(generation!==loadGeneration)return;
     $('#page-info').textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
     $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
-    renderFilterChips($('#active-filters'),state.filters,labels,display,field=>guarded(async()=>{delete state.filters[field];state.page=1;await load();}).catch(error));
-    loadedState=structuredClone(state);markFilterHeaders(state.filters);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
-  }catch(e){if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);$('#search').value=state.q;}throw e;}
-  finally{loading=false;}
+    loadedState=structuredClone(state);queryUI.success(data);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
+  }catch(e){if(generation!==loadGeneration)return;if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);$('#search').value=state.q;}queryUI.failure(e);throw e;}
+  finally{if(generation===loadGeneration)loading=false;}
 }
 function choice(dialog,actions){
   return new Promise(resolve=>{let done=false;const finish=value=>{if(done)return;done=true;dialog.close();resolve(value);};for(const [id,value] of Object.entries(actions))$('#'+id).onclick=()=>finish(value);dialog.oncancel=event=>{event.preventDefault();finish('cancel');};dialog.showModal();});
@@ -202,13 +214,13 @@ $('#employee-reapply').onclick=async()=>{const button=$('#employee-reapply');but
 $('#employee-discard').onclick=async()=>{if(!confirm('내 대기값을 폐기하시겠습니까? 이미 저장된 변경은 취소되지 않습니다.'))return;await queue.discard(comparison.entry);$('#employee-conflict').close();await load().catch(error);};
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>button.closest('dialog').close();
 $('#save-now').onclick=async()=>{commitEditor();const ok=await queue.flush(true);notice(ok?'저장했습니다.':'저장하지 못한 행을 확인해 주세요.');};
-$('#reload-rows').onclick=()=>guarded(load).catch(error);
-$('#site').onchange=event=>{const site=event.target.value;event.target.value=state.site;guarded(async()=>{state.site=site;state.page=1;$('#site').value=site;await load();}).catch(error);};
-$('#sort').onchange=event=>{const sort=event.target.value;event.target.value=state.sort;guarded(async()=>{state.sort=sort;state.page=1;$('#sort').value=sort;await load();}).catch(error);};
-$('#page-size').onchange=event=>{const size=Number(event.target.value);event.target.value=String(state.size);guarded(async()=>{state.size=size;state.page=1;$('#page-size').value=String(size);await load();}).catch(error);};
-$('#search-form').onsubmit=event=>{event.preventDefault();guarded(async()=>{state.q=$('#search').value;state.page=1;await load();}).catch(error);};
-$('#clear-filters').onclick=()=>guarded(async()=>{state.filters={};state.q='';$('#search').value='';state.page=1;await load();}).catch(error);
-$('#previous').onclick=()=>guarded(async()=>{state.page--;await load();}).catch(error);$('#next').onclick=()=>guarded(async()=>{state.page++;await load();}).catch(error);
+$('#reload-rows').onclick=()=>runQuery(load).catch(error);
+$('#site').onchange=event=>{const site=event.target.value;event.target.value=state.site;runQuery(async()=>{state.site=site;state.page=1;$('#site').value=site;await load();}).catch(error);};
+$('#sort').onchange=event=>{const sort=event.target.value;event.target.value=state.sort;runQuery(async()=>{state.sort=sort;state.page=1;$('#sort').value=sort;await load();}).catch(error);};
+$('#page-size').onchange=event=>{const size=Number(event.target.value);event.target.value=String(state.size);runQuery(async()=>{state.size=size;state.page=1;$('#page-size').value=String(size);await load();}).catch(error);};
+$('#search-form').onsubmit=event=>{event.preventDefault();const q=$('#search').value.trim();runQuery(async()=>{state.q=q;state.page=1;await load();}).then(moved=>{if(!moved)queryUI.render({search:true});}).catch(error);};
+
+$('#previous').onclick=()=>runQuery(async()=>{state.page--;await load();}).catch(error);$('#next').onclick=()=>runQuery(async()=>{state.page++;await load();}).catch(error);
 document.addEventListener('click',event=>{const link=event.target.closest('a[href]');if(!link||link.target||event.ctrlKey||event.metaKey)return;if(new URL(link.href).origin!==location.origin)return;event.preventDefault();guarded(()=>{location.href=link.href;}).catch(error);},true);
 document.addEventListener('submit',event=>{const form=event.target;if(form.action?.endsWith('/auth/logout')){event.preventDefault();event.stopImmediatePropagation();guarded(()=>{HTMLFormElement.prototype.submit.call(form);},true).catch(error);}},true);
 for(const name of ['copy','cut','contextmenu'])$('#employee-grid').addEventListener(name,event=>event.preventDefault());
@@ -218,15 +230,11 @@ window.addEventListener('offline',()=>{for(const entry of queue.all())if(['dirty
 async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){accessRevoked=true;readOnly=false;queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}if(environmentProblem){if(!accessRevoked){readOnly=true;renderStatus();}return;}await queue.resume();}catch(e){error(e);}}
 window.addEventListener('online',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});window.addEventListener('focus',resume);
 window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial){accessRevoked=true;readOnly=false;queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');}});
-function openFilter(field){
-  void openGridFilter({field,label:labels[field],schema,current:state.filters[field],request:request,params,display,
-    apply:async condition=>{
-      const previous=structuredClone(state);
-      if(condition===undefined)delete state.filters[field];else state.filters[field]=condition;
-      state.page=1;
-      try{await load();}catch(problem){state=previous;throw problem;}
-    }}).catch(error);
-}
+$('#open-filters').onclick=()=>{
+  commitEditor();
+  openGridFilter({fields:customerFields(),labels,schema,current:state.filters,request,params,display,
+    apply:filters=>runQuery(async()=>{state.filters=filters;state.page=1;await load();})});
+};
 
 await ready;
 callbacks=new CallbackAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:async row=>{if(row)queue.setRows([row]);await load();},notice,changed:renderStatus});callbacks.update();

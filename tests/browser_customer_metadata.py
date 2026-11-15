@@ -15,6 +15,7 @@ from tests.browser_observation import BrowserObservation
 from tests.helpers import STRONG_PASSWORD
 from tests.test_imports import workbook
 from tests.test_p4 import Fixtures
+from tests.browser_filter_helpers import open_detail_filter
 
 
 class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
@@ -125,8 +126,9 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.login(self.employee)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
-        self.assertEqual(header('employee-grid'),[[field,label] for field,label in zip(fields,labels) if field!='admin_notes'])
-        for field in ['phone_normalized','assignee_name','assigned_at']:
+        self.assertEqual(header('employee-grid'),[[field,label] for field,label in zip(fields,labels) if field not in {'admin_notes','assignee_name'}])
+        self.assertEqual(page.locator('#employee-grid [tabulator-field="assignee_name"]').count(),0)
+        for field in ['phone_normalized','assigned_at']:
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click();expect(cell.locator('input,textarea,select')).to_have_count(0)
         self.assertEqual(page.locator('#employee-grid [tabulator-field="admin_notes"]').count(),0)
@@ -223,25 +225,25 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
             page.goto(self.live_server_url+f'/app/{path}?site_id={self.site.pk}')
             expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
             for field,choices in CURRENT_CHOICES.items():
-                page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
+                open_detail_filter(page,field)
                 options=page.locator('#filter-options')
                 expect(options).to_be_visible()
                 for title in ['미입력',*choices.values()]:expect(options.get_by_role('checkbox',name=title,exact=True)).to_have_count(1)
                 options.get_by_role('checkbox',name=next(iter(choices.values())),exact=True).check()
                 page.locator('#filter-apply').click()
                 expect(page.locator('#page-info')).to_contain_text('검색 1건')
-                page.locator(f'#{grid} .tabulator-header [tabulator-field="{field}"] .column-filter').click()
+                open_detail_filter(page,field)
                 expect(page.locator('#filter-options').get_by_role('checkbox',name=next(iter(choices.values())),exact=True)).to_be_checked()
-                page.locator('#filter-reset').click()
+                page.locator('#filter-reset').click();page.locator('#filter-apply').click()
                 expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
-                page.locator('#clear-filters').click()
+                if page.locator('#clear-filters').is_enabled():page.locator('#clear-filters').click()
                 expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
-            page.get_by_role('button',name='계약여부 필터',exact=True).click()
+            open_detail_filter(page,'contract_status')
             page.locator('#filter-mode input[value="EMPTY"]').check();page.locator('#filter-apply').click()
             expect(page.locator('#page-info')).to_contain_text(f'검색 {1 if actor==self.admin else 0}건')
             page.locator('#clear-filters').click()
             expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
-            page.get_by_role('button',name='루트 필터',exact=True).click()
+            open_detail_filter(page,'route')
             options=page.locator('#filter-options')
             expect(options).to_have_attribute('aria-busy','false')
             if actor==self.employee:self.assertNotIn('다른직원 이전값',options.inner_text())
