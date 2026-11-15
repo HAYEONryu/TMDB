@@ -70,8 +70,13 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
     def close(self):self.page.locator('#ai-dialog [data-close]').click()
 
     def test_compact_actions_help_and_empty_input_alert_never_generate(self):
+        for view in ['mine','today']:
+            self.open(view)
+            fields=self.page.locator('#employee-grid .tabulator-col[tabulator-field]').evaluate_all('columns=>columns.map(column=>column.getAttribute("tabulator-field"))')
+            self.assertEqual(fields[3:6],['call_result','_deletion','callback_due_at'])
+            expect(self.row().locator('[tabulator-field="_deletion"] button')).to_have_text('삭제 요청')
         buttons=self.row().locator('[tabulator-field="_actions"] button')
-        self.assertEqual(buttons.all_text_contents(),['이력','삭제 요청','AI 도움'])
+        self.assertEqual(buttons.all_text_contents(),['이력','AI 도움'])
         buttons.first.scroll_into_view_if_needed()
         header=self.page.locator('#employee-grid .tabulator-col[tabulator-field="_actions"]')
         header.locator('.tabulator-col-title span').hover()
@@ -82,7 +87,8 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(tooltip).to_have_css('position','fixed')
         box=tooltip.bounding_box()
         self.assertGreaterEqual(box['y'],0);self.assertLessEqual(box['y']+box['height'],self.page.viewport_size['height'])
-        self.assertIn('\n\n삭제 요청:',tooltip.inner_text())
+        self.assertNotIn('삭제 요청:',tooltip.inner_text())
+        expect(self.page.locator('#employee-grid .tabulator-col[tabulator-field="_deletion"] .tabulator-col-title span')).to_have_attribute('aria-label','삭제 요청: 관리자에게 고객 삭제를 요청합니다. 관리자 승인 후 휴지통으로 이동합니다.')
         for label in ['항목 정리:','핵심 요약:','다음 질문:','기존 결과:','재콜 완료:']:
             expect(tooltip).to_contain_text(label)
         self.page.screenshot(path=str(self.evidence/'actions-header-help.png'),full_page=False)

@@ -126,7 +126,9 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.login(self.employee)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1건')
-        self.assertEqual(header('employee-grid'),[[field,label] for field,label in zip(fields,labels) if field not in {'admin_notes','assignee_name'}])
+        employee_header=[[field,label] for field,label in zip(fields,labels) if field not in {'admin_notes','assignee_name'}]
+        employee_header.insert(4,['_deletion','삭제 요청'])
+        self.assertEqual(header('employee-grid'),employee_header)
         self.assertEqual(page.locator('#employee-grid [tabulator-field="assignee_name"]').count(),0)
         for field in ['phone_normalized','assigned_at']:
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first

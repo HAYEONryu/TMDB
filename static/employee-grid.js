@@ -79,9 +79,9 @@ function column(field){
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
 const openHistory=installHistory(request);
+const deletionHelp='삭제 요청: 관리자에게 고객 삭제를 요청합니다. 관리자 승인 후 휴지통으로 이동합니다.';
 const actionHelp=[
   '이력: 상담 변경 내역과 재콜 처리 기록을 확인합니다.',
-  '삭제 요청: 관리자에게 고객 삭제를 요청합니다.\n관리자 승인 후 휴지통으로 이동합니다.',
   'AI 도움\n· 항목 정리: 상담을 정리하고 수정할 값을 제안합니다.\n· 핵심 요약: 상담의 핵심 내용을 보여줍니다.\n· 다음 질문: 다음 통화에서 물어볼 질문을 제안합니다.\n· 기존 결과: 이전에 생성한 AI 결과를 확인합니다.\n결과를 확인한 뒤 선택한 항목만 반영할 수 있습니다.',
   '재콜 완료: 재콜일정의 ‘완료’를 체크합니다.\n날짜를 지우면 완료가 아닌 일정 취소로 처리됩니다.'
 ].join('\n\n');
@@ -117,11 +117,14 @@ function callbackCell(cell){
   }
   return wrap;
 }
+function deletionCell(cell){
+  const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData();
+  const requested=!!row.pending_deletion_request_id||deletions?.isConfirmed(row),button=text('button',deletions?.busyId===row.id?'요청 중':requested?'요청완료':'삭제 요청');button.className='btn btn-sm btn-outline-danger';
+  button.disabled=!!requested||actionBlocked(row);button.title='관리자에게 삭제 승인을 요청합니다.';button.onclick=()=>{commitEditor();deletions.run(row.id);};return button;
+}
 function actions(cell){
   const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','이력');
-  history.className='btn btn-sm btn-outline-secondary me-2';history.setAttribute('aria-label','상담·재콜 이력');history.title='저장된 상담 변경과 재콜 이력을 조회합니다.';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};
-  const requested=!!row.pending_deletion_request_id||deletions?.isConfirmed(row),button=text('button',deletions?.busyId===row.id?'요청 중':requested?'요청완료':'삭제 요청');button.className='btn btn-sm btn-outline-danger';
-  button.disabled=!!requested||actionBlocked(row);button.title='관리자에게 삭제 승인을 요청합니다.';button.onclick=()=>{commitEditor();deletions.run(row.id);};wrap.append(history,button);
+  history.className='btn btn-sm btn-outline-secondary';history.setAttribute('aria-label','상담·재콜 이력');history.title='저장된 상담 변경과 재콜 이력을 조회합니다.';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};wrap.append(history);
   const control=text('button','AI 도움');control.className='btn btn-sm btn-outline-primary ms-2';control.title='기능 설명·사용 준비·기존 AI 결과를 확인합니다.';control.disabled=queue.paused||ai?.busy||callbacks?.busy||deletions?.busy;control.onclick=()=>{commitEditor();ai.open(row.id);};wrap.append(control);return wrap;
 }
 function rowStyle(row){
@@ -132,7 +135,10 @@ function rowStyle(row){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:' ',selectableRows:false,clipboard:false,
   rowFormatter:rowStyle,
-  columns:[...customerFields().map(field=>({...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})})),{title:'작업',field:'_actions',headerSort:false,minWidth:300,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
+  columns:[...customerFields().flatMap(field=>[
+    {...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})},
+    ...(field==='call_result'?[{title:'삭제 요청',field:'_deletion',headerSort:false,minWidth:120,headerTooltip:deletionHelp,titleFormatter:()=>{const label=text('span','삭제 요청');label.tabIndex=0;label.setAttribute('aria-label',deletionHelp);return label;},formatter:deletionCell}]:[])
+  ]),{title:'작업',field:'_actions',headerSort:false,minWidth:220,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=readOnly?'조회 전용':queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
@@ -150,7 +156,8 @@ function renderStatus(){
     if(entry?.state==='blocked'){row.delete().catch(()=>{});continue;}
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
     const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
-    const action=row.getCell('_actions');if(action)action.setValue(JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]));
+    const actionState=JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]);
+    for(const field of ['_actions','_deletion']){const cell=row.getCell(field);if(cell)cell.setValue(actionState);}
     const callback=row.getCell('callback_due_at');if(callback&&!callback.getElement().classList.contains('tabulator-editing'))callback.getElement().replaceChildren(callbackCell(callback));
     rowStyle(row);
   }
