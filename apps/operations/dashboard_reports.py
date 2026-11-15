@@ -1,12 +1,13 @@
 """Read-only manager aggregates. No customer text or generated AI is returned."""
 from datetime import datetime, time, timedelta
-from django.db.models import Count, Q, F, Exists, OuterRef, Subquery, JSONField
+from django.db.models import Case, Count, Q, F, Exists, OuterRef, Subquery, JSONField, When
+from django.db.models.functions import TruncDate
 from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer
 from apps.customers.queries import KST
-from apps.customers.cohorts import current_customers
+from apps.customers.cohorts import current_customers, valid_assignment
 from apps.callbacks.models import Callback
 from apps.consultations.queries import consultation_saves
 
@@ -65,16 +66,26 @@ def manager_report(site_id, now, result_period):
     # One customer per actual employee author across the entire seven-day span,
     # even when notes/callbacks were saved repeatedly or on different days.
     records = {row["actor_id"]: row["count"] for row in saves.values("actor_id").annotate(count=Count("customer_id", distinct=True))}
+    daily = {row['day']: row['count'] for row in saves.annotate(day=TruncDate('saved_at', tzinfo=KST))
+        .values('day').annotate(count=Count('customer_id', distinct=True))}
     live = current_customers(site_id, now).annotate(overdue_callback=Exists(Callback.objects.filter(customer_id=OuterRef('pk'),status='PENDING',due_at__lt=now)))
     holdings = {row["current_assignment__employee_id"]: row for row in
         live.values("current_assignment__employee_id").annotate(held=Count("pk"),
             progressed=Count("pk", filter=Q(current_assignment__first_activity_at__isnull=False)),
             today_held=Count("pk", filter=Q(current_assignment__assigned_at__gte=today)),
             overdue=Count("pk", filter=Q(overdue_callback=True)),
+            subscribed=Count("pk", filter=Q(contract_status=Customer.ContractStatus.SUBSCRIBED)),
             contracted=Count("pk", filter=Q(contract_status=Customer.ContractStatus.CONTRACTED)))}
-    states = {}
-    for row in live.values("current_assignment__employee_id", "call_result").annotate(count=Count("pk")):
-        states.setdefault(row["current_assignment__employee_id"], {})[row["call_result"]] = row["count"]
+    # Share one grouped read for site contract stages and current-owner results.
+    # Unassigned, ended and future assignments contribute only to site totals.
+    states, contracts = {}, {}
+    grouped = customers.annotate(holding_employee=Case(When(valid_assignment(now),
+        then=F('current_assignment__employee_id')))).values('holding_employee', 'call_result', 'contract_status').annotate(count=Count('pk'))
+    for row in grouped:
+        contracts[row['contract_status']] = contracts.get(row['contract_status'], 0)+row['count']
+        if row['holding_employee'] is not None:
+            results = states.setdefault(row['holding_employee'], {})
+            results[row['call_result']] = results.get(row['call_result'], 0)+row['count']
     ids = (set(allocations)|set(records)|set(holdings))-{None}
     people = User.objects.filter(Q(role=User.Role.EMPLOYEE, is_active=True)|Q(pk__in=ids)).order_by("created_at", "pk")
     staff = []
@@ -90,7 +101,8 @@ def manager_report(site_id, now, result_period):
             "held_total": held.get("held", 0), "progressed_total": held.get("progressed", 0),
             "current_assignment_today_held": held.get("today_held", 0), "callbacks_overdue": held.get("overdue", 0),
             "unprogressed_total": held.get("held", 0)-held.get("progressed", 0),
-            "contracted_total": held.get("contracted", 0), "call_results": result_rows(states.get(person.pk, {}))})
+            "contracted_total": held.get("contracted", 0), "subscribed_total": held.get('subscribed', 0),
+            "call_results": result_rows(states.get(person.pk, {}))})
     staff.sort(key=lambda row:(-row["callbacks_overdue"], -row["unprogressed_total"], row["name"], row["id"]))
     return {"current_assignment_today_held": sum(row["current_assignment_today_held"] for row in staff),
             "callbacks_overdue": sum(row["callbacks_overdue"] for row in staff),
@@ -98,4 +110,8 @@ def manager_report(site_id, now, result_period):
             "assigned_today_unique": history.filter(assigned_at__gte=today, assigned_at__lt=tomorrow).values("customer_id").distinct().count(),
             "assignment_operations_today": sum(row["today_operations"] for row in allocations.values()),
             "records_start": seven_start.isoformat(), "records_end_exclusive": tomorrow.isoformat(),
+            "daily_consultations": [{'date': (seven_start+timedelta(days=i)).date().isoformat(),
+                'count': daily.get((seven_start+timedelta(days=i)).date(), 0)} for i in range(7)],
+            "contract_statuses": [{'value': value, 'label': label, 'count': contracts.get(value, 0)}
+                for value, label in Customer.ContractStatus.choices],
             "staff": staff, "distribution": distribution(customers, now, result_period)}

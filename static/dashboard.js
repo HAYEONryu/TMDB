@@ -65,6 +65,40 @@ function resultChart(distribution){
 
 }
 function table(headers){const node=document.createElement('table');node.className='table';const head=document.createElement('thead'),row=document.createElement('tr');for(const label of headers){const cell=text('th',label);cell.scope='col';row.append(cell);}head.append(row);const body=document.createElement('tbody');node.append(head,body);return {node,body};}
+function performance(data){
+  const report=data.manager,days=report.daily_consultations,ceiling=Math.max(1,...days.map(day=>day.count));
+  const drawing=svg('svg',{viewBox:'0 0 620 250',class:'staff-chart daily-chart',role:'img','aria-labelledby':'daily-chart-title daily-chart-desc'});
+  drawing.append(svg('title',{id:'daily-chart-title'},'최근 7일 일별 TM 상담 추이'),svg('desc',{id:'daily-chart-desc'},days.map(day=>`${day.date}: ${format(day.count)}명`).join(', ')));
+  for(let i=0;i<3;i++){const y=195-i*75;drawing.append(svg('line',{x1:20,x2:605,y1:y,y2:y,class:i?'chart-gridline':'chart-baseline'}));}
+  days.forEach((day,index)=>{const x=62+index*82,h=150*day.count/ceiling;
+    const bar=svg('rect',{x:x-19,y:195-h,width:38,height:h,rx:4,class:'staff-bar'});bar.append(svg('title',{},`${day.date}: ${format(day.count)}명`));
+    drawing.append(bar,svg('text',{x,y:185-h,'text-anchor':'middle',class:'bar-value'},format(day.count)),svg('text',{x,y:222,'text-anchor':'middle'},day.date.slice(5).replace('-','/')));
+  });
+  drawing.style.minWidth='440px';$('daily-consultation-chart').replaceChildren(drawing);
+  const total=report.contract_statuses.reduce((sum,row)=>sum+row.count,0),statuses=text('ul','','contract-status-list');
+  for(const row of report.contract_statuses){
+    const item=text('li','',''),heading=text('div','','contract-status-heading'),track=text('div','','contract-status-track'),fill=text('span','','contract-status-fill');
+    item.dataset.contractStatus=row.value;heading.append(text('span',row.label),text('strong',`${format(row.count)}명`),text('small',total?(row.count/total*100).toFixed(1)+'%':'0%'));
+    fill.style.width=(total?row.count/total*100:0)+'%';track.setAttribute('aria-hidden','true');track.append(fill);item.append(heading,track);statuses.append(item);
+  }
+  $('contract-status-chart').replaceChildren(text('p',`전체 ${format(total)}명`,'contract-status-total'),statuses);
+  const result=table(['직원','최근 7일 상담','현재 담당','진행률','가망고객','방문·재방','청약','계약','계약 비율']);
+  const percent=(count,total)=>total?(count/total*100).toFixed(1)+'%':'—';
+  for(const employee of report.staff){
+    const row=text('tr','');row.dataset.employeeId=employee.id;
+    const name=text('td',''),link=text('a',employee.name,'staff-name');link.href=siteLink('/app/admin/customers',data.site_id,'held',employee.id);name.append(link);
+    if(!employee.is_active||!employee.is_employee)name.append(text('div',!employee.is_active?'비활성 직원':'권한 변경 직원','staff-state'));
+    row.append(name,text('td',format(employee.consultation_records_7d)+'명'),text('td',format(employee.held_total)+'명'));
+    const progress=text('td',''),meter=document.createElement('progress');meter.max=employee.held_total||1;meter.value=employee.progressed_total;meter.setAttribute('aria-label',`${employee.name} 현재 담당 ${employee.held_total}명 중 ${employee.progressed_total}명 진행`);
+    progress.append(text('span',percent(employee.progressed_total,employee.held_total)),meter);row.append(progress);
+    const count=values=>employee.call_results.filter(result=>values.includes(result.value)).reduce((sum,result)=>sum+result.count,0);
+    for(const value of [count(['INTERESTED']),count(['VISITED','REVISITED']),employee.subscribed_total])row.append(text('td',format(value)+'명'));
+    const contracts=text('td',''),contractLink=text('a',format(employee.contracted_total)+'명');contractLink.href=siteLink('/app/admin/customers',data.site_id,'contracted',employee.id);contractLink.setAttribute('aria-label',`${employee.name} 현재 담당 계약 ${employee.contracted_total}명 목록 열기`);contracts.append(contractLink);
+    row.append(contracts,text('td',percent(employee.contracted_total,employee.held_total)));result.body.append(row);
+  }
+  if(!report.staff.length){const row=text('tr',''),cell=text('td','표시할 직원이 없습니다.');cell.colSpan=9;row.append(cell);result.body.append(row);}
+  $('staff-performance-table').replaceChildren(result.node);
+}
 function staffTables(data){
   const workload=table(['직원','우선순위','현재 담당','오늘 배정 유지','미진행','기한 지난 재콜']);
   const history=table(['직원','오늘 배정 이력 고객','오늘 배정 작업','최근 7일 배정 고객','최근 7일 배정 작업']);
@@ -84,7 +118,7 @@ function legacyStatistics(data,area){
   for(const e of data.employees){const row=document.createElement('tr');row.dataset.employeeId=e.id;for(const value of [e.name,e.assigned_today_unique,e.assignment_operations_today,e.held_total,e.assigned_today_held,e.assigned_today_removed,e.unprogressed_today_held,e.unprogressed_total,e.call_results.map(r=>`${r.label} ${r.count}`).join(' · ')])row.append(text('td',value));body.append(row);}area.append(node,text('p',`비활성 직원의 진행 DB · 이관 필요 ${data.transfer_needed}건 (선택 현장)`));if(!data.employees.length)area.append(text('p','활성 직원이 없습니다.'));
 }
 let displayedSite=null,lastData=null;
-const managerAreas=['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table'];
+const managerAreas=['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table','daily-consultation-chart','contract-status-chart','staff-performance-table'];
 function clearDashboard(message,extra){
   $('dashboard-summary').replaceChildren(text('p',message,'summary-loading'));$('dashboard-statistics').replaceChildren();
   for(const id of managerAreas)$(id)?.replaceChildren(text('p',message,'chart-empty'));
@@ -107,7 +141,7 @@ export async function renderDashboard(site,{draw,clear}={}){
     const params=new URLSearchParams();if(site)params.set('site_id',site);if($('result-period'))params.set('result_period',$('result-period').value);
     const data=await api('/api/dashboard'+(params.size?'?'+params:''),undefined,'GET',{'X-TM-Actor':document.body.dataset.userId});if(current!==generation)return;
     if(site&&data.site_id!==site)throw new Error('선택한 현장의 응답을 확인하지 못했습니다. 다시 조회해 주세요.');
-    renderSummary(data);if(data.manager){staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);legacyStatistics(data,$('dashboard-statistics'));$('site-counts').textContent=`현재 고객 ${format(data.counts.total)}명 · 현재 담당 ${format(data.manager.held_total)}명 · 휴지통 ${format(data.counts.trash)}명`;}
+    renderSummary(data);if(data.manager){staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);performance(data);legacyStatistics(data,$('dashboard-statistics'));$('site-counts').textContent=`현재 고객 ${format(data.counts.total)}명 · 현재 담당 ${format(data.manager.held_total)}명 · 휴지통 ${format(data.counts.trash)}명`;}
     draw?.(data);lastData=data;$('dashboard-updated').textContent=`마지막 성공 ${data.business_date} ${dashboardTime(data.as_of)} · ${data.site_name||'현장 없음'}`;
     message.dataset.state='success';message.textContent=(data.employee?data.employee.held_total:data.counts.total)?'선택 현장의 최신 결과입니다.':'선택 현장에 집계 대상 고객이 없습니다.';
     return data;

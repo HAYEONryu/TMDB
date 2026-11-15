@@ -8,6 +8,7 @@ const text=(tag,value,cls)=>{const node=document.createElement(tag);node.textCon
 const number=value=>new Intl.NumberFormat('ko-KR').format(value);
 const categories={held:'현재 보유 고객',callbacks_remaining:'오늘 남은 재콜',new_today:'오늘 받은 고객',overdue:'기한 지난 재콜',visits:'오늘 방문예약',contracted:'내 담당 계약'};
 let generation=0,listSequence=0,selectedCategory=null,defaultSite='',activeSite=null,lastList=null,counts={};
+let scheduleSequence=0,lastSchedule=null;
 const date=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)):'-';
 function syncButtons(){for(const button of document.querySelectorAll('[data-customer-category]'))button.setAttribute('aria-expanded',String(!panel.hidden&&button.dataset.customerCategory===selectedCategory));}
 function closeDetails(){selectedCategory=null;panel.hidden=true;listSequence++;area.replaceChildren();area.setAttribute('aria-busy','false');lastList=null;syncButtons();}
@@ -46,6 +47,41 @@ async function loadList(category,page=1){
   }finally{if(sequence===listSequence&&revision===generation)area.setAttribute('aria-busy','false');}
 }
 function metricButton(category,value,label){const button=text('button',number(value)+'명','metric-details-button');button.type='button';button.dataset.customerCategory=category;button.setAttribute('aria-controls','employee-customer-panel');button.setAttribute('aria-expanded','false');button.setAttribute('aria-label',label+' '+number(value)+'명 목록 열기');return button;}
+async function loadSchedule(page=1){
+  const target=$('employee-today-schedule'),sequence=++scheduleSequence,revision=generation,site=select.value;
+  const same=lastSchedule?.site===site&&lastSchedule.page===page;
+  target.setAttribute('aria-busy','true');
+  const status=text('p',same?'일정 갱신 중 · 마지막 결과를 표시합니다.':'오늘 상담 일정을 불러오고 있습니다…','schedule-summary');
+  if(same)target.querySelector('.schedule-summary')?.replaceWith(status);else target.replaceChildren(status);
+  try{
+    const params=new URLSearchParams({category:'scheduled',page});if(site)params.set('site_id',site);
+    const data=await api('/api/dashboard/customers?'+params,undefined,'GET',{'X-TM-Actor':document.body.dataset.userId});
+    if(sequence!==scheduleSequence||revision!==generation)return;
+    if(site&&data.site_id!==site)throw new Error('선택한 현장의 일정을 다시 확인해 주세요.');
+    status.textContent=`${data.business_date} · 상담 예정 고객 ${number(data.total)}명 · ${dashboardTime(data.as_of)} 조회${data.total?` · ${data.page} / ${data.last_page}페이지`:''}`;
+    target.replaceChildren(status);
+    if(!data.total)target.append(text('p','오늘 예정된 재콜·방문예약 고객이 없습니다.','customer-list-empty'));
+    else{
+      const wrap=text('div','','table-responsive'),table=text('table','','table schedule-table'),head=text('thead',''),tr=text('tr',''),body=text('tbody','');
+      const headers=['예정 시간·유형','고객명','연락처','상담결과','고객 확인'];
+      for(const label of headers){const th=text('th',label);th.scope='col';tr.append(th);}head.append(tr);
+      for(const customer of data.data){
+        const row=text('tr','');row.dataset.customerId=customer.id;
+        const times=text('td',''),events=[['재콜',customer.callback_due_at],['방문예약',customer.visit_at]].filter(([,value])=>value&&date(value).slice(0,10)===data.business_date).sort((a,b)=>new Date(a[1])-new Date(b[1]));
+        for(const [label,at] of events){const item=text('div','','schedule-event'),time=text('time',date(at).slice(11));time.dateTime=at;item.append(time,text('span',label,'schedule-kind'));if(new Date(at)<new Date(data.as_of))item.append(text('small','예정 시각 지남','schedule-past'));times.append(item);}
+        const action=text('td',''),link=text('a','고객 열기','btn btn-sm btn-outline-primary');link.href='/app/employee/mine?'+new URLSearchParams({site_id:customer.site_id,q:customer.phone_normalized});link.setAttribute('aria-label',(customer.customer_name||'이름 미입력')+' 고객 열기');action.append(link);
+        row.append(times,text('td',customer.customer_name||'이름 미입력'),text('td',customer.phone_normalized.replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3')),text('td',choiceLabel(data.schema,'call_result',customer.call_result)),action);
+        Array.from(row.cells).forEach((cell,index)=>cell.dataset.label=headers[index]);body.append(row);
+      }
+      table.append(head,body);wrap.append(table);target.append(wrap);
+    }
+    if(data.last_page>1){const pager=text('div','','customer-list-pagination');for(const [label,next,disabled] of [['이전',data.page-1,data.page<=1],['다음',data.page+1,data.page>=data.last_page]]){const button=text('button',label,'btn btn-sm btn-outline-secondary');button.type='button';button.disabled=disabled;button.setAttribute('aria-label','오늘 상담 일정 '+label+' 페이지');button.onclick=()=>loadSchedule(next);pager.append(button);}target.append(pager);}
+    lastSchedule={site,page:data.page};
+  }catch(error){if(sequence!==scheduleSequence||revision!==generation)return;
+    if([401,403].includes(error.status)){target.replaceChildren(text('p','다시 로그인해 주세요.'));lastSchedule=null;return;}
+    status.textContent=`상담 일정 조회 실패. ${same?'마지막 성공 목록을 표시합니다. ':''}${error.message}`;status.setAttribute('role','alert');const retry=text('button','일정 다시 조회','btn btn-sm btn-outline-secondary');retry.type='button';retry.onclick=()=>loadSchedule(page);status.append(retry);
+  }finally{if(sequence===scheduleSequence&&revision===generation)target.setAttribute('aria-busy','false');}
+}
 function work(data){
   const e=data.employee,p=e.consultation_progress,progress=text('article','','employee-work-result'),completed=text('article','','employee-work-result');
   const score=text('strong',p.total?`${number(p.completed)} / ${number(p.total)}명`:'오늘 배정된 고객 없음');score.id='employee-consultation-value';
@@ -57,8 +93,9 @@ function work(data){
   $('employee-contracts').replaceChildren(text('h2','현재 보유와 내 담당 계약','h5'),holdings,text('p','선택 현장 · 현재 유효한 내 배정 · 현재 계약 상태 기준','tm-basis'));
   counts={held:e.held_total,callbacks_remaining:e.callbacks_remaining,overdue:e.callbacks_overdue,new_today:e.current_assignment_today_held,visits:e.visits_today,contracted:e.contracted_held};
   syncButtons();if(selectedCategory&&!panel.hidden)void loadList(selectedCategory,lastList?.page||1);
+  void loadSchedule(lastSchedule?.page||1);
 }
-function clear(){closeDetails();$('employee-contracts').replaceChildren();}
+function clear(){closeDetails();$('employee-contracts').replaceChildren();scheduleSequence++;lastSchedule=null;$('employee-today-schedule').replaceChildren(text('p','통계를 조회하면 오늘 상담 일정을 표시합니다.'));$('employee-today-schedule').setAttribute('aria-busy','false');}
 async function refresh(){
   $('dashboard-refresh').onclick=refresh;
   if(activeSite!==select.value){generation++;clear();activeSite=select.value;}

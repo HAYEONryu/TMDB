@@ -2,7 +2,8 @@
 from datetime import datetime, time, timedelta
 
 from django.db import connection, transaction
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Case, Count, DateTimeField, Exists, F, OuterRef, Q, When
+from django.db.models.functions import Least
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -73,7 +74,7 @@ def customer_details(request):
     if set(request.GET) - {'site_id', 'category', 'page'} or any(len(request.GET.getlist(key)) != 1 for key in request.GET):
         raise AccessError('VALIDATION_ERROR', '고객 목록 조회 조건을 확인해 주세요.', 422)
     category = request.GET.get('category', 'held')
-    if category not in CATEGORIES:
+    if category not in CATEGORIES | {'scheduled'}:
         raise AccessError('VALIDATION_ERROR', '고객 목록 종류를 확인해 주세요.', 422)
     page = integer(request.GET, 'page', 1)
     if not 1 <= page <= 1000000000:
@@ -89,8 +90,15 @@ def customer_details(request):
         start = datetime.combine(timezone.localdate(now, KST), time.min, KST)
         end = start + timedelta(days=1)
         query = enriched(current_customers(request.user, site_id, now).defer('admin_notes'))
-        query = category_filter(query, category, now)
-        sort = 'visit_at' if category == 'visits' else 'callback_due_at' if category in {'callbacks_today', 'callbacks_remaining', 'overdue'} else 'assigned_at' if category == 'new_today' else 'customer_name'
+        if category == 'scheduled':
+            callback_today = Q(callback_due_at__gte=start, callback_due_at__lt=end)
+            visit_today = Q(visit_at__gte=start, visit_at__lt=end)
+            query = query.filter(callback_today | visit_today).annotate(scheduled_at=Least(
+                Case(When(callback_today, then=F('callback_due_at')), output_field=DateTimeField()),
+                Case(When(visit_today, then=F('visit_at')), output_field=DateTimeField())))
+        else:
+            query = category_filter(query, category, now)
+        sort = 'scheduled_at' if category == 'scheduled' else 'visit_at' if category == 'visits' else 'callback_due_at' if category in {'callbacks_today', 'callbacks_remaining', 'overdue'} else 'assigned_at' if category == 'new_today' else 'customer_name'
         total = query.count()
         last_page = max(1, (total + 9) // 10)
         page = min(page, last_page)

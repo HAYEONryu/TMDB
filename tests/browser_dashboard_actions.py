@@ -46,6 +46,11 @@ class DashboardActionsBrowserTests(Fixtures,StaticLiveServerTestCase):
     def test_admin_cards_staff_sums_keyboard_links_selected_site_and_history(self):
         self.seed();self.login(self.admin);page=self.page;self.ready()
         before=self.db(lambda:GlobalSettings.objects.get(pk=1).version)
+        expect(page.locator('.quick-work')).to_have_count(0)
+        expect(page.locator('#daily-consultation-chart svg rect')).to_have_count(7)
+        expect(page.locator('#contract-status-chart [data-contract-status=CONTRACTED]')).to_contain_text('1명')
+        expect(page.locator('#staff-performance-table tbody tr')).to_have_count(3)
+        expect(page.locator('#staff-performance-table')).to_contain_text('비활성 직원')
         for category,count in [('unassigned',3),('new_today',3),('overdue',2),('transfer',1)]:expect(self.metric(category)).to_have_text(f'{count}명')
         self.assertEqual(page.locator('#graph-site').count(),0)
         expect(page.locator('#result-period option')).to_have_text(['현재 고객 상태','금주','오늘'])

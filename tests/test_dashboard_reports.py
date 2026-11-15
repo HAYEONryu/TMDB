@@ -212,6 +212,30 @@ class DashboardReportTests(Fixtures, TransactionTestCase):
         encoded=str(data)
         for row in rows:self.assertNotIn(row.customer_name,encoded);self.assertNotIn(row.phone_normalized,encoded)
 
+    def test_daily_trend_and_contract_stages_use_separate_clear_cohorts(self):
+        a,b,free,trash=self.customers(4)
+        self.assign(a);self.assign(b,self.other)
+        yesterday=self.now-timedelta(days=1)
+        self.revision(a,at=yesterday);self.revision(a);self.revision(a,actor=self.other)
+        self.revision(a,source='AI_APPLIED');self.revision(b)
+        self.revision(b,at=self.now+timedelta(seconds=1))
+        outside=self.customers(site=self.second,offset=30)[0];self.revision(outside)
+        self.revision(trash,at=self.now-timedelta(days=2))
+        Customer.objects.filter(pk=a.pk).update(contract_status='SUBSCRIBED')
+        Customer.objects.filter(pk__in=[b.pk,free.pk,trash.pk,outside.pk]).update(contract_status='CONTRACTED')
+        Customer.objects.filter(pk=trash.pk).update(deleted_at=self.now,deleted_by=self.admin)
+        report=self.report('today')['manager']
+        self.assertEqual(len(report['daily_consultations']),7)
+        self.assertEqual([row['count'] for row in report['daily_consultations']],[0,0,0,0,1,1,2])
+        self.assertEqual(report['daily_consultations'][-1]['date'],'2026-11-09')
+        statuses={row['value']:row['count'] for row in report['contract_statuses']}
+        self.assertEqual(sum(statuses.values()),3)
+        self.assertEqual((statuses['SUBSCRIBED'],statuses['CONTRACTED']),(1,2))
+        employee=next(row for row in report['staff'] if row['id']==str(self.employee.pk))
+        self.assertEqual(employee['subscribed_total'],1)
+        self.assertEqual(employee['contracted_total'],0)
+        self.assertEqual(self.report('week')['manager']['contract_statuses'],report['contract_statuses'])
+
     def test_trashed_customer_is_excluded_from_current_results_but_saved_work_remains(self):
         customer=self.customers()[0];self.revision(customer)
         Customer.objects.filter(pk=customer.pk).update(deleted_at=self.now,deleted_by=self.admin)

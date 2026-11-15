@@ -626,3 +626,37 @@ input:focus,.form-control:focus,.form-select:focus,textarea:focus{border-color:#
 #staff-progress-table table {min-width:650px;}
 #staff-allocation-table table {min-width:760px;}
 #staff-allocation-table th,#staff-allocation-table td {white-space:nowrap;vertical-align:middle;}
+.performance-charts {margin-top:24px;}
+.contract-status-total {font-size:22px;font-weight:750;color:#263f62;margin:0 0 16px;}
+.contract-status-list {list-style:none;padding:0;margin:0;display:grid;gap:13px;}
+.contract-status-heading {display:flex;align-items:center;gap:12px;font-size:14px;margin-bottom:5px;}
+.contract-status-heading>span {flex:1;}
+.contract-status-heading small {width:46px;text-align:right;color:#71829a;}
+.contract-status-track {height:7px;background:#edf2fa;border-radius:6px;overflow:hidden;}
+.contract-status-fill {display:block;height:100%;background:#9aabc2;border-radius:6px;}
+[data-contract-status=CONTRACTED] .contract-status-fill {background:#2674ed;}
+[data-contract-status=SUBSCRIBED] .contract-status-fill {background:#2aaf9d;}
+[data-contract-status=CONTRACT_CANCELLED] .contract-status-fill,[data-contract-status=SUB_CANCELLED] .contract-status-fill {background:#d88383;}
+#staff-performance-table table {min-width:940px;}
+#staff-performance-table th,#staff-performance-table td {white-space:nowrap;vertical-align:middle;}
+#staff-performance-table progress {display:block;width:90px;height:6px;margin-top:7px;accent-color:#2674ed;}
+#employee-today-schedule {width:100%;min-width:0;}
+.schedule-summary {color:#61738d;font-size:14px;margin:4px 0 16px;}
+.schedule-summary .btn {margin-left:10px;}
+.schedule-table {min-width:680px;}
+.schedule-table th,.schedule-table td {vertical-align:middle;white-space:nowrap;}
+.schedule-event {display:flex;align-items:center;gap:8px;margin:6px 0;}
+.schedule-event time {font-weight:700;color:#263f62;font-variant-numeric:tabular-nums;}
+.schedule-kind {font-size:12px;color:#2961a6;background:#edf4ff;border-radius:5px;padding:3px 7px;}
+.schedule-past {font-size:11px;color:#8b653f;}
+@media(max-width:575px){
+  .schedule-table {min-width:0;margin-bottom:0;}
+  .schedule-table thead {display:none;}
+  .schedule-table tbody {display:grid;gap:12px;}
+  .schedule-table tbody tr {display:grid;grid-template-columns:minmax(0,1fr);border:1px solid #d6e2f2;border-radius:10px;padding:10px;}
+  .schedule-table tbody td {display:block;white-space:normal;overflow-wrap:anywhere;border:0;padding:7px 5px;box-shadow:none;}
+  .schedule-table tbody td::before {content:attr(data-label);display:block;color:#71829a;font-size:12px;margin-bottom:4px;}
+  .schedule-table tbody td:last-child::before {display:none;}
+  .schedule-event {flex-wrap:wrap;}
+  .schedule-table .btn {width:100%;}
+}
