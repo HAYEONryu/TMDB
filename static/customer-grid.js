@@ -1,3 +1,5 @@
+import {mutationMessage} from './ui-messages.js';
+import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {api, option} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
@@ -84,7 +86,7 @@ function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
     headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue()))};
-  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{if(cell.getRow().getData()._new)return text("span","미할당");const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
+  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{if(cell.getRow().getData()._new)return text("span","미배정");const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain && !(cell.getRow().getData()._new&&newRow?.body),
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
     ...(schema[field] ? {editorParams:{values:schema[field],clearable:false,autocomplete:false}} : {}),
@@ -137,8 +139,8 @@ async function load() {
     rows=new Map(data.data.map(row=>[row.id,structuredClone(row)])); lastPage=data.last_page;
     await table.setData(data.data.map(row=>({...row,...pending.get(row.id)?.changes})));
     if(generation!==loadGeneration)return;
-    $("#page-info").textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
-    $("#counts").textContent=data.counts?`전체 DB ${data.counts.total} · 미할당 ${data.counts.unassigned} · 휴지통 ${data.counts.trash}`:"";
+    $("#page-info").textContent=`검색 ${data.total.toLocaleString()}명 · ${state.page} / ${lastPage}페이지`;
+    $("#counts").textContent=data.counts?`전체 고객 ${data.counts.total}명 · 미배정 ${data.counts.unassigned}명 · 휴지통 ${data.counts.trash}명`:"";
     loadedState=structuredClone(state);queryUI.success(data);
     if(!state.assignee){const url=new URL(location.href);if(url.searchParams.has('assignee_id')){url.searchParams.delete('assignee_id');history.replaceState(null,'',url);}}
     if($('#open-imports'))$('#open-imports').href='/app/admin/imports?'+new URLSearchParams({site_id:state.site});
@@ -166,7 +168,7 @@ $('#add-row')?.addEventListener('click',async()=>{
 });
 $('#cancel-new-row')?.addEventListener('click',async()=>{
   if(busy||!newRow||!commitEditor())return;
-  if(newRow.body&&!window.confirm('이미 고객이 등록되었을 수 있습니다. 입력 행만 폐기합니다. 계속할까요?'))return;
+  if(newRow.body&&!await confirmAction('이미 고객이 등록되었을 수 있습니다. 이 화면의 입력 행만 버립니다. 서버에 등록된 고객은 유지됩니다.',{title:'고객 입력 버리기',confirmText:'입력 행 버리기',danger:true}))return;
   const uncertain=!!newRow.body;await discardNewRow();
   notice(uncertain?'입력 행을 폐기했습니다. 현재 목록을 조회해 등록 여부를 확인해 주세요.':'고객 추가를 취소했습니다.');
 });
@@ -186,7 +188,7 @@ async function saveNewRow() {
     if(newRow){
       const definitive=error.status>=400&&error.status<500&&![401,403,429].includes(error.status);
       if(definitive)newRow.body=null;
-      newRow.error=error.message+(definitive?' 입력을 수정하고 저장해 주세요.':' 같은 요청으로 결과를 확인하려면 저장을 다시 눌러 주세요. 확인 전에는 새 행을 수정할 수 없습니다.');
+      newRow.error=mutationMessage(error,'고객 등록')+(definitive?' 입력을 수정하고 저장해 주세요.':' 같은 요청으로 결과를 확인하려면 저장을 다시 눌러 주세요. 확인 전에는 새 행을 수정할 수 없습니다.');
       table.getRow(newRow.id)?.reformat();notice(newRow.error);
     }else showError(error);
     return false;
@@ -212,12 +214,12 @@ async function save() {
     return !pending.size;
   } catch (error) {
     for (const [,item] of entries) { item.uncertain=true; item.error={code:"UNCERTAIN",message:error.message+" 동일한 저장 요청으로 재시도합니다. 결과 확인 전에는 이 행을 편집할 수 없습니다."}; }
-    refreshRows(); showError(error); return false;
+    refreshRows(); notice(mutationMessage(error,'저장')); return false;
   } finally { busy=false; status(); }
 }
 async function guarded(action) {
   if(!commitEditor()||busy||callbacks?.busy||hard?.busy)return false;
-  if(hard?.pending.value){notice('먼저 영구 삭제 결과를 확인하거나 대기 정보를 폐기해 주세요.');return false;}
+  if(hard?.pending.value){notice('먼저 영구 삭제 결과를 확인하거나 확인 알림을 닫으세요.');return false;}
   if(callbacks?.pending.value&&!await callbacks.run())return false;
   if (hasChanges()) {
     const decision=await new Promise(resolve=>{
@@ -288,12 +290,12 @@ $("#conflict-reapply").onclick=async()=>{const item=pending.get(conflictId);item
 $("#bulk").onclick=()=>guarded(()=>{
   const ids=table.getSelectedData().map(row=>row.id);if(!ids.length){notice("현재 페이지에서 고객을 선택해 주세요.");return;}
   bulkBody={customer_ids:ids,site_id:state.site,idempotency_key:newRequestId()};
-  $("#bulk-summary").textContent=trash?`현재 페이지에서 선택한 ${ids.length}건을 복구합니다.`:`${ids.length}개의 정보를 삭제하시겠습니까?`;$("#bulk-dialog").showModal();
+  $("#bulk-summary").textContent=trash?`현재 페이지에서 선택한 고객 ${ids.length}명을 복구합니다.`:`현재 페이지에서 선택한 고객 ${ids.length}명을 휴지통으로 이동합니다.`;$("#bulk-dialog").showModal();
 }).catch(showError);
 $("#bulk-confirm").onclick=async()=>{
   const button=$("#bulk-confirm");button.disabled=true;busy=true;status();
-  try {const result=await api(trash?"/api/customers/restore":"/api/customers/soft-delete",bulkBody);$("#bulk-dialog").close();busy=false;await load();notice(`${result.affected_count}건 처리했습니다.`);}
-  catch(error){showError(error);$("#bulk-summary").textContent=error.message+" 같은 작업으로 재시도할 수 있습니다.";}
+  try {const result=await api(trash?"/api/customers/restore":"/api/customers/soft-delete",bulkBody);$("#bulk-dialog").close();busy=false;await load();notice(`고객 ${result.affected_count}명을 처리했습니다.`);}
+  catch(error){error.message=mutationMessage(error,trash?'복구':'휴지통 이동');showError(error);$("#bulk-summary").textContent=error.message+" 같은 작업으로 재시도할 수 있습니다.";}
   finally{button.disabled=false;busy=false;status();}
 };
 
@@ -305,8 +307,8 @@ $('#open-filters').onclick=()=>{
 async function openAssignee(id){
   if(assigneeOperation.value)return;assigneeRow=rows.get(id);if(!assigneeRow)return;
   busy=true;status();
-  try{const data=await api("/api/assignments/availability?"+new URLSearchParams({site_id:state.site}));$("#assignee-customer").textContent=`${assigneeRow.customer_name} · 현재 담당: ${assigneeRow.assignee_name||"미할당"}`;
-    $("#assignee-target").replaceChildren(option("","미할당 · 회수"),...data.employees.map(person=>option(person.id,`${person.name} · ${person.phone}`)));
+  try{const data=await api("/api/assignments/availability?"+new URLSearchParams({site_id:state.site}));$("#assignee-customer").textContent=`${assigneeRow.customer_name} · 현재 담당: ${assigneeRow.assignee_name||"미배정"}`;
+    $("#assignee-target").replaceChildren(option("","미배정 · 회수"),...data.employees.map(person=>option(person.id,`${person.name} · ${person.phone}`)));
     if(assigneeRow.assignee_id&&!data.employees.some(person=>person.id===assigneeRow.assignee_id)){const current=option(assigneeRow.assignee_id,`${assigneeRow.assignee_name} · 현재 담당 (신규 배정 불가)`);current.disabled=true;$("#assignee-target").append(current);}
     $("#assignee-target").value=assigneeRow.assignee_id||"";$("#assignee-dialog").showModal();
   }finally{busy=false;status();}
@@ -318,7 +320,7 @@ async function executeAssignee(value){
   finally{busy=false;status();}
 }
 if(!trash){$("#assignee-cancel").onclick=()=>$("#assignee-dialog").close();$("#assignee-confirm").onclick=()=>executeAssignee({endpoint:`/api/customers/${assigneeRow.id}/assignee`,body:{site_id:state.site,employee_id:$("#assignee-target").value||null,assignment_id:assigneeRow.assignment_id,expected_version:assigneeRow.version,idempotency_key:newRequestId()}});
-  $("#assignee-retry").onclick=()=>executeAssignee();$("#assignee-discard").onclick=async()=>{assigneeOperation.clear();await load().catch(showError);notice("대기 정보를 폐기했습니다. 현재 담당자를 확인해 주세요.");};}
+  $("#assignee-retry").onclick=()=>executeAssignee();$("#assignee-discard").onclick=async()=>{if(!await confirmAction("담당자 변경 확인 알림을 닫습니다. 서버에서 이미 처리된 작업은 그대로 유지됩니다.",{title:"확인 알림 닫기",confirmText:"알림 닫기"}))return;assigneeOperation.clear();await load().catch(showError);notice("확인 알림을 닫았습니다. 서버에서 이미 처리된 작업은 그대로 유지됩니다. 현재 담당자를 확인하세요.");};}
 await ready;
 callbacks=new CallbackAction({userId:$('#management').dataset.userId,request:actorRequest,flush:async()=>!hasChanges()||save(),getRow:id=>rows.get(id),refresh:load,notice,changed:status});callbacks.update();
 hard=new HardDelete({userId:$('#management').dataset.userId,request:actorRequest,refresh:async siteDeleted=>{if(siteDeleted){await loadSites();state.page=1;state.filters={};state.q='';state.assignee='';$('#search').value='';const url=new URL(location.href);if(state.site)url.searchParams.set('site_id',state.site);else url.searchParams.delete('site_id');url.searchParams.delete('assignee_id');history.replaceState(null,'',url);}await load();},notice,changed:status});hard.update();

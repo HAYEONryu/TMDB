@@ -61,8 +61,8 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(self.page.locator("#batch-status")).to_contain_text("검증 완료")
 
     def confirm(self):
-        self.page.get_by_role("button",name="업로드 확정",exact=True).click()
-        self.page.get_by_role("button",name="등록 확정",exact=True).click()
+        self.page.locator("#commit-upload").click()
+        self.page.locator("#commit-confirm").click()
 
     def test_template_validate_recheck_results_without_file_mobile_and_employee_denial(self):
         page=self.page
@@ -70,12 +70,12 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.get_by_role("link",name="DB 관리",exact=True).click()
         page.get_by_role("link",name="엑셀 업로드",exact=True).click()
         expect(page.get_by_role("heading",name="엑셀 업로드",exact=True)).to_be_visible()
-        with page.expect_download() as event:page.get_by_role("link",name="빈 입력 양식 다운로드",exact=True).click()
+        with page.expect_download() as event:page.get_by_role("link",name="엑셀 양식 다운로드",exact=True).click()
         download=event.value;target=self.evidence/"TM_customer_template.xlsx";download.save_as(target)
         book=load_workbook(target);self.assertEqual([cell.value for cell in book.worksheets[0][1]],TEMPLATE_HEADERS);self.assertEqual(book.worksheets[0]["B2"].number_format,"@");book.close()
         data=workbook([row(name=42),row("기존 중복"),row("파일 중복"),row("가상신규2","01090000002",**{"6":"가상 상담"}),row(phone=1090000001),[],row("<img src=x onerror=window.p3Injected=1>","01090000003",**{"7":"2026-11-05 (월) 10:00"})])
         self.upload(data)
-        expect(page.locator("#validation-counts")).to_have_text("검증 시 총 6건 · 등록 가능 2 · 파일 내 중복 1 · 기존 중복 1 · 형식 오류 2")
+        expect(page.locator("#validation-counts")).to_have_text("검증 대상 6행 · 등록 가능 2명 · 파일 내 중복 1행 · 기존 중복 1행 · 형식 오류 2행")
         expect(page.locator("#import-rows tr")).to_have_count(4)
         self.assertEqual(self.db(lambda:Customer.objects.count()),1)
         batch_id=self.batch_id();page.reload()
@@ -88,8 +88,8 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         committed=self.context.request.post(self.live_server_url+f"/api/imports/{later.json()['id']}/commit",headers={"X-CSRFToken":self.csrf()},data={"site_id":str(self.site.pk),"idempotency_key":str(uuid4())})
         self.assertEqual(committed.status,200)
         self.confirm()
-        expect(page.locator("#batch-status")).to_have_text("등록 확정 완료")
-        expect(page.locator("#commit-summary")).to_contain_text("1개 업로드를 성공했습니다. 5개는")
+        expect(page.locator("#batch-status")).to_have_text("등록 완료")
+        expect(page.locator("#commit-summary")).to_contain_text("1행을 등록했습니다. 등록되지 않은 5행은")
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=existing.pk).notes),"다른 현장 상담 보존")
         self.assertEqual(self.db(lambda:Customer.objects.get(site=self.site,phone_normalized="01090000002").notes),"새로 등록된 상담 보존")
         page.locator("#result-kind").select_option("all")
@@ -101,7 +101,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"),390)
         page.screenshot(path=str(self.evidence/"p3-result-mobile.png"),full_page=True)
         page.get_by_role("link",name="DB 관리로 돌아가기",exact=True).click()
-        expect(page.locator("#page-info")).to_contain_text("검색 2건")
+        expect(page.locator("#page-info")).to_contain_text("검색 2명")
         staff=self.browser.new_context();staff_page=staff.new_page();self.login(staff_page,self.employee)
         self.assertEqual(staff_page.goto(self.live_server_url+"/app/admin/imports").status,403)
         self.assertEqual(staff.request.get(self.live_server_url+"/api/imports/template").status,403)
@@ -113,9 +113,9 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
             phone_normalized='01094000001',deleted_at=timezone.now(),deleted_by=self.admin,notes='이전 상담 보존'))
         self.page.goto(self.live_server_url+'/app/admin/imports')
         self.upload(workbook([row('가상 재등록','010-9400-0001'),row('파일 중복','01094000001')]))
-        expect(self.page.locator('#validation-counts')).to_have_text('검증 시 총 2건 · 등록 가능 1 · 파일 내 중복 1 · 기존 중복 0 · 형식 오류 0')
+        expect(self.page.locator('#validation-counts')).to_have_text('검증 대상 2행 · 등록 가능 1명 · 파일 내 중복 1행 · 기존 중복 0행 · 형식 오류 0행')
         self.confirm()
-        expect(self.page.locator('#commit-summary')).to_contain_text('1개 업로드를 성공했습니다.')
+        expect(self.page.locator('#commit-summary')).to_contain_text('1행을 등록했습니다.')
         current=self.db(lambda:Customer.objects.get(site=self.site,phone_normalized='01094000001',deleted_at=None))
         self.assertNotEqual(current.pk,old.pk)
         previous=self.db(lambda:Customer.objects.get(pk=old.pk))
@@ -130,7 +130,7 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         def lose(route):
             captured.append(route.request.post_data_json);self.assertEqual(route.fetch().status,200);route.abort("failed")
         page.route("**/commit",lose,times=1);self.confirm()
-        expect(page.locator("#batch-status")).to_have_text("등록 확정 완료")
+        expect(page.locator("#batch-status")).to_have_text("등록 완료")
         expect(page.locator("#upload-message")).to_contain_text("서버에서 등록 완료를 확인")
         replay=self.context.request.post(self.live_server_url+f"/api/imports/{batch_id}/commit",headers={"X-CSRFToken":self.csrf()},data=captured[0])
         self.assertEqual(replay.status,200);self.assertEqual(replay.json()["success_count"],1)
@@ -156,5 +156,5 @@ class ImportBrowserTests(Fixtures,StaticLiveServerTestCase):
         with patch("apps.imports.services.Customer.objects.bulk_create",side_effect=OperationalError("temporary")):
             self.confirm();expect(page.locator("#upload-message")).to_contain_text("같은 요청으로 다시 시도")
         expect(page.locator("#batch-status")).to_contain_text("검증 완료")
-        self.confirm();expect(page.locator("#batch-status")).to_have_text("등록 확정 완료")
+        self.confirm();expect(page.locator("#batch-status")).to_have_text("등록 완료")
         self.assertEqual(requests[0],requests[1]);self.assertEqual(self.db(lambda:Customer.objects.count()),2)

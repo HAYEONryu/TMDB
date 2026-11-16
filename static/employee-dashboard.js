@@ -85,7 +85,7 @@ async function loadSchedule(page=1){
 function work(data){
   const e=data.employee,p=e.consultation_progress,progress=text('article','','employee-work-result'),completed=text('article','','employee-work-result');
   const score=text('strong',p.total?`${number(p.completed)} / ${number(p.total)}명`:'오늘 배정된 고객 없음');score.id='employee-consultation-value';
-  progress.append(text('h3','오늘 상담 저장'),score,text('p','오늘 받은 고객 중 현재 배정에서 내가 유효한 상담 변경을 저장한 고유 고객 수입니다. 이름·연락처·관리자 비고만 정정한 기록은 제외합니다.','tm-basis'));
+  progress.append(text('h3','오늘 상담 저장'),score,text('p','오늘 받은 고객 중 상담 기록을 저장한 인원입니다.','tm-basis'));const help=text('details','','metric-help');help.append(text('summary','집계 기준'),text('p','같은 고객은 한 번만 셉니다. 이름·연락처·관리자 비고만 수정한 경우는 제외합니다. 현재 배정에서 내가 저장한 기록 기준입니다.'));progress.append(help);
   const value=text('strong',number(e.callbacks_completed_today)+'건');value.id='employee-callback-completed';completed.append(text('h3','오늘 재콜 완료'),value,text('p','선택 현장에서 내가 오늘 완료한 재콜 일정 수입니다. 예정일과 현재 담당자가 바뀌어도 완료한 작업은 유지됩니다.','tm-basis'));
   $('dashboard-statistics').replaceChildren(progress,completed);
   const holdings=text('div','','employee-holdings'),held=text('div',''),contract=text('div','');

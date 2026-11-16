@@ -65,7 +65,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
             expect(page.locator('#employee-private')).to_be_visible()
             expect(page.locator('#site')).to_be_enabled()
             expect(page.locator('#queue-status')).to_have_text('조회 전용')
-            expect(page.locator('#page-info')).to_contain_text('검색 1건')
+            expect(page.locator('#page-info')).to_contain_text('검색 1명')
             cell=page.locator('.tabulator-row [tabulator-field="notes"]').first
             cell.dblclick();expect(cell.locator('input,textarea')).to_have_count(0)
             expect(page.get_by_role('button',name='삭제 요청',exact=True)).to_be_disabled()
@@ -94,19 +94,19 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.db(more_rows)
         page,origin=self.open(insecure=True)
         page.goto(origin+'/app/employee/today')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         expect(page.locator('#site')).to_be_enabled()
         page.locator('#site').select_option(str(self.second.pk))
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         expect(page.locator('.tabulator-row [tabulator-field="customer_name"]').first).to_have_text('가상고객0031')
         open_detail_filter(page,'route')
         page.locator('#filter-mode input[value="EMPTY"]').check();page.locator('#filter-apply').click()
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         page.locator('#clear-filters').click()
         page.locator('#search').fill('없는가상고객');page.locator('#search-form').get_by_role('button',name='검색',exact=True).click()
-        expect(page.locator('#page-info')).to_contain_text('검색 0건')
+        expect(page.locator('#page-info')).to_contain_text('검색 0명')
         page.locator('#search').fill('');page.locator('#search-form').get_by_role('button',name='검색',exact=True).click()
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         page.get_by_role('button',name='상담·재콜 이력',exact=True).click()
         expect(page.locator('#history-dialog')).to_be_visible()
         page.locator('#history-dialog').get_by_role('button',name='닫기',exact=True).click()
@@ -125,7 +125,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
     def test_http_old_identity_response_cannot_reopen_hidden_customer_grid(self):
         page,origin=self.open(insecure=True)
         page.goto(origin+'/app/employee/today')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         def stale_me(route):
             page.evaluate("window.dispatchEvent(new CustomEvent('tm-auth-context',{detail:{user:'other-synthetic-user',role:'EMPLOYEE',initial:false}}))")
             route.fulfill(status=200,json={'id':str(self.employee.pk),'role':'EMPLOYEE','must_change_password':False})
@@ -150,7 +150,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
     def test_employee_saves_without_abortsignal_timeout(self):
         page, origin = self.open(script="Object.defineProperty(AbortSignal,'timeout',{value:undefined,configurable:true});")
         page.goto(origin + f"/app/employee/mine?site_id={self.site.pk}")
-        expect(page.locator("#page-info")).to_contain_text("검색 1건")
+        expect(page.locator("#page-info")).to_contain_text("검색 1명")
         cell = page.locator('.tabulator-row [tabulator-field="notes"]').first
         cell.dblclick()
         cell.locator("textarea").fill("가상 시간 제한 호환 저장")
@@ -177,7 +177,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page.locator("#batch-status")).to_contain_text("검증 완료")
         page.locator("#commit-upload").click()
         page.locator("#commit-confirm").click()
-        expect(page.locator("#batch-status")).to_contain_text("등록 확정 완료")
+        expect(page.locator("#batch-status")).to_contain_text("등록 완료")
         self.assertEqual(self.errors, [])
 
 

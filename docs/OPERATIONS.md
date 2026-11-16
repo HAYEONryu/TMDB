@@ -1,6 +1,6 @@
 # 운영·백업·복원 절차
 
-현재 실행 기준은 [현재 운영 기준](CURRENT_OPERATING_BASELINE.md), 이번 실기 준비 결과는 [운영 준비1단계](OPERATIONS_STAGE1.md)를 우선한다. 과거 검수 기록의 모델·한도·수치를 현재 값으로 복사하지 않는다.
+현재 실행 기준은 [현재 운영 기준](CURRENT_OPERATING_BASELINE.md), 업무별 검수 기준은 [현재 검수 기준](ACCEPTANCE_CRITERIA.md)을 따른다.
 
 이 문서는 배포 준비 산출물이다. 실제 운영 서버/도메인/외부 저장소를 생성하거나 배포하지 않았다. 실제 Docker 이미지·공개 인증서·외부 보관소·물리 모바일 검증은 별도로 필요하다. 일반 실행의 실제 AI 공급자 호출은 계속 비활성이다.
 
@@ -91,6 +91,6 @@ systemctl list-timers tmdb-backup.timer
 
 ## 로컬 검증과 운영 검증의 구분
 
-P13의 HTTPS는 임시 인증서를 Python 신뢰 저장소로 확인한 실제 로컬 Caddy TLS이다. 브라우저에서는 임시 인증서 오류 허용 설정을 사용하므로 공개 CA 검증을 대신하지 않는다. Chromium/Firefox/WebKit 데스크톱과 WebKit 터치390px를 실행하며 물리 모바일/실제 Edge 기기는 별도다. 20명·1만 고객·실제2 workers×4 threads HTTP 측정은 로컬 가짜 자료와 정해진 요청 패턴이다. 운영 VM의20명 SLA를 인증하지 않는다.
+로컬 HTTPS 검수는 임시 인증서를 사용하는 Caddy TLS로 수행한다. 브라우저에서는 임시 인증서 오류 허용 설정을 사용하므로 공개 CA 검증을 대신하지 않는다. Chromium/Firefox/WebKit 데스크톱과 WebKit 터치390px를 실행하며 물리 모바일/실제 Edge 기기는 별도다. 20명·1만 고객·실제2 workers×4 threads HTTP 측정은 로컬 가짜 자료와 정해진 요청 패턴이다. 운영 VM의20명 SLA를 인증하지 않는다.
 
-공식 근거: [age 사용법·형식](https://github.com/FiloSottile/age/tree/v1.3.2), [Django 프록시/HTTPS 설정](https://docs.djangoproject.com/en/5.2/ref/settings/#secure-proxy-ssl-header), [Caddy 전달 헤더](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#headers). 현재 설치 도구와 실제 검증 결과/남은 범위는 [P13 검증 기록](P13_VERIFICATION.md)에 기록한다.
+공식 근거: [age 사용법·형식](https://github.com/FiloSottile/age/tree/v1.3.2), [Django 프록시/HTTPS 설정](https://docs.djangoproject.com/en/5.2/ref/settings/#secure-proxy-ssl-header), [Caddy 전달 헤더](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#headers). 검증 결과는 실행별 `.local/verification-runs/`에 기록한다. 과거 로컬 통과를 현재 운영 서버의 검증으로 대신하지 않는다.

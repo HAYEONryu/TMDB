@@ -1,3 +1,4 @@
+from tests.browser_dialog_helpers import confirm_action
 """Inspect real browser traffic, DOM, console and browser storage for a synthetic key."""
 import json
 import os
@@ -104,7 +105,7 @@ class P12BrowserTests(Fixtures, StaticLiveServerTestCase):
     def test_employee_generation_and_encrypted_queue_never_receive_server_key(self):
         self.login(self.employee)
         self.page.goto(self.live_server_url + f'/app/employee/mine?site_id={self.site.pk}')
-        expect(self.page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(self.page.locator('#page-info')).to_contain_text('검색 1명')
 
         def generate(route):
             response = route.fetch()
@@ -117,8 +118,7 @@ class P12BrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.get_by_role('button',name='AI 도움',exact=True).click();self.page.get_by_role('button',name='항목 정리',exact=True).click()
         expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답')
         self.page.get_by_label('상담내용 제안 선택', exact=True).check()
-        self.page.once('dialog', lambda dialog: dialog.accept())
-        self.page.locator('#ai-apply').click()
+        self.page.locator('#ai-apply').click();confirm_action(self.page)
         expect(self.page.locator('#ai-result-message')).to_contain_text('저장 대기열에 반영')
         self.inspect()
         self.page.locator('#ai-dialog [data-close]').click()
@@ -149,7 +149,7 @@ class P12BrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.locator('#guide-reviewed').check()
         self.page.locator('#guide-save').click()
         expect(self.page.locator('#guide-publish')).to_be_enabled()
-        self.page.locator('#guide-publish').click()
+        self.page.locator('#guide-publish').click();self.page.locator('#action-confirm-dialog .btn-primary').click()
         expect(self.page.locator('#guide-status')).to_contain_text('게시 완료')
         self.inspect()
         self.page.goto(self.live_server_url + '/app/guides')

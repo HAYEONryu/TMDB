@@ -1,3 +1,4 @@
+from tests.browser_dialog_helpers import confirm_action
 from scripts.verification_evidence import artifact_path
 import json,os
 from datetime import timedelta
@@ -46,7 +47,7 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
     def login(self,page,account):
         page.context.clear_cookies();page.goto(self.live_server_url+'/auth/login');page.get_by_label('전화번호',exact=True).fill(account.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.live_server_url+('/app/admin' if account.role=='ADMIN' else '/app/employee'))
     def open(self,page=None,view='mine'):
-        page=page or self.page;page.goto(self.live_server_url+f'/app/employee/{view}?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3건')
+        page=page or self.page;page.goto(self.live_server_url+f'/app/employee/{view}?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3명')
     def row(self,customer=None,page=None):return (page or self.page).locator('#employee-grid .tabulator-row').filter(has_text=(customer or self.rows[0]).customer_name)
     def edit(self,value,customer=None,page=None):
         page=page or self.page;cell=self.row(customer,page).locator('[tabulator-field="notes"]');cell.dblclick();cell.locator('textarea').fill(value);page.locator('h1').click();expect(page.locator('#queue-status')).to_contain_text('저장 대기')
@@ -57,7 +58,7 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
     def admin_page(self,account=None):
         context=self.browser.new_context(viewport={'width':1440,'height':960});self.watch(context);page=context.new_page();self.login(page,account or self.admin);return context,page
     def submit_ui(self,page=None,customer=None):
-        page=page or self.page;page.once('dialog',lambda dialog:dialog.accept());self.row(customer,page).get_by_role('button',name='삭제 요청',exact=True).click();expect(self.row(customer,page).get_by_role('button',name='요청완료',exact=True)).to_be_disabled()
+        page=page or self.page;self.row(customer,page).get_by_role('button',name='삭제 요청',exact=True).click();confirm_action(page);expect(self.row(customer,page).get_by_role('button',name='요청완료',exact=True)).to_be_disabled()
 
     def test_row_request_saves_only_target_and_keeps_editing_until_approval(self):
         self.open(view='today')
@@ -75,7 +76,7 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.page.screenshot(path=str(self.evidence/'p7-deletion-request-employee.png'),full_page=True)
         context,admin=self.admin_page()
         admin.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
-        expect(admin.locator('#page-info')).to_contain_text('검색 3건')
+        expect(admin.locator('#page-info')).to_contain_text('검색 3명')
         row=admin.locator('#customer-grid .tabulator-row').filter(has_text=self.rows[0].customer_name)
         row.locator('input[type=checkbox]').check();row.hover()
         self.assertEqual(set(row.locator('.tabulator-cell').evaluate_all('cells=>cells.map(cell=>getComputedStyle(cell).backgroundColor)')),{'rgb(254, 215, 170)'})
@@ -84,13 +85,13 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         context.close()
 
     def test_cancel_confirmation_and_offline_save_do_not_submit(self):
-        self.open();self.page.once('dialog',lambda dialog:dialog.dismiss());self.row().get_by_role('button',name='삭제 요청',exact=True).click();self.assertEqual(self.requests,[])
+        self.open();self.row().get_by_role('button',name='삭제 요청',exact=True).click();confirm_action(self.page,False);self.assertEqual(self.requests,[])
         self.context.set_offline(True);self.edit('오프라인 가상 변경');self.row().get_by_role('button',name='삭제 요청',exact=True).click();expect(self.page.locator('#employee-message')).to_contain_text('삭제 요청을 제출하지 않았습니다');self.assertEqual(self.db(lambda:CustomerDeletionRequest.objects.count()),0)
 
     def test_lost_request_response_same_key_reload_and_other_tab_pending(self):
         self.open();page=self.page
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
-        page.route('**/deletion-request',lose,times=1);page.once('dialog',lambda dialog:dialog.accept());self.row().get_by_role('button',name='삭제 요청',exact=True).click();expect(page.locator('#deletion-pending')).to_be_visible();self.assertEqual(self.row().get_by_role('button',name='요청완료',exact=True).count(),0)
+        page.route('**/deletion-request',lose,times=1);self.row().get_by_role('button',name='삭제 요청',exact=True).click();confirm_action(page);expect(page.locator('#deletion-pending')).to_be_visible();self.assertEqual(self.row().get_by_role('button',name='요청완료',exact=True).count(),0)
         page.once('dialog',lambda dialog:dialog.accept());page.reload();expect(page.locator('#deletion-pending')).to_be_visible();page.locator('#deletion-retry').click();expect(page.locator('#deletion-pending')).not_to_be_visible();expect(self.row().get_by_role('button',name='요청완료',exact=True)).to_be_disabled();self.assertEqual(self.requests[0][1],self.requests[1][1]);self.assertEqual(self.db(lambda:CustomerDeletionRequest.objects.count()),1)
         second=self.context.new_page();self.open(second);expect(self.row(page=second).get_by_role('button',name='요청완료',exact=True)).to_be_disabled();second.close()
 
@@ -99,7 +100,7 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         customer=self.db(lambda:Customer.objects.get(pk=self.rows[0].pk));self.db(lambda:update_row(self.employee,self.mutation(customer,'승인 직전 최신 가상 상담')))
         self.edit('승인 후 거부할 미전송 변경')
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
-        admin.route('**/approve',lose,times=1);admin.once('dialog',lambda dialog:dialog.accept());admin.get_by_role('button',name='승인',exact=True).click();expect(admin.locator('#approval-pending')).to_be_visible();admin.reload();expect(admin.locator('#approval-pending')).to_be_visible();admin.locator('#approval-retry').click();expect(admin.locator('#approval-pending')).not_to_be_visible();expect(admin.locator('#delete-request-count')).to_have_text('고객정보 삭제 요청 0건')
+        admin.route('**/approve',lose,times=1);admin.get_by_role('button',name='승인',exact=True).click();confirm_action(admin);expect(admin.locator('#approval-pending')).to_be_visible();admin.reload();expect(admin.locator('#approval-pending')).to_be_visible();admin.locator('#approval-retry').click();expect(admin.locator('#approval-pending')).not_to_be_visible();expect(admin.locator('#delete-request-count')).to_have_text('고객정보 삭제 요청 0건')
         saved=self.db(lambda:Customer.objects.get(pk=customer.pk));self.assertTrue(saved.notes.startswith('승인 직전 최신 가상 상담\n['));self.assertEqual(saved.notes.count('고객요청으로 인한 삭제'),1)
         self.page.locator('#save-now').click();expect(self.page.locator('#pending-rows')).to_contain_text('전송 불가');expect(self.row()).to_have_count(0);self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).notes),saved.notes)
         admin.screenshot(path=str(self.evidence/'p7-approval-desktop.png'),full_page=True);admin_context.close()
@@ -112,14 +113,14 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(page.locator('#delete-request-count')).to_contain_text('1건');page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);page.screenshot(path=str(self.evidence/'p7-notifications-mobile.png'),full_page=True);context.close()
 
     def test_trash_single_hard_delete_lost_response_replay(self):
-        self.db(lambda:trash_operation(self.admin,{'customer_ids':[str(self.rows[0].pk)],'site_id':str(self.site.pk),'idempotency_key':str(uuid4())}));context,page=self.admin_page();page.goto(self.live_server_url+f'/app/admin/trash?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1건');page.get_by_role('button',name='영구 삭제',exact=True).click();expect(page.locator('#hard-message')).to_contain_text('되돌릴 수 없습니다')
+        self.db(lambda:trash_operation(self.admin,{'customer_ids':[str(self.rows[0].pk)],'site_id':str(self.site.pk),'idempotency_key':str(uuid4())}));context,page=self.admin_page();page.goto(self.live_server_url+f'/app/admin/trash?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1명');page.get_by_role('button',name='영구 삭제',exact=True).click();expect(page.locator('#hard-message')).to_contain_text('되돌릴 수 없습니다')
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
         page.route('**/hard-delete',lose,times=1);page.locator('#hard-confirm').click();expect(page.locator('#hard-pending')).to_be_visible();self.assertFalse(self.db(lambda:Customer.objects.filter(pk=self.rows[0].pk).exists()))
-        page.once('dialog',lambda dialog:dialog.accept());page.reload();expect(page.locator('#hard-pending')).to_be_visible();page.locator('#hard-retry').click();expect(page.locator('#hard-pending')).not_to_be_visible();expect(page.locator('#page-info')).to_contain_text('검색 0건');hard=[body for url,body in self.requests if '/hard-delete' in url];self.assertEqual(hard[0],hard[1]);context.close()
+        page.once('dialog',lambda dialog:dialog.accept());page.reload();expect(page.locator('#hard-pending')).to_be_visible();page.locator('#hard-retry').click();expect(page.locator('#hard-pending')).not_to_be_visible();expect(page.locator('#page-info')).to_contain_text('검색 0명');hard=[body for url,body in self.requests if '/hard-delete' in url];self.assertEqual(hard[0],hard[1]);context.close()
 
     def test_site_exact_name_confirmation_and_private_retry_payload(self):
-        context,page=self.admin_page();page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3건');page.locator('#delete-site').click();page.locator('#hard-name').fill(self.site.name+' ');page.locator('#hard-confirm').click();expect(page.locator('#hard-error')).to_contain_text('정확히');self.assertTrue(self.db(lambda:Site.objects.filter(pk=self.site.pk).exists()))
+        context,page=self.admin_page();page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3명');page.locator('#delete-site').click();page.locator('#hard-name').fill(self.site.name+' ');page.locator('#hard-confirm').click();expect(page.locator('#hard-error')).to_contain_text('정확히');self.assertTrue(self.db(lambda:Site.objects.filter(pk=self.site.pk).exists()))
         page.locator('#hard-name').fill(self.site.name)
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
         page.route('**/hard-delete',lose,times=1);page.locator('#hard-confirm').click();expect(page.locator('#hard-pending')).to_be_visible();metadata=page.evaluate('JSON.stringify(sessionStorage)');self.assertNotIn(self.site.name,metadata);self.assertIn('confirmation',metadata);self.assertFalse(self.db(lambda:Site.objects.filter(pk=self.site.pk).exists()))
-        page.locator('#hard-retry').click();expect(page.locator('#hard-pending')).not_to_be_visible();expect(page.locator('#site')).to_have_value(str(self.second.pk));self.assertEqual(self.db(lambda:GlobalSettings.objects.get().default_site_id),self.second.pk);page.reload();expect(page.locator('#site')).to_have_value(str(self.second.pk));expect(page.locator('#page-info')).to_contain_text('검색 0건');page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);page.screenshot(path=str(self.evidence/'p7-site-deleted-mobile.png'),full_page=True);context.close()
+        page.locator('#hard-retry').click();expect(page.locator('#hard-pending')).not_to_be_visible();expect(page.locator('#site')).to_have_value(str(self.second.pk));self.assertEqual(self.db(lambda:GlobalSettings.objects.get().default_site_id),self.second.pk);page.reload();expect(page.locator('#site')).to_have_value(str(self.second.pk));expect(page.locator('#page-info')).to_contain_text('검색 0명');page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);page.screenshot(path=str(self.evidence/'p7-site-deleted-mobile.png'),full_page=True);context.close()

@@ -145,7 +145,7 @@ export class EmployeeQueue extends EventTarget {
     for(const entry of entries){
       if(!this.entries.has(entry.key))continue;
       const transient=!error.status||error.status===429||error.status>=500;
-      entry.state=transient?(navigator.onLine?'retry':'offline'):'failed';entry.error=error.message;
+      entry.state=transient?(navigator.onLine?'retry':'offline'):'failed';entry.error=transient?'저장 결과를 확인하지 못했습니다. '+error.message:error.message;
       if(transient){const delay=[2000,5000,15000,30000,60000][Math.min(entry.attempt||0,4)];entry.attempt=(entry.attempt||0)+1;entry.retry_at=this.now()+delay*(0.9+Math.random()*0.1);}
       this.persist(entry);
     }

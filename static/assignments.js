@@ -1,3 +1,4 @@
+import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {api,option} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
@@ -15,8 +16,8 @@ function status(){
 async function availability(){
   const selected=$("#assignment-employee").value;
   const data=await api("/api/assignments/availability?"+new URLSearchParams({site_id:$("#assignment-site").value}));
-  $("#availability-count").textContent=`분배 가능 ${data.available_count}건 · 활성 직원 ${data.employees.length}명`;
-  $("#assignment-employee").replaceChildren(option("all","전체 팀원"),...data.employees.map(person=>option(person.id,`${person.name} · ${person.phone.replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3")}`)));
+  $("#availability-count").textContent=`분배 가능 ${data.available_count}명 · 활성 직원 ${data.employees.length}명`;
+  $("#assignment-employee").replaceChildren(option("all","전체 직원"),...data.employees.map(person=>option(person.id,`${person.name} · ${person.phone.replace(/^(010)(\d{4})(\d{4})$/,"$1-$2-$3")}`)));
   if(selected&&selected!=="all"&&!data.employees.some(person=>person.id===selected)){
     $("#assignment-employee").prepend(option("","직원을 다시 선택해 주세요."));$("#assignment-employee").value="";
   }else $("#assignment-employee").value=selected||"all";
@@ -28,20 +29,20 @@ async function execute(value){
   try{
     const result=await operation.execute(value);
     $("#assignment-result").replaceChildren();
-    const summary=document.createElement("p");summary.textContent=result.allocated_count!==undefined?`총 ${result.allocated_count}건 분배했습니다.`:`${result.business_date} 할당 ${result.recalled_count}건을 회수했습니다.`;$("#assignment-result").append(summary);
-    for(const person of result.employees||[]){const p=document.createElement("p");p.className="small mb-1";p.textContent=`${person.name}: ${person.count}건`;$("#assignment-result").append(p);}
+    const summary=document.createElement("p");summary.textContent=result.allocated_count!==undefined?`고객 ${result.allocated_count}명을 배정했습니다.`:`${result.business_date} 배정 고객 ${result.recalled_count}명을 회수했습니다.`;$("#assignment-result").append(summary);
+    for(const person of result.employees||[]){const p=document.createElement("p");p.className="small mb-1";p.textContent=`${person.name}: ${person.count}명`;$("#assignment-result").append(p);}
     try{await availability();}catch(error){notice("처리는 완료되었습니다. 잔여 수 조회: "+error.message);checked=false;}
-  }catch(error){notice(error.message);if(!operation.value){try{await availability();}catch{checked=false;}}}
+  }catch(error){notice(error.message.replace(/([0-9]+)개씩 분배/g,'$1명씩 분배'));if(!operation.value){try{await availability();}catch{checked=false;}}}
 }
 $("#assignment-site").onchange=()=>{checked=false;$("#assignment-employee").replaceChildren();$("#assignment-quantity").value="";$("#availability-count").textContent="현장을 확인해 주세요.";$("#assignment-result").replaceChildren();status();};
 $("#check-availability").onclick=()=>run(availability);
 $("#assignment-employee").onchange=status;
 $("#distribute").onclick=()=>run(async()=>{const quantity=Number($("#assignment-quantity").value);if(!Number.isSafeInteger(quantity)||quantity<=0)throw new Error("직원당 수량은 양의 정수로 입력해 주세요.");await execute({endpoint:"/api/assignments/distribute",body:{...body(),quantity,idempotency_key:newRequestId()}});});
-$("#recall").onclick=()=>run(async()=>{recallBody=body();const preview=await api("/api/assignments/recall-preview",recallBody);$("#recall-preview").textContent=`${preview.business_date} · ${preview.employee_count}명 · 현재 대상 ${preview.target_count}건을 회수하시겠습니까?`;$("#recall-dialog").showModal();});
+$("#recall").onclick=()=>run(async()=>{recallBody=body();const preview=await api("/api/assignments/recall-preview",recallBody);$("#recall-preview").textContent=`${$("#assignment-site").selectedOptions[0]?.textContent} · ${$("#assignment-employee").selectedOptions[0]?.textContent} · ${preview.business_date} · 직원 ${preview.employee_count}명 · 현재 대상 고객 ${preview.target_count}명을 회수하시겠습니까?`;$("#recall-dialog").showModal();});
 $("#recall-cancel").onclick=()=>$("#recall-dialog").close();
 $("#recall-confirm").onclick=()=>run(async()=>{$("#recall-dialog").close();await execute({endpoint:"/api/assignments/recall",body:{...recallBody,idempotency_key:newRequestId()}});});
 $("#assignment-retry").onclick=()=>run(()=>execute());
-$("#assignment-discard").onclick=()=>run(async()=>{operation.clear();checked=false;notice("대기 정보를 폐기했습니다. 현재 잔여 수를 확인한 뒤 작업해 주세요.");});
+$("#assignment-discard").onclick=()=>run(async()=>{if(!await confirmAction("배정·회수 확인 알림을 닫습니다. 서버에서 이미 처리된 작업은 그대로 유지됩니다. 다시 작업하기 전에 현재 고객 상태를 확인하세요.",{title:"이 화면에서 알림 닫기",confirmText:"알림 닫기"}))return;operation.clear();checked=false;notice("이 화면의 알림을 닫았습니다. 서버에서 이미 처리된 작업은 그대로 유지됩니다. 분배 가능 고객을 다시 조회하세요.");});
 window.addEventListener("beforeunload",event=>{if(busy||operation.value){event.preventDefault();event.returnValue="";}});
 status();
 try{const data=await api("/api/sites");$("#assignment-site").replaceChildren(...data.items.map(site=>option(site.id,site.name)));$("#assignment-site").value=operation.value?.body.site_id||new URL(location.href).searchParams.get('site_id')||data.default_site_id||"";if(!data.items.length)notice("등록된 현장이 없습니다. DB 관리에서 현장을 생성해 주세요.");}

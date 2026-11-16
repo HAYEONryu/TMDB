@@ -93,7 +93,7 @@ class IPHttpsBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page.locator('#dashboard-summary .overview-metric').nth(3).locator('dd')).to_have_text('1명')
         page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
         expect(page.locator('#site')).to_have_value(str(self.second.pk))
-        expect(page.locator("#page-info")).to_contain_text("검색 1건")
+        expect(page.locator("#page-info")).to_contain_text("검색 1명")
         expect(page.locator("#employee-message")).to_be_empty()
         self.assertTrue(page.evaluate("isSecureContext && !!crypto.subtle && !!navigator.locks"))
         name=page.locator('.tabulator-row [tabulator-field="customer_name"]').first

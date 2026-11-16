@@ -1,16 +1,51 @@
 """The acceptance report must never count missing, skipped or stale evidence."""
 import io
 import json
-from unittest import FunctionTestCase
+import tempfile
+from pathlib import Path
+from unittest import FunctionTestCase, TestLoader
+from unittest.mock import patch
 
 from django.conf import settings
 from django.test import SimpleTestCase
 
 from config.acceptance_runner import EvidenceResult
 from scripts.verify_acceptance import source_digest, verify
+from scripts.verify_acceptance import main as acceptance_main
 
 
 class AcceptanceEvidenceTests(SimpleTestCase):
+    def test_current_manifest_test_references_are_loadable(self):
+        loader = TestLoader()
+        for suite in ("basic", "ai"):
+            manifest = json.loads((settings.BASE_DIR / f"tests/acceptance_{suite}.json").read_text())
+            for row in manifest:
+                for name in row["tests"]:
+                    loaded = loader.loadTestsFromName(name)
+                    self.assertEqual(loaded.countTestCases(), 1, name)
+        self.assertEqual(loader.errors, [])
+
+    def test_cli_requires_explicit_results_and_never_overwrites_existing_evidence(self):
+        with patch("sys.argv", ["verify_acceptance.py"]), patch("sys.stderr", new=io.StringIO()):
+            with self.assertRaises(SystemExit) as missing:
+                acceptance_main()
+            self.assertEqual(missing.exception.code, 2)
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            results = run / "results.json"
+            results.write_text(json.dumps(self.report()))
+            argv = ["verify_acceptance.py", "--results", str(results)]
+            with patch("sys.argv", argv), patch("sys.stdout", new=io.StringIO()):
+                self.assertEqual(acceptance_main(), 0)
+            output = run / "acceptance.json"
+            self.assertEqual(json.loads(output.read_text())["passed"], 69)
+            before = output.read_bytes()
+            with patch("sys.argv", argv), patch("sys.stderr", new=io.StringIO()):
+                with self.assertRaises(SystemExit) as existing:
+                    acceptance_main()
+                self.assertEqual(existing.exception.code, 2)
+            self.assertEqual(output.read_bytes(), before)
+
     def report(self):
         manifest = json.loads((settings.BASE_DIR / "tests/acceptance_basic.json").read_text())
         return {"finished_at": "test-only", "source_digest": source_digest(settings.BASE_DIR),

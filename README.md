@@ -8,7 +8,7 @@
 
 DB 저장 중복·조회 메모리 개선, 선택형 웹 프로세스 설정과 읽기 전용 용량 진단은 [DB·메모리 최적화](docs/DATABASE_MEMORY_OPTIMIZATION.md)를 확인하세요.
 
-RPD500·RPM15·입력 TPM250,000은 현재 계정에서 재확인되지 않은 이전 기록값입니다.500회라면 직원20명의40회 전체 사용(800회)을 보장할 수 없습니다. 실제 고객정보 사용·외부 서버 배포·구매·유료 호출은 이번 단계에 포함하지 않습니다.
+무료 제공자 한도와 잔여량은 활성화 전에 해당 프로젝트에서 확인합니다. 개인 40회는 상한이며 프로젝트 전체 사용량을 보장하지 않습니다.
 
 관리자 현장/엑셀/분배·회수/고객·계정/삭제 승인/휴지통, 직원 상담 저장·오늘 및 지난 재콜·삭제 요청,23시 미진행 자동 회수와 선택형 AI 보조가 구현되어 있습니다. Python3.13/Django5.2/PostgreSQL17을 사용합니다.
 
@@ -16,7 +16,7 @@ RPD500·RPM15·입력 TPM250,000은 현재 계정에서 재확인되지 않은 �
 
 ```sh
 .venv/bin/python scripts/run_final_verification.py start
-.venv/bin/python scripts/run_final_verification.py test --label operations-stage1 tests.test_stage1_evidence tests.test_acceptance tests.test_free_ai_migration
+.venv/bin/python scripts/run_final_verification.py test --label local-check tests.test_stage1_evidence tests.test_acceptance tests.test_free_ai_migration
 .venv/bin/python scripts/run_final_verification.py stop
 ```
 
@@ -25,7 +25,7 @@ RPD500·RPM15·입력 TPM250,000은 현재 계정에서 재확인되지 않은 �
 Docker 실기 검수는 로컬 엔진이 있을 때만 실행합니다. 엔진이 없으면 미검증으로 남습니다.
 
 ```sh
-.venv/bin/python scripts/verify_docker_release.py --label docker-stage1
+.venv/bin/python scripts/verify_docker_release.py --label docker-check
 ```
 
 ## 로컬 가상 시연
@@ -47,7 +47,7 @@ cd /Users/hayeon/Documents/TMDB
 
 현재 운영 기준은 **`AI_ENABLED=false`, `AI_FREE_TIER_CONFIRMED=false` 유지**입니다. 다음은 무료 확인과 별도 활성화 승인을 마친 뒤 사용하는 절차이며, 이 안내를 추가했다고 AI가 활성화되는 것은 아닙니다.
 
-1. Google AI Studio에서 해당 프로젝트의 무료 등급·결제 미연결, 정확한 모델 사용 가능 여부, 현재 RPM·입력 TPM·RPD와 잔여량, 다른 앱의 공용 사용량을 확인합니다. 이전 RPD500·RPM15·입력 TPM250,000을 현재 확인값으로 복사하지 않습니다. 무료 사용을 확인할 수 없으면 비활성을 유지합니다.
+1. Google AI Studio에서 해당 프로젝트의 무료 등급·결제 미연결, 정확한 모델 사용 가능 여부, 현재 RPM·입력 TPM·RPD와 잔여량, 다른 앱의 공용 사용량을 확인합니다. 무료 사용을 확인할 수 없으면 비활성을 유지합니다.
 2. 보호된 `.env.ai`에 `AI_PROVIDER=gemini`, `AI_MODEL=gemini-3.5-flash-lite`, `AI_USAGE_TIER=free`, `AI_MONTHLY_BUDGET_USD=0`과 실제 확인한 프로젝트 ID·한도를 설정합니다. 키는 `AI_GEMINI_API_KEY`에만 보관하며 파일 권한은 `0600`이어야 합니다. 기존 파일을 예시로 덮어쓰거나 키를 채팅·명령 인수·Git·로그에 넣지 않습니다.
 3. 무료 확인과 활성화가 승인된 후에만 `AI_FREE_TIER_CONFIRMED`와 `AI_ENABLED`를 활성화합니다. 자세한 조건은 [AI 설정·키 관리](docs/AI_ACTIVATION.md)를 따릅니다. 유료 전환이나 다른 모델로 자동 전환하지 않습니다. 이 데모에서는 가상자료만 사용합니다.
 
@@ -116,7 +116,7 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 
 로컬 접속은 `http://127.0.0.1:8000/auth/login`, DB health는 `/healthz`입니다. 종료 시 앱·scheduler를 먼저 종료하고 해당 DB 관리 도구로 DB를 종료합니다. 초기/재설정 비밀번호는 변경 전 업무 API가 차단됩니다. 실제 운영에서 가상 seed·개발 DB 자격증명을 사용하지 않습니다.
 
-## 문서와 과거 기록
+## 현재 문서
 
 - [현재 운영 기준·미확인 환경·다음 결정](docs/CURRENT_OPERATING_BASELINE.md)
 - [운영·배포·백업·복원](docs/OPERATIONS.md)
@@ -132,9 +132,8 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 - [고객정보 빈 값(-) 편집·필터 사용법과 검증](docs/GRID_FILTERS.md)
 - [고객 그리드 열 순서·관리자 편집·고객명/연락처 정정 권한](docs/CUSTOMER_GRID_EDITING.md)
 - [관리자 현장명 변경 방법·중복/동시 수정 처리](docs/SITE_RENAMING.md)
-- [관리자 상담결과 비율의 계약 건수·계약률](docs/DASHBOARD_CONTRACT_COUNTS.md)
-- [운영 준비1단계 결과](docs/OPERATIONS_STAGE1.md)
-- [이전 최종 검수](docs/FINAL_VERIFICATION.md)·[당시92문항](docs/FINAL_ACCEPTANCE.md)
-- [이전 시작 안내 원문](docs/history/README.before_operations_stage1_20261108.md)
+- [대시보드 집계·계약 현황·연결 목록](docs/DASHBOARD_METRICS.md)
+- [현재 92개 검수 기준과 결과 생성](docs/ACCEPTANCE_CRITERIA.md)
+- [공통 UI와 최신 로컬 검증](docs/UI_CONSISTENCY_20261116.md)
 
-과거 보고서는 당시 모델·한도·코드·결과의 역사적 증거입니다. 현재 설정 안내로 복사하지 않습니다. 과거 유실 원시 로그는 복구 불가이며 새 실행 기록과 구분합니다.
+대체된 단계별 설계·검수 보고서와 이전 화면 자료는 제거했습니다. 이전 버전은 Git 이력에서 확인할 수 있으며, 로컬 검수 원본은 `.local/verification-runs/`에 보존합니다.

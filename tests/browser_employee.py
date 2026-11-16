@@ -1,3 +1,4 @@
+from tests.browser_dialog_helpers import confirm_action
 from tests.browser_filter_helpers import open_detail_filter
 from scripts.verification_evidence import artifact_path
 import json
@@ -60,7 +61,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.context.clear_cookies()
         page.goto(self.live_server_url+'/auth/login');page.get_by_label('전화번호',exact=True).fill(person.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.live_server_url+('/app/admin' if person.role=='ADMIN' else '/app/employee'))
     def open(self,page):
-        page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3건');expect(page.locator('#employee-message')).to_be_empty()
+        page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3명');expect(page.locator('#employee-message')).to_be_empty()
     def cell(self,page=None,field='notes',index=0):return (page or self.page).locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').nth(index)
     def edit(self,value,page=None,field='notes',index=0,blur=True,pending=True):
         page=page or self.page;cell=self.cell(page,field,index);cell.dblclick();control=cell.locator('textarea,input,select');control.fill(value) if field not in ['call_result','contract_status','route','housing_status'] else control.select_option(value)
@@ -115,7 +116,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.assertEqual(set(records[0]),{'key','user_id','site_id','customer_id','assignment_id','cipher','iv'})
             proof=page.evaluate("""async ({user,key,record})=>{const {QueueStore}=await import('/static/employee-store.js');const s=await new QueueStore(user,key).open();const e=await s.read(record);let tamper=false,exportBlocked=false;try{await s.read({...record,customer_id:crypto.randomUUID()});}catch{tamper=true;}try{await crypto.subtle.exportKey('raw',s.cryptoKey);}catch{exportBlocked=true;}s.close();return {tamper,exportBlocked,storedFields:Object.keys(e.pending)};}""",{'user':str(self.employee.pk),'key':key,'record':records[0]})
             self.assertEqual(proof,{'tamper':True,'exportBlocked':True,'storedFields':['notes']});context.close()
-            context=self.playwright.chromium.launch_persistent_context(profile);self.watch(context);page=context.pages[0];self.login(page,self.other);page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1건');self.saved(page);self.assertNotIn('가짜 오프라인',page.locator('body').inner_text());self.assertEqual(len(self.records(page)),1)
+            context=self.playwright.chromium.launch_persistent_context(profile);self.watch(context);page=context.pages[0];self.login(page,self.other);page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1명');self.saved(page);self.assertNotIn('가짜 오프라인',page.locator('body').inner_text());self.assertEqual(len(self.records(page)),1)
             self.login(page,self.employee);self.open(page);expect(page.locator('#queue-status')).to_contain_text('저장 대기 1행');expect(page.locator('#employee-grid')).to_contain_text('가짜 오프라인 상담 고유문장');self.save(page);self.assertEqual(self.records(page),[]);context.close()
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),1)
 
@@ -151,7 +152,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         held[0].fulfill(response=held[0].fetch());self.saved();expect(self.cell()).to_have_text('가상 전송 중 다음 입력');self.assertEqual(len(self.sent),2)
         captured=[]
         def lose(route):captured.append(route.request.post_data_json);response=route.fetch();self.assertEqual(response.status,200);route.abort('failed')
-        page.route('**/api/employee/batch-update',lose,times=1);self.edit('가상 응답 유실');page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('재시도 대기')
+        page.route('**/api/employee/batch-update',lose,times=1);self.edit('가상 응답 유실');page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('저장 결과 확인 대기')
         page.once('dialog',lambda dialog:dialog.accept());page.reload();self.saved();self.assertEqual(self.records(),[]);self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),3)
         self.assertEqual(len(self.sent),3) # Recovery reads receipt rather than submitting a new mutation.
 
@@ -164,7 +165,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.edit('재분배 전 가상 대기',second);cid=self.sent[-1]['rows'][0]['customer_id'];customer=self.db(lambda:Customer.objects.get(pk=cid))
         self.db(lambda:change_assignee(self.admin,customer.pk,self.assignee_body(customer)))
         self.db(customer.refresh_from_db);self.db(lambda:change_assignee(self.admin,customer.pk,self.assignee_body(customer,self.employee)))
-        second.locator('#save-now').click();expect(second.locator('#pending-rows')).to_contain_text('전송 불가');second.get_by_role('button',name='대기 정보 확인',exact=True).click();expect(second.locator('#employee-reapply')).to_be_disabled();expect(second.locator('#employee-compare')).to_be_empty()
+        second.locator('#save-now').click();expect(second.locator('#pending-rows')).to_contain_text('전송 불가');second.get_by_role('button',name='저장 대기 변경 확인',exact=True).click();expect(second.locator('#employee-reapply')).to_be_disabled();expect(second.locator('#employee-compare')).to_be_empty()
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=cid).notes),'가상 두 번째 탭');self.assertEqual(len(self.sent),2)
         second.close()
 
@@ -172,8 +173,8 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         page=self.page;self.context.set_offline(True);self.edit('가상 이동 실패 대기');page.get_by_role('link',name='오늘 할 일',exact=True).click();expect(page.locator('#leave-dialog')).to_be_visible();page.locator('#leave-cancel').click();expect(page).to_have_url(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         page.get_by_role('button',name='로그아웃',exact=True).click();expect(page.locator('#leave-cancel')).to_have_text('로그아웃 취소');page.locator('#leave-cancel').click()
         self.context.set_offline(False);page.get_by_role('link',name='오늘 할 일',exact=True).click();expect(page).to_have_url(self.live_server_url+'/app/employee/today');self.saved();self.assertEqual(len(self.sent),1)
-        expect(page.locator('#page-info')).to_contain_text('검색 3건');self.context.set_offline(True);self.edit('가상 버릴 대기');page.get_by_role('button',name='로그아웃',exact=True).click();page.once('dialog',lambda dialog:dialog.dismiss());page.locator('#leave-discard').click();expect(page.locator('#leave-dialog')).to_be_visible();self.assertEqual(len(self.records()),1)
-        self.context.set_offline(False);page.once('dialog',lambda dialog:dialog.accept());page.locator('#leave-discard').click();expect(page).to_have_url(self.live_server_url+'/auth/login');self.assertEqual(self.records(),[])
+        expect(page.locator('#page-info')).to_contain_text('검색 3명');self.context.set_offline(True);self.edit('가상 버릴 대기');page.get_by_role('button',name='로그아웃',exact=True).click();page.locator('#leave-discard').click();confirm_action(page,False);expect(page.locator('#leave-dialog')).to_be_visible();self.assertEqual(len(self.records()),1)
+        self.context.set_offline(False);page.locator('#leave-discard').click();confirm_action(page);expect(page).to_have_url(self.live_server_url+'/auth/login');self.assertEqual(self.records(),[])
 
     def test_quota_failure_attempts_server_and_blocks_navigation_when_both_fail(self):
         page=self.page;page.evaluate("()=>{window.originalPut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new DOMException('test quota','QuotaExceededError')};}")
@@ -186,9 +187,9 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         second=self.context.new_page();self.login(second,self.other);second.goto(self.live_server_url+'/app/employee/mine');expect(page.locator('#employee-private')).to_be_hidden();self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),0);second.close()
 
     def test_filters_mobile_dates_and_visual_evidence(self):
-        page=self.page;self.edit('가상 필터용 상담');self.save();open_detail_filter(page,'notes');page.locator('#filter-contains').fill('필터용');page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 1건')
-        page.locator('#clear-filters').click();expect(page.locator('#page-info')).to_contain_text('검색 3건')
-        open_detail_filter(page,'call_result');expect(page.locator('#filter-options')).to_contain_text('미입력');page.locator('#filter-options').get_by_role('checkbox',name='가망고객',exact=True).check();page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 0건');page.locator('#clear-filters').click();expect(page.locator('#page-info')).to_contain_text('검색 3건')
+        page=self.page;self.edit('가상 필터용 상담');self.save();open_detail_filter(page,'notes');page.locator('#filter-contains').fill('필터용');page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        page.locator('#clear-filters').click();expect(page.locator('#page-info')).to_contain_text('검색 3명')
+        open_detail_filter(page,'call_result');expect(page.locator('#filter-options')).to_contain_text('미입력');page.locator('#filter-options').get_by_role('checkbox',name='가망고객',exact=True).check();page.locator('#filter-apply').click();expect(page.locator('#page-info')).to_contain_text('검색 0명');page.locator('#clear-filters').click();expect(page.locator('#page-info')).to_contain_text('검색 3명')
         page.screenshot(path=str(self.evidence/'p5-employee-desktop.png'),full_page=True);page.set_viewport_size({'width':390,'height':844});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),390);page.screenshot(path=str(self.evidence/'p5-employee-mobile.png'),full_page=True)
 
     def test_expired_queue_manual_review_and_foreground_online_deadline(self):
@@ -211,12 +212,12 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
     def test_transient_retry_same_mutation_and_no_write_when_recovery_check_fails(self):
         page=self.page;page.clock.install();failures=[]
         def unavailable(route):failures.append(route.request.post_data_json);route.abort('failed')
-        page.route('**/api/employee/batch-update',unavailable,times=1);self.edit('가상 네트워크 재시도');page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('재시도 대기')
+        page.route('**/api/employee/batch-update',unavailable,times=1);self.edit('가상 네트워크 재시도');page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('저장 결과 확인 대기')
         with page.expect_request('**/api/employee/batch-update') as retry:page.clock.run_for(3500)
         self.saved();self.assertEqual(retry.value.post_data_json,failures[0]);self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),1)
         self.edit('가상 확인 서버 장애');count=len(self.sent)
         page.route('**/api/employee/queue-check',lambda route:route.fulfill(status=503,content_type='application/json',body='{"error":{"code":"TEMPORARY_UNAVAILABLE","message":"가상 점검 장애"}}'),times=1)
-        page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('재시도 대기');self.assertEqual(len(self.sent),count)
+        page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('저장 결과 확인 대기');self.assertEqual(len(self.sent),count)
 
     def test_invalid_first_input_is_not_reported_saved_and_navigation_requires_choice(self):
         page=self.page;cell=self.cell(field='residence');cell.dblclick();control=cell.locator('input');control.fill('x'*201)

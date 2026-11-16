@@ -1,3 +1,4 @@
+from tests.browser_dialog_helpers import confirm_action
 from scripts.verification_evidence import artifact_path
 import json,os
 from dataclasses import replace
@@ -45,7 +46,7 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
     def login(self):
         self.page.goto(self.live_server_url+'/auth/login');self.page.get_by_label('전화번호',exact=True).fill(self.employee.phone_normalized);self.page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);self.page.get_by_role('button',name='로그인',exact=True).click();expect(self.page).to_have_url(self.live_server_url+'/app/employee')
     def open(self,view='mine'):
-        self.page.goto(self.live_server_url+f'/app/employee/{view}?site_id={self.site.pk}');expect(self.page.locator('#page-info')).to_contain_text('검색 3건');expect(self.page.locator('#ai-availability')).to_contain_text('테스트 전용')
+        self.page.goto(self.live_server_url+f'/app/employee/{view}?site_id={self.site.pk}');expect(self.page.locator('#page-info')).to_contain_text('검색 3명');expect(self.page.locator('#ai-availability')).to_contain_text('테스트 전용')
     def row(self,index=0):return self.page.locator('#employee-grid .tabulator-row').filter(has_text=self.rows[index].customer_name)
     def edit(self,value,index=0):
         cell=self.row(index).locator('[tabulator-field="notes"]');cell.dblclick();cell.locator('textarea').fill(value);self.page.locator('h1').click();expect(self.page.locator('#queue-status')).to_contain_text('저장 대기')
@@ -66,7 +67,7 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
     def generate(self,label='AI 상담 정리'):
         self.worker_route();self.feature({'AI 상담 정리':'CLEANUP','상담 요약':'SUMMARY','다음 질문 제안':'NEXT_QUESTIONS'}[label]);expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답')
     def choose_notes(self):
-        self.page.get_by_label('상담내용 제안 선택',exact=True).check();self.page.once('dialog',lambda dialog:dialog.accept());self.page.locator('#ai-apply').click();expect(self.page.locator('#ai-result-message')).to_contain_text('저장 대기열에 반영')
+        self.page.get_by_label('상담내용 제안 선택',exact=True).check();self.page.locator('#ai-apply').click();confirm_action(self.page);expect(self.page.locator('#ai-result-message')).to_contain_text('저장 대기열에 반영')
     def close(self):self.page.locator('#ai-dialog [data-close]').click()
 
     def test_compact_actions_help_and_empty_input_alert_never_generate(self):
@@ -99,8 +100,8 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.db(lambda:Customer.objects.filter(pk=self.rows[0].pk).update(notes=''))
         self.page.locator('#reload-rows').click()
         messages=[]
-        self.page.once('dialog',lambda dialog:(messages.append(dialog.message),dialog.accept()))
         self.feature('SUMMARY')
+        messages.append(self.page.locator('#action-confirm-dialog').inner_text());confirm_action(self.page,False)
         expect(self.page.locator('#employee-message')).to_contain_text('먼저 상담내용')
         expect(self.page.locator('#ai-result-message')).to_contain_text('먼저 상담내용')
         self.assertTrue(messages);self.assertIn('입력하고 저장',messages[0])
@@ -120,14 +121,14 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.generate('상담 요약');expect(self.page.locator('#ai-content')).to_contain_text('상담 핵심');expect(self.page.locator('#ai-apply')).to_be_hidden();self.close()
         self.generate('다음 질문 제안');expect(self.page.locator('#ai-content')).to_contain_text('목적:');expect(self.page.locator('#ai-apply')).to_be_hidden();self.page.set_viewport_size({'width':390,'height':844});self.page.screenshot(path=str(self.evidence/'p10-questions-mobile.png'),full_page=True)
         self.assertEqual(self.page.evaluate('Math.max(0,document.documentElement.scrollWidth-innerWidth)'),0);self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),0);self.assertEqual(len(self.posts),2)
-        self.close();self.page.locator('#reload-rows').click();expect(self.page.locator('#page-info')).to_contain_text('검색 3건');self.assertEqual(len(self.posts),2)
+        self.close();self.page.locator('#reload-rows').click();expect(self.page.locator('#page-info')).to_contain_text('검색 3명');self.assertEqual(len(self.posts),2)
 
     def test_offline_save_failure_no_ai_request_or_quota(self):
         self.context.set_offline(True);self.edit('오프라인 가짜 입력');self.feature();expect(self.page.locator('#employee-message')).to_contain_text('AI 사용 준비를 확인할 수 없습니다')
         self.assertEqual(self.posts,[]);self.assertEqual(self.db(lambda:AIRequest.objects.count()),0);self.assertEqual(self.db(lambda:AIQuotaBucket.objects.count()),0)
 
     def test_lost_submission_response_reload_retries_same_key_and_charges_once(self):
-        self.worker_route(lose=True);self.feature();expect(self.page.locator('#ai-pending')).to_be_visible();self.page.once('dialog',lambda dialog:dialog.accept());self.page.reload();expect(self.page.locator('#ai-pending')).to_be_visible();self.page.locator('#ai-retry').click();expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답')
+        self.worker_route(lose=True);self.feature();confirm_action(self.page,False);expect(self.page.locator('#ai-pending')).to_be_visible();self.page.once('dialog',lambda dialog:dialog.accept());self.page.reload();expect(self.page.locator('#ai-pending')).to_be_visible();self.page.locator('#ai-retry').click();expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답')
         self.assertEqual(self.posts[0],self.posts[1]);self.assertEqual(self.db(lambda:AIUsageAttempt.objects.count()),1);self.assertEqual(self.db(lambda:AIQuotaBucket.objects.get().successful_count),1)
         metadata=self.page.evaluate('Object.values(sessionStorage).join(" ")');self.assertNotIn('가짜 최초 상담',metadata);self.assertNotIn('테스트 정리:',metadata)
 
@@ -154,7 +155,7 @@ class P10BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.generate();self.close()
         with override_settings(AI_FOUNDATION_TEST_MODE=False,AI_CONFIG=replace(TEST_AI,configured=False,api_key='')):
             self.page.reload();expect(self.page.locator('#ai-availability')).to_contain_text('공급자 연결');expect(self.row().get_by_role('button',name='AI 도움',exact=True)).to_be_enabled();self.feature();expect(self.page.locator('#employee-message')).to_contain_text('API 키')
-            self.history();self.page.locator('#ai-history button').first.click();expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답');self.assertEqual(len(self.posts),1)
+            confirm_action(self.page,False);self.history();self.page.locator('#ai-history button').first.click();expect(self.page.locator('#ai-content')).to_contain_text('테스트 전용 가짜 응답');self.assertEqual(len(self.posts),1)
 
     def test_lost_ai_applied_save_recovers_receipt_without_duplicate_revision(self):
         self.generate();self.choose_notes();self.close()

@@ -69,7 +69,7 @@ class P13HTTPSBrowserTests(Fixtures, StaticLiveServerTestCase):
             page.goto(self.origin+'/auth/login');page.get_by_label('전화번호',exact=True).fill(self.employee.phone_normalized);page.get_by_label('비밀번호',exact=True).fill(STRONG_PASSWORD);page.get_by_role('button',name='로그인',exact=True).click();expect(page).to_have_url(self.origin+'/app/employee')
             cookies={cookie['name']:cookie for cookie in context.cookies()}
             self.assertTrue(cookies['sessionid']['secure']);self.assertTrue(cookies['sessionid']['httpOnly']);self.assertTrue(cookies['csrftoken']['secure'])
-            page.goto(self.origin+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1건')
+            page.goto(self.origin+f'/app/employee/mine?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 1명')
             row=page.locator('#employee-grid .tabulator-row').first
             cell=row.locator('[tabulator-field="notes"]');cell.dblclick();cell.locator('textarea').fill('HTTPS '+engine+' 가짜 상담');page.locator('h1').click()
             page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')

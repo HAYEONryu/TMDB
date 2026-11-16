@@ -13,7 +13,7 @@ function renderSummary(data){
   const target=$('dashboard-summary'),e=data.employee,m=data.manager;
   const items=e?
     [['기한 지난 재콜',e.callbacks_overdue,'우선 연락 · 현재 시각 이전','calendar','overdue'],['오늘 남은 재콜',e.callbacks_remaining,'오늘 처리 · 현재 시각부터 자정 전','calendar','callbacks_remaining'],['오늘 방문예약',e.visits_today,'예약 확인 · 오늘 지난 시각도 포함','calendar','visits'],['오늘 받은 고객',e.current_assignment_today_held,'상담 시작 · 현재 배정 유지 고객','distribute','new_today']]:
-    [['미배정 고객',data.counts.unassigned,'분배 대기 · 현재 유효한 배정 없음','distribute',null,siteLink('/app/admin/assignments',data.site_id)],['오늘 배정 유지',m.current_assignment_today_held,'현재 상태 · 회수된 고객 제외','customers',null,siteLink('/app/admin/customers',data.site_id,'new_today',null,'assigned_at')],['기한 지난 재콜',m.callbacks_overdue,'우선 확인 · 담당자와 예정 시각 확인','calendar',null,siteLink('/app/admin/customers',data.site_id,'overdue',null,'callback_due_at')],['이관 필요',data.transfer_needed,'담당자 확인 · 기존 이관 대상 기준','users',null,siteLink('/app/admin/users',data.site_id)+'#transfer-needed']];
+    [['미배정 고객',data.counts.unassigned,'분배 대기 · 현재 유효한 배정 없음','distribute',null,siteLink('/app/admin/assignments',data.site_id)],['오늘 배정 유지',m.current_assignment_today_held,'오늘 배정되어 현재 담당자가 있는 고객 · 회수 제외','customers',null,siteLink('/app/admin/customers',data.site_id,'new_today',null,'assigned_at')],['기한 지난 재콜',m.callbacks_overdue,'우선 확인 · 담당자와 예정 시각 확인','calendar',null,siteLink('/app/admin/customers',data.site_id,'overdue',null,'callback_due_at')],['이관 필요',data.transfer_needed,'담당자 확인 · 기존 이관 대상 기준','users',null,siteLink('/app/admin/users',data.site_id)+'#transfer-needed']];
   const list=document.createElement('dl');list.className='overview-metrics';
   items.forEach(([label,value,caption,symbol,category,href],index)=>{
     const card=document.createElement('div');card.className='overview-metric';card.dataset.metric=category||['unassigned','new_today','overdue','transfer'][index];card.dataset.tone=['amber','blue','teal','violet'][index];
@@ -45,13 +45,13 @@ function staffChart(report){
 function resultChart(distribution){
   const area=$('call-result-chart'),legend=$('call-result-legend');if(!area||!legend)return;
   const drawing=svg('svg',{viewBox:'0 0 220 220','class':'donut-chart',role:'img','aria-labelledby':'result-chart-title result-chart-desc'});
-  drawing.append(svg('title',{id:'result-chart-title'},'상담결과 비율'),svg('desc',{id:'result-chart-desc'},`${distribution.total}명의 고객. `+distribution.results.map(r=>`${r.label} ${r.count}건`).join(', ')));
+  drawing.append(svg('title',{id:'result-chart-title'},'통화 결과 분포'),svg('desc',{id:'result-chart-desc'},`${distribution.total}명의 고객. `+distribution.results.map(r=>`${r.label} ${r.count}명`).join(', ')));
   const radius=76,circumference=2*Math.PI*radius;
   drawing.append(svg('circle',{cx:110,cy:110,r:radius,fill:'none',stroke:'#edf2fa','stroke-width':26}));
   let offset=0;
   const rows=distribution.results;
   for(const row of rows){if(!row.count)continue;const length=row.count/distribution.total*circumference;
-    const segment=svg('circle',{cx:110,cy:110,r:radius,fill:'none',stroke:colors[row.value],'stroke-width':26,'stroke-dasharray':`${length} ${circumference-length}`,'stroke-dashoffset':-offset,transform:'rotate(-90 110 110)'});segment.append(svg('title',{},`${row.label} ${format(row.count)}건`));drawing.append(segment);offset+=length;}
+    const segment=svg('circle',{cx:110,cy:110,r:radius,fill:'none',stroke:colors[row.value],'stroke-width':26,'stroke-dasharray':`${length} ${circumference-length}`,'stroke-dashoffset':-offset,transform:'rotate(-90 110 110)'});segment.append(svg('title',{},`${row.label} ${format(row.count)}명`));drawing.append(segment);offset+=length;}
   drawing.append(svg('text',{x:110,y:108,'text-anchor':'middle','class':'donut-total'},format(distribution.total)+'명'),svg('text',{x:110,y:133,'text-anchor':'middle','class':'donut-caption'},distribution.total?'집계 대상':'집계 대상 없음'));
   area.replaceChildren(drawing);
   legend.replaceChildren(...rows.map(row=>{const item=document.createElement('li'),dot=text('span','','result-dot');dot.style.backgroundColor=colors[row.value];item.append(dot,text('span',row.label),text('strong',format(row.count)+'명'),text('small',distribution.total?(row.count/distribution.total*100).toFixed(1)+'%':'0%'));return item;}));
@@ -61,14 +61,14 @@ function resultChart(distribution){
     const item=document.createElement('div'),number=text('dd',value);number.id=id;item.append(text('dt',label),number);contracts.append(item);
   }
   $('contract-summary').replaceChildren(contracts);
-  $('result-basis').textContent=(distribution.period==='all'?'선택 현장의 미삭제 고객 전체 · 현재 고객 상태':`${distribution.period==='week'?'금주 월요일 00:00부터':'오늘 00:00부터'} 조회 시각까지 유효한 상담을 저장한 고객별 마지막 결과`)+` · 집계 대상 ${format(distribution.total)}명 · 계약 ${format(distribution.contracted_total)} / ${format(distribution.total)}명`;
+  $('result-basis').textContent=(distribution.period==='all'?'선택 현장의 미삭제 고객 전체 · 현재 고객 상태':`${distribution.period==='week'?'금주 월요일 00:00부터':'오늘 00:00부터'} 조회 시각까지 유효한 상담을 저장한 고객별 마지막 결과`)+` · 집계 대상 ${format(distribution.total)}명 중 계약 상태 ${format(distribution.contracted_total)}명`;
 
 }
 function table(headers){const node=document.createElement('table');node.className='table';const head=document.createElement('thead'),row=document.createElement('tr');for(const label of headers){const cell=text('th',label);cell.scope='col';row.append(cell);}head.append(row);const body=document.createElement('tbody');node.append(head,body);return {node,body};}
 function performance(data){
   const report=data.manager,days=report.daily_consultations,ceiling=Math.max(1,...days.map(day=>day.count));
   const drawing=svg('svg',{viewBox:'0 0 620 250',class:'staff-chart daily-chart',role:'img','aria-labelledby':'daily-chart-title daily-chart-desc'});
-  drawing.append(svg('title',{id:'daily-chart-title'},'최근 7일 일별 TM 상담 추이'),svg('desc',{id:'daily-chart-desc'},days.map(day=>`${day.date}: ${format(day.count)}명`).join(', ')));
+  drawing.append(svg('title',{id:'daily-chart-title'},'최근 7일 상담 고객 수 · 날짜별'),svg('desc',{id:'daily-chart-desc'},days.map(day=>`${day.date}: ${format(day.count)}명`).join(', ')));
   for(let i=0;i<3;i++){const y=195-i*75;drawing.append(svg('line',{x1:20,x2:605,y1:y,y2:y,class:i?'chart-gridline':'chart-baseline'}));}
   days.forEach((day,index)=>{const x=62+index*82,h=150*day.count/ceiling;
     const bar=svg('rect',{x:x-19,y:195-h,width:38,height:h,rx:4,class:'staff-bar'});bar.append(svg('title',{},`${day.date}: ${format(day.count)}명`));
@@ -101,21 +101,21 @@ function performance(data){
 }
 function staffTables(data){
   const workload=table(['직원','우선순위','현재 담당','오늘 배정 유지','미진행','기한 지난 재콜']);
-  const history=table(['직원','오늘 배정 이력 고객','오늘 배정 작업','최근 7일 배정 고객','최근 7일 배정 작업']);
+  const history=table(['직원','오늘 배정 이력 고객 수','오늘 배정 횟수','최근 7일 배정 고객 수','최근 7일 배정 횟수']);
   const name=e=>{const cell=text('td',''),link=text('a',e.name,'staff-name');link.href=siteLink('/app/admin/customers',data.site_id,'held',e.id);cell.append(link);if(!e.is_active||!e.is_employee)cell.append(text('div',!e.is_active?'비활성 직원':'권한 변경 직원','staff-state'));return cell;};
   for(const e of data.manager.staff){
     const row=document.createElement('tr');row.dataset.employeeId=e.id;row.append(name(e),text('td',e.callbacks_overdue?'재콜 우선':e.unprogressed_total?'상담 대기':e.held_total?'진행 중':'현재 담당 없음',e.callbacks_overdue?'work-priority':'staff-state'));
-    for(const [field,category,sort] of [['held_total','held'],['current_assignment_today_held','new_today','assigned_at'],['unprogressed_total','unprogressed'],['callbacks_overdue','overdue','callback_due_at']]){const cell=text('td',''),link=text('a',format(e[field]));link.href=siteLink('/app/admin/customers',data.site_id,category,e.id,sort);link.setAttribute('aria-label',`${e.name} ${workload.node.querySelectorAll('th')[row.children.length].textContent} ${e[field]}명 목록 열기`);cell.append(link);row.append(cell);}
+    for(const [field,category,sort] of [['held_total','held'],['current_assignment_today_held','new_today','assigned_at'],['unprogressed_total','unprogressed'],['callbacks_overdue','overdue','callback_due_at']]){const cell=text('td',''),link=text('a',format(e[field])+'명');link.href=siteLink('/app/admin/customers',data.site_id,category,e.id,sort);link.setAttribute('aria-label',`${e.name} ${workload.node.querySelectorAll('th')[row.children.length].textContent} ${e[field]}명 목록 열기`);cell.append(link);row.append(cell);}
     workload.body.append(row);
-    const old=document.createElement('tr');old.dataset.employeeId=e.id;old.append(name(e));for(const value of [e.assigned_today_unique,e.assignment_operations_today,e.assigned_7d_unique,e.assignment_operations_7d])old.append(text('td',format(value)));history.body.append(old);
+    const old=document.createElement('tr');old.dataset.employeeId=e.id;old.append(name(e));for(const [value,unit] of [[e.assigned_today_unique,'명'],[e.assignment_operations_today,'회'],[e.assigned_7d_unique,'명'],[e.assignment_operations_7d,'회']])old.append(text('td',format(value)+unit));history.body.append(old);
   }
   for(const list of [workload,history])if(!data.manager.staff.length){const row=text('tr',''),cell=text('td','표시할 직원이 없습니다.');cell.colSpan=6;row.append(cell);list.body.append(row);}
   $('staff-progress-table').replaceChildren(workload.node);$('staff-allocation-table').replaceChildren(history.node);
 }
 function legacyStatistics(data,area){
   area.replaceChildren();
-  const {node,body}=table(['활성 직원','오늘 할당 고유 DB','오늘 할당 작업 횟수','현재 보유 전체','오늘 할당 중 현재 보유','회수·이관·삭제된 DB','미진행: 오늘 할당 중 현재 보유','미진행: 현재 보유 전체','오늘 할당 중 현재 보유의 통화결과']);node.classList.add('dashboard-table');
-  for(const e of data.employees){const row=document.createElement('tr');row.dataset.employeeId=e.id;for(const value of [e.name,e.assigned_today_unique,e.assignment_operations_today,e.held_total,e.assigned_today_held,e.assigned_today_removed,e.unprogressed_today_held,e.unprogressed_total,e.call_results.map(r=>`${r.label} ${r.count}`).join(' · ')])row.append(text('td',value));body.append(row);}area.append(node,text('p',`비활성 직원의 진행 DB · 이관 필요 ${data.transfer_needed}건 (선택 현장)`));if(!data.employees.length)area.append(text('p','활성 직원이 없습니다.'));
+  const {node,body}=table(['활성 직원','오늘 배정 이력 고객 수','오늘 배정 횟수','현재 담당 고객 수','오늘 배정 중 현재 보유','회수·이관·삭제된 DB','미진행: 오늘 배정 중 현재 보유','미진행: 현재 담당 고객','오늘 배정 중 현재 보유의 통화결과']);node.classList.add('dashboard-table');
+  for(const e of data.employees){const row=document.createElement('tr');row.dataset.employeeId=e.id;for(const value of [e.name,`${e.assigned_today_unique}명`,`${e.assignment_operations_today}회`,`${e.held_total}명`,`${e.assigned_today_held}명`,`${e.assigned_today_removed}명`,`${e.unprogressed_today_held}명`,`${e.unprogressed_total}명`,e.call_results.map(r=>`${r.label} ${r.count}명`).join(' · ')])row.append(text('td',value));body.append(row);}area.append(node,text('p',`이관이 필요한 고객 ${data.transfer_needed}명 (선택 현장)`));if(!data.employees.length)area.append(text('p','활성 직원이 없습니다.'));
 }
 let displayedSite=null,lastData=null;
 const managerAreas=['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table','daily-consultation-chart','contract-status-chart','staff-performance-table'];
@@ -142,8 +142,8 @@ export async function renderDashboard(site,{draw,clear}={}){
     const data=await api('/api/dashboard'+(params.size?'?'+params:''),undefined,'GET',{'X-TM-Actor':document.body.dataset.userId});if(current!==generation)return;
     if(site&&data.site_id!==site)throw new Error('선택한 현장의 응답을 확인하지 못했습니다. 다시 조회해 주세요.');
     renderSummary(data);if(data.manager){staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);performance(data);legacyStatistics(data,$('dashboard-statistics'));$('site-counts').textContent=`현재 고객 ${format(data.counts.total)}명 · 현재 담당 ${format(data.manager.held_total)}명 · 휴지통 ${format(data.counts.trash)}명`;}
-    draw?.(data);lastData=data;$('dashboard-updated').textContent=`마지막 성공 ${data.business_date} ${dashboardTime(data.as_of)} · ${data.site_name||'현장 없음'}`;
-    message.dataset.state='success';message.textContent=(data.employee?data.employee.held_total:data.counts.total)?'선택 현장의 최신 결과입니다.':'선택 현장에 집계 대상 고객이 없습니다.';
+    draw?.(data);lastData=data;$('dashboard-updated').textContent=`마지막 조회 ${data.business_date} ${dashboardTime(data.as_of)} · ${data.site_name||'현장 없음'}`;
+    message.dataset.state='success';message.textContent=(data.employee?data.employee.held_total:data.counts.total)?'':'선택 현장에 집계 대상 고객이 없습니다.';
     return data;
   }catch(error){
     if(current!==generation)return;

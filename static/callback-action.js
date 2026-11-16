@@ -1,3 +1,4 @@
+import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
 export class CallbackAction {
@@ -5,7 +6,7 @@ export class CallbackAction {
     Object.assign(this,{flush,getRow,refresh,notice,changed});this.busy=false;
     this.pending=new PendingOperation('callback',userId,/^\/api\/customers\/[0-9a-f-]+\/callback-complete$/,request);
     document.querySelector('#callback-retry').onclick=()=>this.run();
-    document.querySelector('#callback-discard').onclick=()=>{if(confirm('완료 요청의 대기 정보만 폐기하시겠습니까? 이미 서버에서 완료된 일정은 취소되지 않습니다.')){this.pending.clear();this.update();this.refresh().catch(error=>this.notice(error.message));}};
+    document.querySelector('#callback-discard').onclick=async()=>{if(await confirmAction('재콜 완료 확인 알림을 닫습니다. 서버에서 이미 완료한 일정은 그대로 유지됩니다.',{title:'확인 알림 닫기',confirmText:'알림 닫기'})){this.pending.clear();this.update();this.refresh().catch(error=>this.notice(error.message));}};
   }
   update(){document.querySelector('#callback-pending').hidden=!this.pending.value;for(const id of ['callback-retry','callback-discard'])document.querySelector('#'+id).disabled=this.busy;this.changed();}
   async run(id){

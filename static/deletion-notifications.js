@@ -1,3 +1,4 @@
+import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {api} from './api.js';
 import {PendingOperation} from './pending-operation.js';
@@ -26,13 +27,13 @@ async function load(number=1){
 }
 async function approve(item){
   if(busy||stopped||item&&pending.value)return;
-  if(item&&!confirm(`${item.customer_name} 고객정보를 휴지통으로 이동하시겠습니까?`))return;
+  if(item&&!await confirmAction(`${item.site_name} · ${item.customer_name} 고객의 삭제 요청을 승인합니다. 현재 배정은 종료되고 고객정보와 상담·재콜 이력은 휴지통에 보관됩니다.`,{title:'삭제 요청 승인',confirmText:'승인하고 휴지통으로 이동',danger:true}))return;
   busy=true;clearTimeout(timer);status();
   try{await pending.execute(item?{endpoint:`/api/deletion-requests/${item.id}/approve`,body:{idempotency_key:newRequestId()}}:undefined);await load(1);$('#notification-message').textContent='삭제 요청 승인을 확인했습니다.';}
   catch(error){await load(1);$('#notification-message').textContent=error.message;}
   finally{busy=false;status();schedule();}
 }
-$('#approval-retry').onclick=()=>approve();$('#approval-discard').onclick=()=>{if(confirm('승인 요청의 대기 정보만 폐기하시겠습니까? 이미 승인된 결과는 취소되지 않습니다.')){pending.clear();status();load(1);}};
+$('#approval-retry').onclick=()=>approve();$('#approval-discard').onclick=async()=>{if(await confirmAction('삭제 승인 확인 알림을 닫습니다. 이미 휴지통으로 이동한 고객은 그대로 유지됩니다.',{title:'확인 알림 닫기',confirmText:'알림 닫기'})){pending.clear();status();load(1);}};
 $('#requests-refresh').onclick=()=>load(1);$('#requests-previous').onclick=()=>load(page-1);$('#requests-next').onclick=()=>load(page+1);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')load(1);else clearTimeout(timer);});window.addEventListener('focus',()=>load(1));
 window.addEventListener('tm-auth-context',event=>{if(event.detail.user!==userId||event.detail.role!=='ADMIN'||event.detail.initial){stopped=true;clearTimeout(timer);$('#delete-request-rows').replaceChildren();$('#notification-message').textContent='로그인 정보가 변경되었습니다. 다시 로그인해 주세요.';status();}});

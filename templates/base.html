@@ -9,6 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="{% static 'brand-mark.svg' %}">
   <link rel="stylesheet" href="{% static 'vendor/bootstrap.min.css' %}">
   <script src="{% static 'forms.js' %}" defer></script>
+  <script type="module" src="{% static 'shared-ui.js' %}"></script>
   <script src="{% static 'auth-context.js' %}" defer></script>
   <script src="{% static 'connection-status.js' %}" defer></script>
   {% block assets %}{% endblock %}
@@ -17,14 +18,10 @@
 <body class="{% if user.is_authenticated and not user.must_change_password %}workspace{% else %}auth-page{% endif %}" data-user-id="{% if user.is_authenticated %}{{ user.pk }}{% endif %}" data-role="{{ user.role }}" data-initial="{{ user.must_change_password|yesno:'true,false' }}">
   <a class="skip-link" href="#main-content">본문으로 바로가기</a>
   <header class="site-header"><div class="container header-inner">
-    <a class="brand header-brand" href="/" aria-label="두드림 TM 홈"><img src="{% static 'brand-mark.svg' %}" width="40" height="40" alt=""><span>두드림 <b>TM</b></span></a>
-    {% if user.is_authenticated and not user.must_change_password %}<span class="workspace-breadcrumb">{% if user.role == 'ADMIN' %}팀장 작업 공간{% else %}직원 작업 공간{% endif %}<span aria-hidden="true"> / </span><span>두드림 TM</span></span>{% endif %}
-    {% if user.is_authenticated %}<div class="account-menu"><span class="header-date">{% now "Y년 n월 j일" %}</span><span class="account-avatar" aria-hidden="true">{{ user.name|slice:':1' }}</span><span class="account-name">{{ user.name }}<small>{% if user.role == 'ADMIN' %}팀장 · 관리자{% else %}직원{% endif %}</small></span><a class="account-settings" href="/auth/password?change=1" aria-label="비밀번호 변경" title="비밀번호 변경"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#settings"></use></svg></a><form method="post" action="/auth/logout">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">로그아웃</button></form></div>{% else %}<span class="header-description">고객과의 좋은 연결, 두드림 TM</span>{% endif %}
-  </div></header>
-  {% if user.is_authenticated and not user.must_change_password %}
-  <aside class="workspace-sidebar" aria-label="두드림 TM 업무 메뉴">
-    <a class="brand sidebar-brand" href="/" aria-label="두드림 TM 홈"><img src="{% static 'brand-mark.svg' %}" width="42" height="42" alt=""><span>두드림 <b>TM</b><small>상담 고객관리</small></span></a>
-    <p class="sidebar-caption">{% if user.role == 'ADMIN' %}현장 운영{% else %}나의 업무{% endif %}</p>
+    <a class="brand header-brand" href="/" aria-label="두드림 TM 홈"><img src="{% static 'brand-mark.svg' %}" width="36" height="36" alt=""><span>두드림 <b>TM</b></span></a>
+    {% if user.is_authenticated and not user.must_change_password %}
+    <button id="menu-toggle" type="button" class="btn btn-outline-secondary" aria-controls="workspace-menu" aria-expanded="false">메뉴</button>
+    <div id="workspace-menu" class="workspace-menu">
     {% if user.is_authenticated and user.role == 'ADMIN' and not user.must_change_password %}
     <nav class="workspace-nav" aria-label="관리자 메뉴">
       <a href="/app/admin" {% if request.path == '/app/admin' %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#dashboard"></use></svg>대시보드</a>
@@ -42,13 +39,14 @@
       <a href="/app/guides" {% if '/app/guides' in request.path %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#book"></use></svg>팀 상담 가이드</a>
     </nav>
     {% endif %}
-    <div class="sidebar-footer"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#book"></use></svg><span>고객과의 좋은 연결<br><strong>두드림 TM</strong></span></div>
-  </aside>
-  {% endif %}
+    </div>
+    {% endif %}
+    {% if user.is_authenticated %}<div class="account-menu"><span class="account-name">{{ user.name }}<small>{% if user.role == 'ADMIN' %}관리자{% else %}직원{% endif %}</small></span><a class="account-settings" href="/auth/password?change=1" aria-label="비밀번호 변경" title="비밀번호 변경"><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#settings"></use></svg></a><form method="post" action="/auth/logout">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary" type="submit">로그아웃</button></form></div>{% endif %}
+  </div></header>
   <main id="main-content" class="container workspace-main" tabindex="-1">
     <p id="connection-warning" class="alert alert-warning" role="alert" hidden></p>
     {% block content %}{% endblock %}
   </main>
-  <footer class="site-footer container"><span>두드림 TM</span><span>좋은 상담을 함께 만들어갑니다.</span></footer>
+
 </body>
 </html>

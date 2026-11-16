@@ -36,7 +36,7 @@ class GeminiBrowserKeyTests(P12BrowserTests):
     def test_employee_generation_and_encrypted_queue_never_receive_server_key(self):
         self.login(self.employee)
         self.page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
-        expect(self.page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(self.page.locator('#page-info')).to_contain_text('검색 1명')
         def generate(route):
             response=route.fetch();self.assertEqual(response.status,202)
             self.responses.append((response.headers,response.body()))

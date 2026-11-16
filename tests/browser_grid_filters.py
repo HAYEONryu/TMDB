@@ -39,7 +39,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.count(total)
 
     def count(self,total):
-        expect(self.page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+        expect(self.page.locator('#page-info')).to_contain_text(f'검색 {total}명')
 
     def open_filter(self,field):
         open_detail_filter(self.page,field)
@@ -342,7 +342,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
         held[0][0].fulfill(json=held[0][1])
         page.evaluate('()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
         self.count(1);expect(page.locator('#search')).to_have_value('0001');expect(page.locator('#employee-grid .tabulator-row')).to_have_count(1)
-        expect(page.locator('#active-filters')).to_contain_text('검색 · 0001');expect(page.locator('#result-count')).to_have_text('검색 결과 1건')
+        expect(page.locator('#active-filters')).to_contain_text('검색 · 0001');expect(page.locator('#result-count')).to_have_text('검색 결과 1명')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
     def test_filter_apply_and_reset_preserve_pending_edits_and_cancel_draft_without_saving(self):

@@ -1,3 +1,4 @@
+import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
 export class DeletionAction {
@@ -5,7 +6,7 @@ export class DeletionAction {
     Object.assign(this,{flush,getRow,refresh,notice,changed});this.busy=false;this.confirmed=new Map();
     this.pending=new PendingOperation('deletion-request',userId,/^\/api\/customers\/[0-9a-f-]+\/deletion-request$/,request);
     document.querySelector('#deletion-retry').onclick=()=>this.run();
-    document.querySelector('#deletion-discard').onclick=()=>{if(confirm('삭제 요청의 대기 정보만 폐기하시겠습니까? 이미 접수된 요청은 취소되지 않습니다.')){this.clear();this.refresh().catch(error=>this.notice(error.message));}};
+    document.querySelector('#deletion-discard').onclick=async()=>{if(await confirmAction('삭제 요청 확인 알림을 닫습니다. 서버에서 이미 접수한 요청은 그대로 유지됩니다.',{title:'확인 알림 닫기',confirmText:'알림 닫기'})){this.clear();this.refresh().catch(error=>this.notice(error.message));}};
   }
   isConfirmed(row){return this.confirmed.get(row.id)===row.assignment_id;}
   update(){document.querySelector('#deletion-pending').hidden=!this.pending.value;for(const id of ['deletion-retry','deletion-discard'])document.querySelector('#'+id).disabled=this.busy;this.changed();}
@@ -17,7 +18,7 @@ export class DeletionAction {
         if(this.pending.value)throw new Error('먼저 이전 삭제 요청의 접수 결과를 확인해 주세요.');
         if(!await this.flush(id))throw new Error('해당 행을 저장하지 못했습니다. 삭제 요청을 제출하지 않았습니다.');
         const row=this.getRow(id);if(!row)throw new Error('현재 고객정보를 다시 조회해 주세요.');
-        if(!confirm('이 고객정보의 삭제를 요청하시겠습니까? 관리자 승인 후 휴지통으로 이동합니다.'))return false;
+        if(!await confirmAction(`${row.customer_name||'이름 미입력'} 고객의 삭제를 요청합니다. 관리자 승인 전에는 계속 편집할 수 있으며, 승인 후 휴지통으로 이동합니다.`,{title:'고객 삭제 요청',confirmText:'삭제 요청',danger:true}))return false;
         value={endpoint:`/api/customers/${id}/deletion-request`,body:{assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:newRequestId()}};
       }
       const sent=value||this.pending.value;const result=await this.pending.execute(value);

@@ -1,3 +1,4 @@
+from tests.browser_dialog_helpers import confirm_action
 import os
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlsplit
@@ -68,9 +69,9 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.locator('#validate-file').click()
         expect(page.locator('#commit-upload')).to_be_enabled()
         page.locator('#commit-upload').click();page.locator('#commit-confirm').click()
-        expect(page.locator('#commit-summary')).to_contain_text('1개 업로드를 성공')
+        expect(page.locator('#commit-summary')).to_contain_text('1행을 등록')
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('1건')
+        expect(page.locator('#page-info')).to_contain_text('1명')
         for field,value in [('route','티엠'),('memo','관리자가 수정한 일반 비고'),('admin_notes','SYNTHETIC_PRIVATE_BROWSER updated')]:
             self.edit('customer-grid',field,value)
         page.locator('#save').click()
@@ -80,7 +81,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.db(lambda:self.assign(customer))
         self.login(self.employee)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         self.assertEqual(page.locator('#employee-grid [tabulator-field="admin_notes"]').count(),0)
         response=self.context.request.get(self.live_server_url+f'/api/customers?site_id={self.site.pk}').text()
         self.assertNotIn('admin_notes',response)
@@ -104,11 +105,11 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.db(lambda:self.assign(customer))
         page=self.page;self.login(self.admin)
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         fields=['customer_name','phone_normalized','contract_status','admin_notes','assignee_name',
                 'call_result','callback_due_at','visit_at','residence','housing_status','notes','route','memo','assigned_at','_actions','_status']
         labels=['고객명','연락처','계약여부','관리자 비고','담당직원명','통화결과','재콜일정',
-                '방문예약 날짜','고객 거주지','주택보유상황','상담내용','루트','비고','할당일','작업','저장상태']
+                '방문예약 날짜','고객 거주지','주택보유상황','상담내용','루트','비고','배정일','작업','저장상태']
         def header(grid):
             return page.locator(f'#{grid} .tabulator-header .tabulator-col[tabulator-field]').evaluate_all(
                 "cells=>cells.filter(c=>c.getAttribute('tabulator-field')).map(c=>[c.getAttribute('tabulator-field'),c.querySelector('.tabulator-col-title').textContent.replace('▾','').trim()])")
@@ -125,7 +126,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
                          ('가상 정정','01094000002','CONTRACTED','관리자 상담 입력'))
         self.login(self.employee)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         employee_header=[[field,label] for field,label in zip(fields,labels) if field not in {'admin_notes','assignee_name'}]
         employee_header.insert(4,['_deletion','삭제 요청'])
         self.assertEqual(header('employee-grid'),employee_header)
@@ -153,7 +154,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page.locator('#conflict-message')).to_contain_text('가상 재정정')
         expect(page.locator('#conflict-message')).to_contain_text('010-9400-0003')
         self.assertNotIn('SYNTHETIC_PRIVATE_GRID',page.locator('#conflict-message').inner_text())
-        page.once('dialog',lambda dialog:dialog.accept());page.locator('#employee-discard').click()
+        page.locator('#employee-discard').click();confirm_action(page)
         expect(page.locator('#employee-grid .tabulator-row [tabulator-field="customer_name"]').first).to_have_text('가상 재정정')
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).notes),'직원 상담 입력')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
@@ -163,7 +164,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.db(lambda:self.assign(customer))
         self.login(self.employee);page=self.page
         page.goto(self.live_server_url+f'/app/employee/today?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         cell=page.locator('#employee-grid .tabulator-row [tabulator-field="customer_name"]').first
         cell.click();cell.locator('input').fill('가'*101)
         expect(page.locator('#queue-status')).to_contain_text('입력 오류')
@@ -192,7 +193,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         from apps.customers.choices import CURRENT_CHOICES
         self.login(self.admin);page=self.page
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         expect(page.locator('#customer-grid .tabulator-row [tabulator-field="housing_status"]').first).to_have_text('이전값: 전세')
         for field,choices in CURRENT_CHOICES.items():
             cell=page.locator(f'#customer-grid .tabulator-row [tabulator-field="{field}"]').first
@@ -201,7 +202,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
             page.get_by_text(list(choices.values())[0],exact=True).click();page.locator('h1').click()
         page.locator('#save').click();expect(page.locator('#message')).to_have_text('저장했습니다.')
         self.login(self.employee);page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         for field,choices in CURRENT_CHOICES.items():
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click();select=cell.locator('select')
@@ -225,7 +226,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         for actor,grid,path,total in [(self.admin,'customer-grid','admin/customers',3),(self.employee,'employee-grid','employee/mine',2)]:
             self.login(actor);page=self.page
             page.goto(self.live_server_url+f'/app/{path}?site_id={self.site.pk}')
-            expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+            expect(page.locator('#page-info')).to_contain_text(f'검색 {total}명')
             for field,choices in CURRENT_CHOICES.items():
                 open_detail_filter(page,field)
                 options=page.locator('#filter-options')
@@ -233,23 +234,23 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
                 for title in ['미입력',*choices.values()]:expect(options.get_by_role('checkbox',name=title,exact=True)).to_have_count(1)
                 options.get_by_role('checkbox',name=next(iter(choices.values())),exact=True).check()
                 page.locator('#filter-apply').click()
-                expect(page.locator('#page-info')).to_contain_text('검색 1건')
+                expect(page.locator('#page-info')).to_contain_text('검색 1명')
                 open_detail_filter(page,field)
                 expect(page.locator('#filter-options').get_by_role('checkbox',name=next(iter(choices.values())),exact=True)).to_be_checked()
                 page.locator('#filter-reset').click();page.locator('#filter-apply').click()
-                expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+                expect(page.locator('#page-info')).to_contain_text(f'검색 {total}명')
                 if page.locator('#clear-filters').is_enabled():page.locator('#clear-filters').click()
-                expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+                expect(page.locator('#page-info')).to_contain_text(f'검색 {total}명')
             open_detail_filter(page,'contract_status')
             page.locator('#filter-mode input[value="EMPTY"]').check();page.locator('#filter-apply').click()
-            expect(page.locator('#page-info')).to_contain_text(f'검색 {1 if actor==self.admin else 0}건')
+            expect(page.locator('#page-info')).to_contain_text(f'검색 {1 if actor==self.admin else 0}명')
             page.locator('#clear-filters').click()
-            expect(page.locator('#page-info')).to_contain_text(f'검색 {total}건')
+            expect(page.locator('#page-info')).to_contain_text(f'검색 {total}명')
             open_detail_filter(page,'route')
             options=page.locator('#filter-options')
             expect(options).to_have_attribute('aria-busy','false')
             if actor==self.employee:self.assertNotIn('다른직원 이전값',options.inner_text())
             options.get_by_role('checkbox',name='이전값: 티엠 소개',exact=True).check();page.locator('#filter-apply').click()
-            expect(page.locator('#page-info')).to_contain_text('검색 1건')
+            expect(page.locator('#page-info')).to_contain_text('검색 1명')
             expect(page.locator(f'#{grid} .tabulator-row [tabulator-field="route"]').first).to_have_text('이전값: 티엠 소개')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])

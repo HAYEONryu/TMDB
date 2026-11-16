@@ -272,7 +272,7 @@ class P9Tests(Fixtures, TransactionTestCase):
         task.refresh_from_db(); self.assertEqual(task.status,'RUNNING'); self.assertEqual(AIQuotaBucket.objects.get().reserved_count,1); self.assertFalse(task.result.valid)
         self.assertEqual(AIBudgetMonth.objects.get().charged_usd,0)
 
-    def test_concurrent_same_key_and_quota29_never_double_reserve(self):
+    def test_concurrent_same_key_never_double_reserves(self):
         body=self.body9(); barrier=Barrier(2)
         def reserve_thread(same):
             close_old_connections()
@@ -301,7 +301,7 @@ class P9Tests(Fixtures, TransactionTestCase):
             finally:close_old_connections()
         with ThreadPoolExecutor(max_workers=len(jobs)) as pool:return list(pool.map(run,jobs))
 
-    def test_quota29_distinct_keys_race_reserves_only_one_then_success30(self):
+    def test_quota39_distinct_keys_race_reserves_only_one_then_success40(self):
         AIQuotaBucket.objects.create(user=self.employee,korean_date=timezone.localdate(),successful_count=39)
         bodies=[self.body9(),self.body9(feature='CLEANUP')]
         values=self.race([lambda body=b: str(reserve(User.objects.get(pk=self.employee.pk),body)[0].pk) for b in bodies])

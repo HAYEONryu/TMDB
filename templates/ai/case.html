@@ -1,1 +1,8 @@
-{% extends 'base.html' %}{% block title %}근거 고객 기록 · 두드림 TM{% endblock %}{% block content %}<h1>근거 고객 기록</h1><p>{{ customer.site.name }} · {{ customer.customer_name }} · 버전 {{ customer.version }}</p><dl><dt>통화 결과</dt><dd>{{ customer.get_call_result_display|default:'미입력' }}</dd><dt>방문 일정</dt><dd>{{ customer.visit_at|default:'미입력' }}</dd><dt>계약 상태</dt><dd>{{ customer.get_contract_status_display }}</dd><dt>상담 기록</dt><dd style="white-space:pre-wrap;overflow-wrap:anywhere">{{ customer.notes|default:'기록 없음' }}</dd></dl><p>현재 기록입니다. 보고서의 인용·집계는 접수 시각 기준입니다.</p><a href="/app/admin/ai">보고서로 돌아가기</a>{% endblock %}
+{% extends 'base.html' %}
+{% block title %}보고서에 인용된 고객 · 두드림 TM{% endblock %}
+{% block content %}
+<div class="page-heading"><div><h1>보고서에 인용된 고객</h1><p>{{ customer.site.name }}</p></div><a href="/app/admin/ai" class="btn btn-outline-secondary">AI 보고서로 돌아가기</a></div>
+<p class="text-secondary">아래는 현재 상담 기록입니다. 보고서는 요청 시점의 기록을 바탕으로 작성됐습니다. · 현재 버전 {{ customer.version }}</p>
+<section class="card reading-card"><h2 class="h4">{{ customer.customer_name|default:'이름 미입력' }}</h2><dl><div><dt>통화 결과</dt><dd>{{ customer.get_call_result_display|default:'미입력' }}</dd></div><div><dt>방문 일정</dt><dd>{{ customer.visit_at|default:'미입력' }}</dd></div><div><dt>계약 상태</dt><dd>{{ customer.get_contract_status_display }}</dd></div></dl></section>
+<section class="card reading-card"><h2 class="h5">현재 상담 기록</h2><p style="white-space:pre-wrap;overflow-wrap:anywhere">{{ customer.notes|default:'기록 없음' }}</p></section>
+{% endblock %}

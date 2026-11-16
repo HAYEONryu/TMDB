@@ -75,8 +75,12 @@ class P11Tests(Fixtures,TransactionTestCase):
         ConsultationRevision.objects.all().delete();self.note(self.customer,self.employee,one,'가격',1);self.note(self.customer,self.employee,two,'위치',2)
         task=self.task(at=two+timedelta(hours=1));self.assertEqual(task.report_snapshot.data['sampling']['total_note_groups'],2)
     def test_inactive_and_promoted_actual_workers_in_weekly_sql_totals(self):
-        self.employee.is_active=False;self.employee.save();self.other.role='ADMIN';self.other.save();self.note(self.customer,self.other,self.at,'비교',2)
+        self.employee.is_active=False;self.employee.save();self.other.role='ADMIN';self.other.save()
         sunday=self.now+timedelta(days=(6-self.now.astimezone(KST).weekday())%7)
+        # Keep fixture work inside the report week on Mondays and Tuesdays too.
+        at=sunday-timedelta(days=2)
+        ConsultationRevision.objects.filter(customer=self.customer).update(saved_at=at)
+        self.note(self.customer,self.other,at,'비교',2)
         task=self.task('WEEKLY_BRIEFING',at=sunday);ids={r['actor_id'] for r in task.report_snapshot.data['statistics']['employees']}
         self.assertIn(str(self.employee.pk),ids);self.assertIn(str(self.other.pk),ids)
     def test_callback_completion_and_overdue_attributed_to_real_actor(self):
@@ -202,10 +206,11 @@ class P11Tests(Fixtures,TransactionTestCase):
         with self.assertRaises(IntegrityError),transaction.atomic():AIResult.objects.filter(pk=result.pk).update(guide_version=0)
         with self.assertRaises(IntegrityError),transaction.atomic():AIResult.objects.filter(pk=result.pk).update(guide_reviewed_version=1)
     def test_operations_actual_actor_time_and_full_totals_in_snapshot(self):
-        OperationEvent.objects.create(actor=self.admin,operation='DISTRIBUTE',occurred_at=self.at,affected_count=7)
         sunday=self.now+timedelta(days=(6-self.now.astimezone(KST).weekday())%7)
+        at=sunday-timedelta(days=2)
+        OperationEvent.objects.create(actor=self.admin,operation='DISTRIBUTE',occurred_at=at,affected_count=7)
         task=self.task('WEEKLY_BRIEFING',at=sunday);stats=task.report_snapshot.data['statistics'];row=next(r for r in stats['operations'] if r['operation']=='DISTRIBUTE')
-        self.assertEqual(row['affected'],7);self.assertEqual(row['actor_id'],str(self.admin.pk));self.assertEqual(stats['operation_events'][0]['occurred_at'],self.at.isoformat())
+        self.assertEqual(row['affected'],7);self.assertEqual(row['actor_id'],str(self.admin.pk));event=next(event for event in stats['operation_events'] if event['operation']=='DISTRIBUTE');self.assertEqual(datetime.fromisoformat(event['occurred_at']),at)
     def test_publish_same_key_replay_keeps_one_operation_and_no_body_receipt(self):
         result=self.success(self.task());self.assertEqual(self.write(result).status_code,200);result.refresh_from_db();body={'expected_version':result.guide_version,'idempotency_key':str(uuid4())};url=f'/api/ai/guides/{result.pk}/publish'
         first=self.client.post(url,body,content_type='application/json');second=self.client.post(url,body,content_type='application/json');self.assertEqual(first.status_code,200);self.assertEqual(first.json(),second.json());self.assertEqual(OperationEvent.objects.filter(operation='AI_GUIDE_PUBLISH').count(),1);self.assertNotIn('body',first.json())

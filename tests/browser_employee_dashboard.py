@@ -132,6 +132,6 @@ class EmployeeDashboardBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(schedule.locator('tbody tr')).to_have_count(10)
         phone= schedule.locator('tbody tr').first.locator('td').nth(2).inner_text().replace('-','')
         schedule.locator('tbody tr').first.locator('a').click()
-        expect(page.locator('#page-info')).to_contain_text('검색 1건')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
         expect(page.locator('#search')).to_have_value(phone)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])

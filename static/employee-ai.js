@@ -1,3 +1,4 @@
+import {confirmAction,showNotice} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {PendingOperation} from './pending-operation.js';
 const $=id=>document.getElementById(id),features={CLEANUP:'항목 정리',SUMMARY:'핵심 요약',NEXT_QUESTIONS:'다음 질문'},active=new Set(['RESERVED','RUNNING','UNKNOWN']);
@@ -8,7 +9,7 @@ export class EmployeeAI {
     Object.assign(this,{userId,request,queue,flush,notice,changed,labels,display,validate});this.busy=false;this.availability=null;this.result=null;this.sequence=0;
     this.pending=new PendingOperation('employee-ai',userId,/^\/api\/ai\/customer-tasks$/,request);this.storageKey=`tm:ai:task:v1:${userId}`;
     try{const data=JSON.parse(sessionStorage.getItem(this.storageKey));if(data&&/^[0-9a-f-]{36}$/.test(data.task_id)&&features[data.feature])this.value=data;}catch{}
-    $('ai-retry').onclick=()=>this.run();$('ai-discard').onclick=()=>{if(confirm('AI 요청의 대기 정보만 폐기하시겠습니까? 이미 접수된 작업과 사용 횟수는 취소되지 않습니다.')){this.pending.clear();this.update();}};
+    $('ai-retry').onclick=()=>this.run();$('ai-discard').onclick=async()=>{if(await confirmAction('AI 요청 확인 알림을 닫습니다. 이미 접수된 작업과 사용 횟수는 그대로 유지됩니다.',{title:'확인 알림 닫기',confirmText:'알림 닫기'})){this.pending.clear();this.update();}};
     $('ai-task-open').onclick=()=>this.viewTask();$('ai-apply').onclick=()=>this.apply();$('ai-dialog').addEventListener('close',()=>{this.sequence++;this.stop();});
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){this.poll();this.refreshAvailability();}else this.stop();});
     window.addEventListener('online',()=>{this.poll();this.refreshAvailability();});window.addEventListener('focus',()=>{this.poll();this.refreshAvailability();});this.update();
@@ -43,7 +44,7 @@ export class EmployeeAI {
   show(mode){this.sequence++;this.mode=mode;this.result=null;$('ai-content').replaceChildren();$('ai-history').replaceChildren();$('ai-apply').hidden=true;$('ai-result-message').textContent='';if(!$('ai-dialog').open)$('ai-dialog').showModal();this.stop();}
   async run(id,feature){
     if(this.busy||this.queue.paused)return false;
-    if(id){await this.refreshAvailability();if(this.busy||this.queue.paused)return false;if(!this.canGenerate()){const message=this.pending.value?'이전 AI 요청의 접수 결과를 먼저 확인해 주세요. AI 요청 결과 다시 확인을 이용하세요.':active.has(this.value?.status)?'진행 중인 AI 작업의 결과를 AI 작업 확인에서 먼저 확인해 주세요.':this.availability?.message||'AI 사용 준비를 확인할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.';this.notice(message);$('ai-result-message').textContent=message;alert(message);return false;}}
+    if(id){await this.refreshAvailability();if(this.busy||this.queue.paused)return false;if(!this.canGenerate()){const message=this.pending.value?'이전 AI 요청의 접수 결과를 먼저 확인해 주세요. AI 요청 결과 다시 확인을 이용하세요.':active.has(this.value?.status)?'진행 중인 AI 작업의 결과를 AI 작업 확인에서 먼저 확인해 주세요.':this.availability?.message||'AI 사용 준비를 확인할 수 없습니다. 연결을 확인한 뒤 다시 시도해 주세요.';this.notice(message);$('ai-result-message').textContent=message;await showNotice(message,'AI 작업 안내');return false;}}
     this.busy=true;this.update();
     try{
       let value;
@@ -52,11 +53,11 @@ export class EmployeeAI {
         if(!await this.flush(id))throw new Error('해당 행을 저장하지 못했습니다. AI 요청은 접수하지 않았습니다.');
         const row=this.queue.rows.get(id);if(!row)throw new Error('현재 고객정보를 다시 확인해 주세요.');
         const preparation=await this.request('/api/ai/customer-readiness?'+new URLSearchParams({feature,customer_id:id,assignment_id:row.assignment_id,expected_version:row.version}));
-        if(!preparation.ready){this.notice(preparation.message);$('ai-result-message').textContent=preparation.message;alert(preparation.message);return false;}
+        if(!preparation.ready){this.notice(preparation.message);$('ai-result-message').textContent=preparation.message;await showNotice(preparation.message,'AI 작업 안내');return false;}
         value={endpoint:'/api/ai/customer-tasks',body:{feature,customer_id:id,assignment_id:row.assignment_id,expected_version:row.version,idempotency_key:newRequestId()}};
       }
       const data=await this.pending.execute(value);if(this.queue.paused)return false;this.track(data);this.show('task');this.busy=false;this.update();await this.poll();return true;
-    }catch(error){this.notice(error.message);if(id){$('ai-result-message').textContent=error.message;alert(error.message);}return false;}
+    }catch(error){this.notice(error.message);if(id){$('ai-result-message').textContent=error.message;await showNotice(error.message,'AI 작업 안내');}return false;}
     finally{this.busy=false;this.update();await this.refreshAvailability();}
   }
   viewTask(){if(!this.value||this.queue.paused)return;this.show('task');this.poll();}
@@ -126,7 +127,7 @@ export class EmployeeAI {
     try{
       const latest=await this.request(`/api/ai/results/${this.result.id}`);this.result=latest;
       if(!this.safeToApply())throw new Error('결과가 오래되었거나 미저장 변경이 있습니다. 최신 값과 비교해 주세요.');
-      if(selected.includes('notes')&&!confirm('위의 현재 비고와 제안문을 비교하셨나요? 선택한 비고를 AI 제안으로 교체해 저장 대기열에 반영합니다.'))return;
+      if(selected.includes('notes')&&!await confirmAction('현재 상담 기록과 AI 제안문을 비교하세요. 선택한 상담 기록을 AI 제안으로 교체해 저장 대기열에 반영합니다.',{title:'AI 제안 적용',confirmText:'제안 적용',danger:false}))return;
       const row=this.queue.rows.get(latest.customer_id),values={};for(const field of selected){const item=latest.payload.suggestions[field];if(item?.status!=='SUGGESTION'||item.value===null)throw new Error('적용할 수 없는 제안입니다.');this.validate(field,item.value,row);values[field]=item.value;}
       if(!this.queue.stageAI(row,values,latest.id))throw new Error('저장 대기값을 먼저 확인해 주세요.');
       const message=this.queue.entry(row.id)?'선택 항목을 저장 대기열에 반영했습니다. 지금 저장하거나 자동 저장 결과를 확인하세요.':'선택한 값이 기존 값과 같아 저장할 변경이 없습니다.';$('ai-result-message').textContent=message;this.notice(message);

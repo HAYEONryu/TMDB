@@ -112,7 +112,7 @@ class AuthenticationTests(TestCase):
         self.assertEqual(client.get('/auth/password').status_code, 200)
         client.post('/auth/password', password_data(), content_type='application/json')
         self.assertRedirects(client.get('/auth/password'), '/app/employee', fetch_redirect_response=False)
-        self.assertContains(client.get('/auth/password?change=1'), '비밀번호 변경을 완료한 계정입니다.')
+        self.assertContains(client.get('/auth/password?change=1'), '현재 비밀번호와 새 비밀번호를 입력하세요.')
         self.employee.refresh_from_db()
         self.assertFalse(self.employee.must_change_password)
 

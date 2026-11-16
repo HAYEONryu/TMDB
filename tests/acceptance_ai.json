@@ -1,7 +1,7 @@
 [
   {
     "id": "18.8-01",
-    "criterion": "직원의 세 AI 기능은 버튼을 눌렀을 때만 실행되고 합산 하루 30회로 제한된다.",
+    "criterion": "직원의 세 AI 기능은 버튼을 눌렀을 때만 실행되고 합산 한국 날짜 하루 40회로 제한된다.",
     "tests": [
       "tests.test_p9.P9Tests.test_shared_three_feature_quota_reservation_limit_and_database_constraint",
       "tests.browser_p10.P10BrowserTests.test_summary_questions_read_only_and_mobile_no_automatic_generation"
@@ -18,16 +18,16 @@
   },
   {
     "id": "18.8-03",
-    "criterion": "29회 성공 상태에서 여러 탭이 동시에 요청해도 성공+예약 합계가 30회를 넘지 않는다.",
+    "criterion": "39회 성공 상태에서 여러 탭이 동시에 요청해도 성공+예약 합계가 40회를 넘지 않는다.",
     "tests": [
-      "tests.test_p9.P9Tests.test_quota29_distinct_keys_race_reserves_only_one_then_success30"
+      "tests.test_p9.P9Tests.test_quota39_distinct_keys_race_reserves_only_one_then_success40"
     ]
   },
   {
     "id": "18.8-04",
     "criterion": "동일 요청 키 재시도·결과 재조회·이중 클릭에 호출과 차감이 중복되지 않는다.",
     "tests": [
-      "tests.test_p9.P9Tests.test_concurrent_same_key_and_quota29_never_double_reserve",
+      "tests.test_p9.P9Tests.test_concurrent_same_key_never_double_reserves",
       "tests.browser_p10.P10BrowserTests.test_lost_submission_response_reload_retries_same_key_and_charges_once"
     ]
   },
@@ -41,7 +41,7 @@
   },
   {
     "id": "18.8-06",
-    "criterion": "외부 처리 여부가 불명확한 timeout을 무조건 새 유료 호출로 재실행하지 않는다.",
+    "criterion": "외부 처리 여부가 불명확한 timeout은 자동 재전송하지 않으며 유료 전환·다른 모델 자동 전환은 금지한다.",
     "tests": [
       "tests.test_p9.P9Tests.test_unknown_holds_then_releases_once_keeps_conservative_cost_and_rejects_late_success",
       "tests.test_p9.P9Tests.test_real_worker_process_crash_after_claim_then_restart_does_not_resend"

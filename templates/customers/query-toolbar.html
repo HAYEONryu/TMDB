@@ -3,7 +3,7 @@
     <label class="query-site">현장<select id="site" class="form-select mt-1"></select></label>
     <form data-async id="search-form" class="query-search"><label for="search">고객 검색<input id="search" type="search" maxlength="200" placeholder="이름 또는 전화번호" class="form-control mt-1"></label><button class="btn btn-primary" type="submit">검색</button></form>
     <button id="open-filters" type="button" class="btn btn-outline-primary" aria-haspopup="dialog" aria-controls="filter-dialog">상세 필터 (0)</button>
-    <label class="query-sort">정렬<select id="sort" class="form-select mt-1">{% if employee_view == 'today' %}<option value="priority">기한 지난 재콜 → 오늘 재콜 → 오늘 할당</option>{% endif %}<option value="-created_at">최근 등록순</option><option value="customer_name">고객명순</option>{% if user.role == 'ADMIN' %}<option value="assignee_name">담당직원순</option>{% endif %}<option value="callback_due_at">재콜 예정순</option><option value="visit_at">방문 예정순</option><option value="assigned_at">할당 시각순</option></select></label>
+    <label class="query-sort">정렬<select id="sort" class="form-select mt-1">{% if employee_view == 'today' %}<option value="priority">기한 지난 재콜 → 오늘 재콜 → 오늘 배정</option>{% endif %}<option value="-created_at">최근 등록순</option><option value="customer_name">고객명순</option>{% if user.role == 'ADMIN' %}<option value="assignee_name">담당직원순</option>{% endif %}<option value="callback_due_at">재콜 예정순</option><option value="visit_at">방문 예정순</option><option value="assigned_at">배정 시각순</option></select></label>
   </div>
   <div class="query-applied"><div id="active-filters" class="d-flex flex-wrap gap-2"></div><button id="clear-filters" type="button" class="filter-text-button">조건 초기화</button><span id="result-count" role="status" aria-live="polite" aria-atomic="true"></span></div>
 </div>

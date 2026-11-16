@@ -22,5 +22,5 @@ export function installHistory(request){
     }catch(error){if(token===generation){body.replaceChildren();document.querySelector('#history-error').textContent=error.message;}}
   };
   document.querySelector('#history-kind').onchange=event=>{kind=event.target.value;page=1;load();};document.querySelector('#history-previous').onclick=()=>{page--;load();};document.querySelector('#history-next').onclick=()=>{page++;load();};
-  return async value=>{row=value;kind='callbacks';page=1;document.querySelector('#history-kind').value=kind;document.querySelector('#history-title').textContent=`${row.customer_name} · 서버 저장 이력`;dialog.showModal();await load();};
+  return async value=>{row=value;kind='callbacks';page=1;document.querySelector('#history-kind').value=kind;document.querySelector('#history-title').textContent=`${row.customer_name} · 고객 이력`;dialog.showModal();await load();};
 }

@@ -1,3 +1,4 @@
+import {confirmAction} from './shared-ui.js';
 import {EmployeeQueue,changes,normalized} from './employee-queue.js';
 import {employeeSupportError} from './browser-environment.js';
 import {withRequestTimeout} from './request-timeout.js';
@@ -33,7 +34,7 @@ async function request(url,body){
 }
 const queue=new EmployeeQueue(userId,request);
 const environmentProblem=employeeSupportError();
-const statusLabels={dirty:'미저장',saving:'저장 중',offline:'오프라인 대기',retry:'저장 실패·재시도 대기',failed:'저장 실패',conflict:'충돌',blocked:'전송 불가',review:'수동 확인 필요',checking:'복구 확인 중',clearing:'보관 정리 중'};
+const statusLabels={dirty:'미저장',saving:'저장 중',offline:'오프라인 대기',retry:'저장 결과 확인 대기',failed:'저장하지 못함',conflict:'충돌',blocked:'전송 불가',review:'수동 확인 필요',checking:'복구 확인 중',clearing:'보관 정리 중'};
 const params=()=>new URLSearchParams({site_id:state.site,view,q:state.q,filters:JSON.stringify(state.filters),...(state.category?{dashboard_category:state.category}:{})});
 function error(error){notice(error.message);}
 function commitEditor(){activeEditor?.finish();}
@@ -149,7 +150,7 @@ function renderStatus(){
   $('#pending-rows').replaceChildren(...entries.map(e=>{
     const base=queue.rows.get(e.customer_id),caption=e.state!=='blocked'&&base?`${base.site_name} · ${base.customer_name}`:(e.site_id===state.site?'현재 현장':'다른 현장');
     const wrap=text('div',`${caption} · ${statusLabels[e.state]}${e.error?' · '+e.error:''}`);wrap.className='pending-item';wrap.dataset.key=e.key;
-    const button=text('button',e.state==='blocked'?'대기 정보 확인':'비교·확인');button.className='btn btn-sm btn-outline-secondary ms-2';button.disabled=e.state==='saving';button.onclick=()=>openConflict(e).catch(error);wrap.append(button);return wrap;
+    const button=text('button',e.state==='blocked'?'저장 대기 변경 확인':'비교·확인');button.className='btn btn-sm btn-outline-secondary ms-2';button.disabled=e.state==='saving';button.onclick=()=>openConflict(e).catch(error);wrap.append(button);return wrap;
   }));
   for(const row of table.getRows()){
     const data=row.getData(),entry=queue.entry(data.id),base=queue.rows.get(data.id),values=entry?.state==='blocked'?{}:{...base,...(entry?changes(entry):{})};
@@ -178,7 +179,7 @@ async function load(){
     queue.setRows(data.data);lastPage=data.last_page;
     await table.setData(data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )})));
     if(generation!==loadGeneration)return;
-    $('#page-info').textContent=`검색 ${data.total.toLocaleString()}건 · ${state.page} / ${lastPage}페이지`;
+    $('#page-info').textContent=`검색 ${data.total.toLocaleString()}명 · ${state.page} / ${lastPage}페이지`;
     $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
     loadedState=structuredClone(state);queryUI.success(data);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
   }catch(e){if(generation!==loadGeneration)return;if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);$('#search').value=state.q;}queryUI.failure(e);throw e;}
@@ -200,7 +201,7 @@ async function guarded(action,logout=false){
       const decision=await choice($('#leave-dialog'),{'leave-cancel':'cancel','leave-discard':'discard','leave-retry':'retry'});
       if(decision==='cancel')return false;
       if(decision==='discard'){
-        if(!confirm('이 탭의 저장 대기값을 모두 버리시겠습니까? 이미 서버에 반영된 변경은 취소되지 않습니다.'))continue;
+        if(!await confirmAction('이 탭의 저장 대기 변경을 모두 버리고 이동합니다. 이미 서버에 반영된 변경은 유지됩니다.',{title:'저장 대기 변경 버리기',confirmText:'내 변경 버리고 이동',danger:true}))continue;
         callbacks?.clear();deletions?.clear();ai?.clear();await queue.discardAll();if(queue.entries.size){notice('로컬 기록을 폐기하지 못했습니다. 이동을 취소합니다.');return false;}break;
       }
     }
@@ -218,7 +219,7 @@ function drawConflict(){
   $('#employee-reapply').disabled=entry.state==='blocked'||!entry.server;
 }
 $('#employee-reapply').onclick=async()=>{const button=$('#employee-reapply');button.disabled=true;try{if(await queue.reapply(comparison.entry,comparison.version)){$('#employee-conflict').close();await load();}else drawConflict();}catch(e){error(e);}};
-$('#employee-discard').onclick=async()=>{if(!confirm('내 대기값을 폐기하시겠습니까? 이미 저장된 변경은 취소되지 않습니다.'))return;await queue.discard(comparison.entry);$('#employee-conflict').close();await load().catch(error);};
+$('#employee-discard').onclick=async()=>{if(!await confirmAction('선택한 고객의 이 브라우저 변경만 버립니다. 이미 서버에 저장된 상담 기록은 유지됩니다.',{title:'내 변경 버리기',confirmText:'내 변경 버리기',danger:true}))return;await queue.discard(comparison.entry);$('#employee-conflict').close();await load().catch(error);};
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>button.closest('dialog').close();
 $('#save-now').onclick=async()=>{commitEditor();const ok=await queue.flush(true);notice(ok?'저장했습니다.':'저장하지 못한 행을 확인해 주세요.');};
 $('#reload-rows').onclick=()=>runQuery(load).catch(error);
