@@ -187,10 +187,17 @@ class EmployeePerformanceTests(Fixtures, TransactionTestCase):
         try:
             executor.migrate([('consultations','0002_consultationrevision_source_ai_result')])
             self.assertEqual(ConsultationRevision.objects.filter(customer=self.a).count(),1)
+            with self.assertLogs('apps.common.http',level='WARNING') as logs:
+                failed=self.client.get('/api/dashboard/performance',{'site_id':str(self.site.pk)})
+            self.assertEqual(failed.status_code,503)
+            self.assertNotIn('저장',failed.json()['error']['message'])
+            self.assertTrue(any('42P01' in entry for entry in logs.output))
             MigrationExecutor(connection).migrate([target])
             self.assertEqual(Customer.objects.get(pk=self.a.pk).phone_normalized,self.a.phone_normalized)
             self.assertEqual(ConsultationRevision.objects.filter(customer=self.a).count(),1)
             self.assertFalse(CustomerActivity.objects.exists())
             self.assertEqual(PerformanceTracking.objects.get(pk=1).started_at,self.now)
+            restored=self.report()
+            self.assertEqual((restored['today']['attempts'],restored['today']['connected']),(0,0))
         finally:
             MigrationExecutor(connection).migrate([target])

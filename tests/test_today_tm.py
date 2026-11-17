@@ -69,6 +69,39 @@ class TodayTMTests(Fixtures, TestCase):
         self.save(call_result='INTERESTED')
         self.assertEqual(self.statuses()[str(self.row.pk)],'COMPLETED')
 
+    def test_latest_result_clear_reopens_old_assignment_without_erasing_call_history(self):
+        PerformanceTracking.objects.update_or_create(pk=1,defaults={'started_at':self.now-timedelta(days=3)})
+        CustomerActivity.objects.create(customer=self.row,site=self.site,actor=self.employee,assignment=self.row.current_assignment,
+            kind='CALL',connection='NOT_CONNECTED',occurred_at=self.now,idempotency_key=uuid4(),body_hash='synthetic')
+        self.assertEqual(self.save(call_result='NO_ANSWER')['row']['tm_status'],'COMPLETED')
+        self.assertEqual(self.save(call_result=None)['row']['tm_status'],'PENDING')
+        self.assertEqual(self.statuses(),{str(self.row.pk):'PENDING'})
+        from apps.assignments.tm_recall import preview
+        selection={'site_id':str(self.site.pk),'employee_id':str(self.employee.pk)}
+        self.assertEqual(preview(self.admin,selection)['target_count'],1)
+        self.now+=timedelta(days=1);self.client=login(self.employee)
+        self.assertEqual(self.statuses(),{str(self.row.pk):'PENDING'})
+        self.assertEqual(self.save(memo='비고만 변경')['row']['tm_status'],'PENDING')
+        self.assertEqual(self.save(call_result='INTERESTED')['row']['tm_status'],'COMPLETED')
+        self.assertEqual(preview(self.admin,selection)['target_count'],0)
+        self.callback();self.assertEqual(self.statuses()[str(self.row.pk)],'PENDING')
+        self.assertEqual(CustomerActivity.objects.filter(customer=self.row,kind='CALL').count(),1)
+        historical=performance(self.employee,self.site.pk,self.now.date().replace(day=1),self.now)
+        yesterday=next(r for r in historical['rows'] if r['date']=='2026-11-17')
+        self.assertEqual(yesterday['call_count'],1)
+
+    def test_failed_clear_preserves_server_completion_until_confirmed_retry(self):
+        self.save(call_result='NO_ANSWER')
+        body={**self.mutation(self.row),'changes':{'call_result':None}}
+        with patch('apps.customers.services.ConsultationRevision.objects.create',side_effect=IntegrityError('synthetic')):
+            response=self.client.post('/api/employee/batch-update',{'rows':[body]},content_type='application/json',HTTP_X_TM_QUEUE_USER=str(self.employee.pk))
+        self.assertEqual(response.status_code,503)
+        self.row.refresh_from_db();self.assertEqual(self.row.call_result,'NO_ANSWER')
+        self.assertEqual(self.statuses()[str(self.row.pk)],'COMPLETED')
+        self.assertEqual(update_row(self.employee,body)['row']['tm_status'],'PENDING')
+        self.assertEqual(update_row(self.employee,body)['row']['tm_status'],'PENDING')
+        self.assertEqual(self.statuses()[str(self.row.pk)],'PENDING')
+
     def test_name_notes_memo_booking_and_first_activity_do_not_count_as_call_result(self):
         for changes in [{'customer_name':'가상 정정'},{'notes':'가상 비고'},{'memo':'일반 비고'},
                         {'visit_at':self.now.isoformat()},{'contract_status':'CONTRACTED'}]:

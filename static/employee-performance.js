@@ -28,7 +28,7 @@ export class EmployeePerformance {
       if([401,403].includes(error.status)){this.clear();$('performance-status').textContent='다시 로그인해 주세요.';return;}
       if(same){$('performance-month').value=this.last.month;}
       if(!same)$('today-call-attempts').textContent=$('today-call-connected').textContent='조회 실패';
-      $('performance-status').textContent=`실적 조회 실패. ${same?'마지막 성공 결과를 표시합니다. ':''}${error.message}`;$('performance-retry').hidden=false;
+      $('performance-status').textContent='실적을 불러오지 못했습니다. 다시 조회해 주세요.'+(same?' 마지막 성공 결과를 표시합니다.':'');$('performance-retry').hidden=false;
     }finally{if(sequence===this.sequence)$('monthly-performance').setAttribute('aria-busy','false');}
   }
 }

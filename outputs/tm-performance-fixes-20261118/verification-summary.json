@@ -1,0 +1,50 @@
+{
+  "date_kst": "2026-11-18",
+  "base_commit": "d65b2a3",
+  "final_run": "20261117T154610498168Z-42066ba0e950499ab6ca9944c4f3dc20",
+  "final_tests": 57,
+  "final_successful": true,
+  "source_unchanged_during_run": true,
+  "source_digest": "ce48460f6bfdc60a78cc844171243e2d15c67aa322e5738cac6b9dd198a617d7",
+  "matches_current_source": true,
+  "previous_broad_run": "20261117T092052709911Z-1ab98aefb24745da93b617d38a87d8f1",
+  "previous_broad_tests": 138,
+  "previous_broad_successful": true,
+  "previous_broad_before_last_layout_adjustment": true,
+  "javascript_tests_passed": 50,
+  "checks": {
+    "system_check": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "migration_drift": {
+      "exit_code": 0,
+      "status": "passed"
+    }
+  },
+  "reproduction": {
+    "route": "GET /api/dashboard/performance",
+    "shared_by_today_cards_and_monthly_rows": true,
+    "local_missing_relation_sqlstate": "42P01",
+    "status": 503,
+    "old_get_error_incorrectly_used_save_failure_message": true,
+    "consultations_0003_migration_restores_reads_in_isolated_database": true,
+    "production_root_cause_confirmed": false
+  },
+  "validated": [
+    "latest saved result clear reopens TM after confirmed save and refresh",
+    "old assignment carryover and shared admin recall predicate",
+    "failed autosave retains server completion until retry",
+    "actual call history survives clear",
+    "desktop 1440px and mobile 390px/320px save and refresh geometry and keyboard",
+    "site/month isolation and KST calendar",
+    "zero versus unavailable versus failed query",
+    "attempts match today monthly calls; unknown/unconnected excluded from connections"
+  ],
+  "limitations": [
+    "production schema/migration/DB logs not inspected",
+    "no production data or accounts used",
+    "no external telephone integration or real call/visit facts verified"
+  ],
+  "execution_environment": "isolated local PostgreSQL and Chromium with synthetic fixtures"
+}

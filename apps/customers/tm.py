@@ -1,5 +1,5 @@
 """TM completion evidence for the current assignment, never inferred from state."""
-from django.db.models import Case, CharField, Exists, OuterRef, Value, When
+from django.db.models import BooleanField, Case, CharField, Exists, OuterRef, Subquery, Value, When
 from django.utils import timezone
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
@@ -16,10 +16,16 @@ def with_tm_state(query, now=None, *, include_today=False):
         customer_id=OuterRef('pk'), assignment_id=OuterRef('current_assignment_id'),
         actor_id=OuterRef('current_assignment__employee_id'),
         saved_at__gte=OuterRef('current_assignment__assigned_at'), saved_at__lte=now,
-        source__in=HUMAN_SOURCES, changed_fields__contains=['call_result'],
-        after_values__call_result__in=Customer.CallResult.values)
+        source__in=HUMAN_SOURCES, changed_fields__contains=['call_result'])
     due = Callback.objects.filter(customer_id=OuterRef('pk'), status='PENDING', due_at__lt=end)
-    query = query.annotate(tm_initial_done=Exists(calls), tm_due_pending=Exists(due))
+    # An explicit clear supersedes older completion evidence. Version breaks ties
+    # when multiple confirmed saves have the same timestamp; notes never override.
+    latest = calls.order_by('-saved_at', '-customer_version', '-pk')
+    query = query.annotate(tm_latest_call_result=Subquery(latest.values('after_values__call_result')[:1]),
+                           tm_due_pending=Exists(due))
+    query = query.annotate(tm_initial_done=Case(
+        When(tm_latest_call_result__in=Customer.CallResult.values, then=Value(True)),
+        default=Value(False), output_field=BooleanField()))
     query = query.annotate(tm_status=Case(
         When(tm_initial_done=True, tm_due_pending=False, then=Value('COMPLETED')),
         default=Value('PENDING'), output_field=CharField()))
@@ -37,5 +43,6 @@ def with_tm_state(query, now=None, *, include_today=False):
         completed_at__gte=start, completed_at__lte=now, due_at__lt=end
     ).filter(completed_at__gte=OuterRef('current_assignment__assigned_at')
     ).filter(Exists(completion_revision))
-    return query.annotate(tm_call_done_today=Exists(calls.filter(saved_at__gte=start)),
+    return query.annotate(tm_call_done_today=Exists(calls.filter(saved_at__gte=start,
+                              after_values__call_result__in=Customer.CallResult.values)),
                           tm_callback_done_today=Exists(completed))

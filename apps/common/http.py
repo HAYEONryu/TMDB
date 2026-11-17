@@ -1,10 +1,13 @@
 from functools import wraps
 import json
 import uuid
+import logging
 from django.http import JsonResponse
 from django.db import OperationalError,DatabaseError
 from django.core.exceptions import RequestDataTooBig
 from apps.accounts.access import AccessError, api_error
+
+logger = logging.getLogger(__name__)
 
 
 def json_object(request):
@@ -33,9 +36,15 @@ def api_errors(view):
             return view(request, *args, **kwargs)
         except AccessError as exc:
             return api_error(exc.code, exc.message, exc.status, exc.fields)
-        except OperationalError:
+        except OperationalError as exc:
+            if request.method in {'GET','HEAD'}:
+                logger.warning('database_read_failed view=%s sqlstate=%s',view.__name__,getattr(exc.__cause__,'sqlstate',None))
+                return api_error('TEMPORARY_UNAVAILABLE','정보를 불러오지 못했습니다. 다시 조회해 주세요.',503)
             return api_error("TEMPORARY_UNAVAILABLE", "잠시 후 같은 요청으로 다시 시도해 주세요.", 503)
-        except DatabaseError:
+        except DatabaseError as exc:
+            if request.method in {'GET','HEAD'}:
+                logger.warning('database_read_failed view=%s sqlstate=%s',view.__name__,getattr(exc.__cause__,'sqlstate',None))
+                return api_error('TEMPORARY_UNAVAILABLE','정보를 불러오지 못했습니다. 다시 조회해 주세요.',503)
             return api_error("TEMPORARY_UNAVAILABLE", "저장을 완료하지 못했습니다. 같은 요청으로 다시 확인해 주세요.", 503)
         except RequestDataTooBig:
             return api_error("PAYLOAD_TOO_LARGE", "요청 크기 상한을 넘었습니다. 변경 행을 나누어 저장해 주세요.", 413)

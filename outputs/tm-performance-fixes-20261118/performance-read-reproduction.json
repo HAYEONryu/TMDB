@@ -1,0 +1,1 @@
+{"route": "/api/dashboard/performance", "status": 503, "error": {"code": "TEMPORARY_UNAVAILABLE", "message": "정보를 불러오지 못했습니다. 다시 조회해 주세요."}, "sqlstates": ["42P01"], "server_503_logged": true}

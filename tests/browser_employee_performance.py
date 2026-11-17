@@ -1,6 +1,10 @@
 """Employee call evidence and month navigation, using only local synthetic records."""
 from datetime import datetime, time, timedelta
 from uuid import uuid4
+from unittest.mock import patch
+import json
+from django.db import connection, DatabaseError
+from django.db.backends.utils import CursorWrapper
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.utils import timezone
 from playwright.sync_api import expect
@@ -39,6 +43,35 @@ class EmployeePerformanceBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.a,self.b,self.foreign,self.outside,self.today=self.db(create)
 
     def today_row(self):return self.page.locator(f'#performance-rows tr[data-date="{self.today.isoformat()}"]')
+
+    def test_missing_performance_relation_error_and_restored_schema_retry(self):
+        self.seed();self.login(self.employee);page=self.page
+        expect(page.locator('#today-call-attempts')).to_have_text('2콜')
+        sqlstates=[];execute=CursorWrapper.execute
+        def observed(cursor,sql,params=None):
+            try:return execute(cursor,sql,params)
+            except DatabaseError as error:
+                sqlstates.append(getattr(error.__cause__,'sqlstate',None));raise
+        def rename(missing):
+            with connection.cursor() as cursor:
+                cursor.execute('ALTER TABLE consultations_customeractivity RENAME TO consultations_customeractivity_local_missing' if missing else
+                    'ALTER TABLE consultations_customeractivity_local_missing RENAME TO consultations_customeractivity')
+        self.db(lambda:rename(True))
+        try:
+            with patch.object(CursorWrapper,'execute',new=observed),self.assertLogs('django.request',level='ERROR') as logs:
+                with page.expect_response('**/api/dashboard/performance*') as response:page.reload()
+                expect(page.locator('#today-call-attempts')).to_have_text('조회 실패')
+            wire=response.value.json()
+            self.assertEqual(response.value.status,503);self.assertIn('42P01',sqlstates)
+            self.assertIn('불러오지 못했습니다',wire['error']['message'])
+            self.assertNotIn('저장',wire['error']['message'])
+            expect(page.locator('#performance-status')).to_have_text('실적을 불러오지 못했습니다. 다시 조회해 주세요.')
+            self.assertTrue(any(getattr(row,'status_code',None)==503 for row in logs.records))
+            artifact_path('performance-read-reproduction.json').write_text(json.dumps({'route':'/api/dashboard/performance',
+                'status':response.value.status,'error':wire['error'],'sqlstates':sqlstates,'server_503_logged':any(getattr(row,'status_code',None)==503 for row in logs.records)},ensure_ascii=False))
+        finally:self.db(lambda:rename(False))
+        page.locator('#performance-retry').click();expect(page.locator('#today-call-attempts')).to_have_text('2콜')
+        expect(self.today_row().locator('td').first).to_have_text('2')
 
     def test_monthly_evidence_today_match_previous_month_missing_data_and_responsive(self):
         self.seed();self.login(self.employee);page=self.page
@@ -131,13 +164,20 @@ class EmployeePerformanceBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_first_load_failure_has_retry_without_zero_or_endless_loading(self):
         self.seed();page=self.page
-        def fail(route):route.fulfill(status=503,json={'error':{'message':'가상 실적 조회 실패'}})
+        # Even an older server's misleading write error must read as a query failure.
+        def fail(route):route.fulfill(status=503,json={'error':{'message':'저장을 완료하지 못했습니다. 같은 요청으로 다시 확인해 주세요.'}})
         page.route('**/api/dashboard/performance*',fail)
         self.login(self.employee)
         expect(page.locator('#today-call-attempts')).to_have_text('조회 실패')
-        expect(page.locator('#performance-status')).to_contain_text('실적 조회 실패')
+        expect(page.locator('#performance-status')).to_have_text('실적을 불러오지 못했습니다. 다시 조회해 주세요.')
         expect(page.locator('#performance-rows tr')).to_have_count(0)
         page.unroute('**/api/dashboard/performance*',fail)
         page.locator('#performance-retry').click()
         expect(page.locator('#today-call-attempts')).to_have_text('2콜')
+        page.locator('#employee-dashboard-site').select_option(str(self.second.pk))
+        expect(page.locator('#today-call-attempts')).to_have_text('0콜')
+        self.db(lambda:PerformanceTracking.objects.all().delete())
+        page.locator('#dashboard-refresh').click()
+        expect(page.locator('#today-call-attempts')).to_have_text('집계 자료 없음')
+        expect(self.today_row().locator('td').first).to_have_text('집계 자료 없음')
         self.assertEqual(self.errors,[])

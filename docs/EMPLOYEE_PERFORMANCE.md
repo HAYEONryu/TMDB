@@ -85,3 +85,27 @@ node --test --test-reporter=dot tests/*.test.mjs
 ```
 
 실제 전화 시스템·사용자의 실제 발신 누락 여부·실제 방문 사실·운영 서버 배포·운영 DB migration·공인 HTTPS는 확인하지 않았다. 직원이 입력한 사실의 범위를 넘는 자동 추정은 하지 않는다. 검증용 DB 프로세스는 작업 종료 시 중지한다.
+
+## 조회 실패 진단과 안내 수정 (2026-11-17)
+
+오늘 통화 시도·연결 카드와 월간 표는 모두 같은 GET `/api/dashboard/performance` 응답을 사용한다. 최신 migration을 적용한 가상 DB에서는 기존 집계 테스트와 직원 브라우저 조회가 정상 동작했다. 실적 테이블이 없는 상태에서는 PostgreSQL `42P01`과 HTTP 503을 재현했으며, 기존 공통 API 처리기가 GET의 DB 오류에도 저장 실패 문구를 반환해 월간 표에 그대로 노출했다.
+
+조회와 저장 오류 안내를 구분하고 실적 화면에는 `실적을 불러오지 못했습니다. 다시 조회해 주세요.`를 표시하도록 수정했다. 오류를 0으로 대체하지 않는다. 같은 현장·월의 이전 성공 결과가 있으면 이전 결과임을 표시하고, 최초 조회 또는 범위 변경 후 실패는 조회 실패와 재조회 버튼을 표시한다. 기록 도입 전 기간의 `집계 자료 없음`과 도입 후 실적이 없는 날의 `0`은 기존대로 구분한다.
+
+DB 조회 실패 로그에는 뷰 이름·SQLSTATE만 기록하며 SQL·고객 값·원본 예외는 기록하지 않는다. 가상 DB를 상담 migration 0002 상태로 되돌렸을 때 같은 조회 오류가 발생하고, 기존 `0003_performancetracking_customeractivity` 적용 후 조회가 복구되는 것을 검사한다. 이번 수정 자체에는 새 migration이 없다. 운영 서버의 적용 상태·DB 권한·실제 SQLSTATE는 확인하지 않았으므로 운영 원인을 테이블 미적용으로 단정하지 않는다. 동일 증상이 계속되면 [서버 업데이트 절차](SERVER_UPDATE_COMMANDS.md)의 상담 migration 적용 여부와 새 조회 오류 로그를 확인해야 한다. 운영 DB의 migration을 이번 로컬 작업에서 실행하지 않았다.
+
+### 이번 보완의 변경 파일
+
+| 영역 | 파일 |
+| --- | --- |
+| 현재 배정의 마지막 통화 결과 판정 | `apps/customers/tm.py` |
+| GET의 DB 오류 안내·진단 로그 | `apps/common/http.py` |
+| 실적 조회 실패 안내·이전 성공 결과 유지 | `static/employee-performance.js` |
+| 그리드 위 저장·새로고침 배치 | `templates/customers/employee.html` |
+| 초기화·재입력·저장 실패·실적 보존·회수 | `tests/test_today_tm.py`, `tests/browser_today_tm.py` |
+| SQLSTATE·503 재현·migration 복구·조회 상태 구분 | `tests/test_employee_performance.py`, `tests/browser_employee_performance.py` |
+| 최신 판정과 검증 근거 | `docs/TODAY_TM.md`, `docs/EMPLOYEE_PERFORMANCE.md` |
+
+2026-11-18 최종 검증: 관련 서버·브라우저 **57/57 통과**, 실행 중 소스 변경 없고 현재 소스 해시와 일치한다. 실행 ID `20261117T154610498168Z-42066ba0e950499ab6ca9944c4f3dc20`. 최종 스크롤 안내 간격 조정 전의 광범위 회귀 검사도 **138/138 통과**했다. JavaScript **50/50**, Django 설정·migration drift 검사도 통과했다. 1440·390·320px의 버튼 높이·글자 크기·여백·그리드 간격과 키보드 저장/새로고침을 확인했다. 중단된 자동 승인 검토의 사용량 한도 문제는 재개 후 해결됐으며, 차단됐던 명령을 통과로 기록하지 않았다.
+
+[최종 검증 요약](../outputs/tm-performance-fixes-20261118/verification-summary.json) · [최종 상세 결과](../outputs/tm-performance-fixes-20261118/final-server-browser-results.json) · [브라우저 503·SQLSTATE 재현](../outputs/tm-performance-fixes-20261118/performance-read-reproduction.json) · [데스크톱 저장 버튼](../outputs/tm-performance-fixes-20261118/tm-cleared-save-buttons-1440.png) · [320px 저장 버튼](../outputs/tm-performance-fixes-20261118/tm-cleared-save-buttons-320.png).

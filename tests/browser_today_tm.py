@@ -1,5 +1,6 @@
 """Today's TM carryover and server-confirmed read-only state in a real browser."""
 from datetime import datetime, time, timedelta
+import json
 from unittest.mock import patch
 from django.contrib.staticfiles.testing import StaticLiveServerTestCase
 from django.contrib.sessions.models import Session
@@ -92,6 +93,48 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.unroute('**/api/employee/batch-update',fail);self.save()
         expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
         self.assertEqual(self.errors,[])
+
+    def test_result_clear_then_reenter_and_save_buttons_keyboard_responsive(self):
+        self.seed();page=self.page
+        self.edit('call_result','NO_ANSWER');self.save();expect(self.status()).to_have_text('완료')
+        self.edit('call_result','');expect(self.status()).to_have_text('완료')
+        page.locator('#save-now').focus();page.keyboard.press('Enter')
+        expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨');expect(self.status()).to_have_text('-')
+        page.reload();expect(self.status()).to_have_text('-')
+        self.assertIsNone(self.db(lambda:Customer.objects.get(pk=self.row.pk).call_result))
+        for width in [1440,390,320]:
+            page.set_viewport_size({'width':width,'height':960})
+            save=page.locator('.list-actions #save-now');reload=page.locator('.list-actions #reload-rows')
+            self.assertEqual(page.locator('.page-heading #save-now').count(),0)
+            a,b=save.bounding_box(),reload.bounding_box()
+            self.assertAlmostEqual(a['height'],b['height'],delta=1)
+            self.assertEqual(save.evaluate('(el)=>getComputedStyle(el).fontSize'),reload.evaluate('(el)=>getComputedStyle(el).fontSize'))
+            self.assertEqual(save.evaluate('(el)=>getComputedStyle(el).padding'),reload.evaluate('(el)=>getComputedStyle(el).padding'))
+            self.assertGreaterEqual(a['x'],0);self.assertLessEqual(b['x']+b['width'],width)
+            grid=page.locator('#employee-grid').bounding_box()
+            artifact_path(f'tm-save-button-geometry-{width}.json').write_text(json.dumps({'viewport':width,'save':a,'reload':b,'grid_top':grid['y']}))
+            self.assertLessEqual(grid['y']-max(a['y']+a['height'],b['y']+b['height']),50)
+            if width<=390:expect(page.locator('.table-scroll-hint')).to_be_visible()
+            self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+            page.screenshot(path=str(artifact_path(f'tm-cleared-save-buttons-{width}.png')),full_page=True)
+        page.locator('#reload-rows').focus()
+        with page.expect_response(lambda response:'/api/customers?' in response.url):page.keyboard.press('Enter')
+        expect(page.locator('#employee-grid')).to_have_attribute('aria-busy','false');expect(self.status()).to_have_text('-')
+        self.edit('call_result','INTERESTED');self.save();expect(self.status()).to_have_text('완료')
+        page.reload();expect(self.status()).to_have_text('완료')
+        self.assertEqual(self.errors,[])
+
+    def test_failed_clear_displays_confirmed_completion_and_retry_reopens(self):
+        self.page.clock.install();self.seed();page=self.page
+        self.edit('call_result','NO_ANSWER');self.save();expect(self.status()).to_have_text('완료')
+        def fail(route):route.fulfill(status=503,json={'error':{'message':'가상 저장 실패'}})
+        page.route('**/api/employee/batch-update',fail)
+        self.edit('call_result','');page.clock.fast_forward(91000)
+        expect(page.locator('#pending-panel')).to_contain_text('결과를 확인하지 못했습니다')
+        expect(self.status()).to_have_text('완료')
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.row.pk).call_result),'NO_ANSWER')
+        page.unroute('**/api/employee/batch-update',fail);self.save();expect(self.status()).to_have_text('-')
+        page.reload();expect(self.status()).to_have_text('-')
 
     def test_kst_midnight_automatically_refreshes_without_discarding_work(self):
         self.page.clock.install();self.seed();page=self.page
