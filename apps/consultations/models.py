@@ -40,3 +40,46 @@ class ConsultationRevision(TimestampedModel):
         super().clean()
         if self.assignment_id and self.assignment.customer_id != self.customer_id:
             raise ValidationError({"assignment": "상담 이력과 할당의 고객이 일치해야 합니다."})
+
+
+class PerformanceTracking(models.Model):
+    """Deployment boundary; never backfill missing telephone/visit evidence."""
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    started_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.CheckConstraint(condition=Q(id=1), name='performance_tracking_singleton')]
+
+
+class CustomerActivity(TimestampedModel):
+    class Kind(models.TextChoices):
+        CALL = 'CALL', '통화 시도'
+        VISIT = 'VISIT', '실제 방문'
+
+    class Connection(models.TextChoices):
+        CONNECTED = 'CONNECTED', '연결'
+        NOT_CONNECTED = 'NOT_CONNECTED', '미연결·부재·미응답'
+        UNKNOWN = 'UNKNOWN', '확인 불가'
+
+    customer = models.ForeignKey('customers.Customer', on_delete=models.CASCADE, related_name='activities')
+    site = models.ForeignKey('sites.Site', on_delete=models.CASCADE, related_name='customer_activities')
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='customer_activities')
+    assignment = models.ForeignKey('assignments.Assignment', null=True, on_delete=models.SET_NULL, related_name='activities')
+    kind = models.CharField(max_length=5, choices=Kind.choices)
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    connection = models.CharField(max_length=13, choices=Connection.choices, blank=True, default='')
+    visited_on = models.DateField(null=True, blank=True)
+    idempotency_key = models.UUIDField()
+    body_hash = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['actor', 'idempotency_key'], name='activity_actor_request_unique'),
+            models.CheckConstraint(condition=(
+                Q(kind='CALL', occurred_at__isnull=False, visited_on__isnull=True,
+                  connection__in=['CONNECTED', 'NOT_CONNECTED', 'UNKNOWN']) |
+                Q(kind='VISIT', occurred_at__isnull=True, visited_on__isnull=False, connection='')
+            ), name='activity_evidence_consistent'),
+        ]
+        indexes = [models.Index(fields=['actor', 'site', 'occurred_at'], name='activity_actor_site_call_idx'),
+                   models.Index(fields=['actor', 'site', 'visited_on'], name='activity_actor_site_visit_idx')]

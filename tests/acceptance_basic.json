@@ -320,9 +320,11 @@
   },
   {
     "id": "18.6-01",
-    "criterion": "오늘 할 일는 오늘 배정 OR 오늘/과거 미완료 재콜이며 한 고객은 한 행이다.",
+    "criterion": "오늘의 TM은 오늘 배정·현재 배정 최초 통화 미완료·오늘까지 미완료 재콜·오늘 완료한 TM을 합쳐 고객별 한 행으로 표시한다.",
     "tests": [
-      "tests.test_p5.EmployeeTests.test_today_kst_boundary_callback_union_priority_and_no_duplicates"
+      "tests.test_p5.EmployeeTests.test_today_kst_boundary_callback_union_priority_and_no_duplicates",
+      "tests.test_today_tm.TodayTMTests.test_old_unfinished_without_callback_carries_and_confirmed_call_stays_until_midnight",
+      "tests.test_today_tm.TodayTMTests.test_due_callback_overrides_old_call_and_completion_stays_today_then_reappears_when_due"
     ]
   },
   {
@@ -386,7 +388,7 @@
   },
   {
     "id": "18.7-01",
-    "criterion": "오늘 할 일·나의 DB에 행별 삭제 요청 버튼이 있고 체크박스 일괄 요청은 없다.",
+    "criterion": "오늘의 TM·나의 DB에 행별 삭제 요청 버튼이 있고 체크박스 일괄 요청은 없다.",
     "tests": [
       "tests.browser_p7.P7BrowserTests.test_row_request_saves_only_target_and_keeps_editing_until_approval",
       "tests.browser_p7.P7BrowserTests.test_lost_request_response_same_key_reload_and_other_tab_pending"

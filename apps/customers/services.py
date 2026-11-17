@@ -16,6 +16,7 @@ from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.consultations.snapshots import audit_snapshot
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
+from apps.customers.tm import with_tm_state
 from apps.customers.choices import CURRENT_CHOICES, FIELD_LABELS
 from apps.customers.queries import KST, enriched, iso, serialize, visible_values
 from apps.operations.models import IdempotencyRecord, MutationReceipt, OperationEvent
@@ -104,7 +105,7 @@ def snapshot(customer, callback):
 def safe_row(customer_id, actor=None):
     admin = bool(actor and actor.role == User.Role.ADMIN)
     query = Customer.objects.filter(pk=customer_id)
-    if not admin:query = query.defer('admin_notes')
+    if not admin:query = with_tm_state(query.defer('admin_notes'))
     return serialize(enriched(query).get(), admin=admin)
 
 
@@ -184,7 +185,12 @@ def update_row(actor, body, *, employee_only=False):
                 raise AccessError("IDEMPOTENCY_CONFLICT", "같은 요청 ID의 내용이 다릅니다.", 409)
             if receipt.expires_at <= timezone.now():
                 raise AccessError("IDEMPOTENCY_EXPIRED", "요청 보관 기간이 지났습니다. 서버 상태를 확인해 주세요.", 409)
-            return visible_values(receipt.result, admin=actor.role == User.Role.ADMIN)
+            result = visible_values(receipt.result, admin=actor.role == User.Role.ADMIN)
+            if actor.role != User.Role.ADMIN and result.get('row'):
+                # Preserve the write receipt; refresh only the time-sensitive read state.
+                status = with_tm_state(Customer.objects.filter(pk=cid)).values_list('tm_status', flat=True).get()
+                result = {**result, 'row': {**result['row'], 'tm_status': status}}
+            return result
         try:
             if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and set(body["changes"]) & ADMIN_ONLY_FIELDS:
                 raise AccessError("FORBIDDEN", "연락처·관리자 비고는 관리자만 수정할 수 있습니다.", 403)

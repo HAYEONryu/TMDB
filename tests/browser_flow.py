@@ -64,7 +64,7 @@ class LoginBrowserTests(StaticLiveServerTestCase):
                 self.assertEqual(employee_context.request.get(self.live_server_url + "/api/access/employee").status, 403)
                 change(employee_page)
                 expect(employee_page).to_have_url(self.live_server_url + "/app/employee")
-                expect(employee_page.get_by_role("link", name="오늘 할 일 열기", exact=True)).to_be_visible()
+                expect(employee_page.get_by_role("link", name="오늘의 TM 열기", exact=True)).to_be_visible()
                 ai_status = employee_context.request.get(self.live_server_url + "/api/ai/availability").json()
                 self.assertFalse(ai_status["generation_available"])
                 self.assertEqual(ai_status["daily_limit"], 40)

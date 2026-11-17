@@ -12,6 +12,7 @@ from apps.callbacks.models import Callback
 from apps.common.http import identifier
 from apps.customers.models import Customer, CustomerDeletionRequest
 from apps.customers.cohorts import CATEGORIES, category_filter
+from apps.customers.tm import with_tm_state
 from apps.sites.models import GlobalSettings, Site
 
 KST = ZoneInfo("Asia/Seoul")
@@ -79,13 +80,18 @@ def scoped(actor, params, now=None):
         # Select the owner's current IDs once. DISTINCT ON keeps this subquery
         # independent when newly imported rows still have inaccurate statistics;
         # otherwise a nested join can scan the same owner's assignments per customer.
-        current_ids = Assignment.objects.filter(employee_id=actor.pk, ended_at__isnull=True).order_by("pk").distinct("pk").values("pk")
+        current_ids = Assignment.objects.filter(employee_id=actor.pk, ended_at__isnull=True)
+        if view == "today":current_ids = current_ids.filter(assigned_at__lte=now)
+        current_ids = current_ids.order_by("pk").distinct("pk").values("pk")
         query = query.filter(current_assignment_id__in=current_ids)
+    if actor.role != User.Role.ADMIN or view == "today":
+        query = with_tm_state(query, now, include_today=view == "today")
     if view == "today":
         today = timezone.localdate(now, KST)
         start = datetime.combine(today, time.min, KST)
         end = start + timedelta(days=1)
-        query = query.filter(Q(assigned_at__gte=start, assigned_at__lt=end) | Q(callback_due_at__lt=end))
+        query = query.filter(Q(assigned_at__gte=start, assigned_at__lt=end) | Q(tm_initial_done=False) |
+            Q(tm_due_pending=True) | Q(tm_call_done_today=True) | Q(tm_callback_done_today=True))
     category = params.get('dashboard_category')
     if category:
         if category not in CATEGORIES or view == 'trash':error()
@@ -183,6 +189,7 @@ def iso(value):
 
 def serialize(customer, *, admin=False):
     return {**({"admin_notes": customer.admin_notes} if admin else {}),
+            **({"tm_status": customer.tm_status} if hasattr(customer, "tm_status") else {}),
             "residence": customer.residence, "route": customer.route, "memo": customer.memo,
             "id": str(customer.pk), "site_id": str(customer.site_id), "site_name": customer.site.name,
             "customer_name": customer.customer_name, "phone_normalized": customer.phone_normalized,

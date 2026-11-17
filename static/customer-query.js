@@ -38,7 +38,7 @@ export function createQueryUI({getState,labels,display,change,view,grid}){
       const url=new URL(location.href);if(!getState().category)url.searchParams.delete('dashboard_category');if(url.searchParams.has('q')){if(getState().q)url.searchParams.set('q',getState().q);else url.searchParams.delete('q');}if(url.searchParams.has('sort'))url.searchParams.set('sort',getState().sort);history.replaceState(null,'',url);
       if(getState().category&&data.as_of)$('result-count').textContent+=' · '+new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(data.as_of))+' 조회';
       const state=getState(),filtered=hasConditions(state);
-      stateMessage(data.total?'':filtered?'조건에 맞는 고객이 없습니다.':view==='today'?'오늘 할 일이 없습니다.':view==='mine'?'담당 고객이 없습니다.':view==='trash'?'휴지통이 비어 있습니다.':'등록된 고객이 없습니다.',{reset:!data.total&&filtered});
+      stateMessage(data.total?'':filtered?'조건에 맞는 고객이 없습니다.':view==='today'?'오늘의 TM 고객이 없습니다.':view==='mine'?'담당 고객이 없습니다.':view==='trash'?'휴지통이 비어 있습니다.':'등록된 고객이 없습니다.',{reset:!data.total&&filtered});
     },
     failure(problem){grid.setAttribute('aria-busy','false');render({search:true});$('result-count').textContent=succeeded?`검색 결과 ${lastTotal.toLocaleString()}명 · 마지막 결과`:'조회 실패';stateMessage(`고객 목록을 불러오지 못했습니다. ${succeeded?'마지막으로 확인한 조건과 목록을 표시합니다. ':''}${problem.message}`,{error:true,retry:true});},
   };

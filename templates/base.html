@@ -34,7 +34,7 @@
     {% elif user.is_authenticated and not user.must_change_password %}
     <nav class="workspace-nav" aria-label="직원 메뉴">
       <a href="/app/employee" {% if request.path == '/app/employee' %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#dashboard"></use></svg>대시보드</a>
-      <a href="/app/employee/today" {% if '/app/employee/today' in request.path %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#calendar"></use></svg>오늘 할 일</a>
+      <a href="/app/employee/today" {% if '/app/employee/today' in request.path %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#calendar"></use></svg>오늘의 TM</a>
       <a href="/app/employee/mine" {% if '/app/employee/mine' in request.path %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#customers"></use></svg>나의 DB</a>
       <a href="/app/guides" {% if '/app/guides' in request.path %}aria-current="page"{% endif %}><svg class="icon" aria-hidden="true"><use href="{% static 'icons.svg' %}#book"></use></svg>팀 상담 가이드</a>
     </nav>

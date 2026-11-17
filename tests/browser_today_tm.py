@@ -1,0 +1,122 @@
+"""Today's TM carryover and server-confirmed read-only state in a real browser."""
+from datetime import datetime, time, timedelta
+from unittest.mock import patch
+from django.contrib.staticfiles.testing import StaticLiveServerTestCase
+from django.contrib.sessions.models import Session
+from django.utils import timezone
+from playwright.sync_api import expect
+from apps.assignments.models import Assignment
+from apps.callbacks.models import Callback
+from apps.consultations.models import ConsultationRevision
+from apps.customers.models import Customer
+from apps.customers.queries import KST
+from scripts.verification_evidence import artifact_path
+from tests import browser_customer_metadata as metadata
+from tests.test_p4 import Fixtures
+
+
+class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
+    setUp=metadata.CustomerMetadataBrowserTests.setUp
+    db=metadata.CustomerMetadataBrowserTests.db
+    login=metadata.CustomerMetadataBrowserTests.login
+
+    def seed(self,called=False,callback=False,inherited=False):
+        def create():
+            now=timezone.now();start=datetime.combine(now.astimezone(KST).date(),time.min,KST)
+            row=self.customers()[0]
+            if inherited:
+                old=self.assign(row,self.other,at=start-timedelta(days=3))
+                old.ended_at=start-timedelta(days=1);old.end_reason='REASSIGNED';old.ended_by=self.admin;old.save()
+                Customer.objects.filter(pk=row.pk).update(current_assignment=None,call_result='NO_ANSWER')
+                ConsultationRevision.objects.create(customer=row,assignment=old,actor=self.other,saved_at=start-timedelta(days=2),
+                    customer_version=1,source='MANUAL',changed_fields=['call_result'],after_values={'call_result':'NO_ANSWER'})
+            assignment=self.assign(row,at=start-timedelta(days=1))
+            if called:
+                Customer.objects.filter(pk=row.pk).update(call_result='NO_ANSWER')
+                ConsultationRevision.objects.create(customer=row,assignment=assignment,actor=self.employee,saved_at=start-timedelta(hours=1),
+                    customer_version=1,source='MANUAL',changed_fields=['call_result'],after_values={'call_result':'NO_ANSWER'})
+            if callback:Callback.objects.create(customer=row,due_at=start-timedelta(hours=2),created_by=self.employee,updated_by=self.employee)
+            return row,start
+        self.row,self.start=self.db(create)
+        self.login(self.employee);self.page.goto(self.live_server_url+f'/app/employee/today?site_id={self.site.pk}')
+        expect(self.page.locator('#page-info')).to_contain_text('검색 1명')
+
+    def status(self):return self.page.locator('#employee-grid .tabulator-row [tabulator-field=tm_status]')
+
+    def edit(self,field,value):
+        cell=self.page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]')
+        cell.scroll_into_view_if_needed();cell.dblclick()
+        control=cell.locator('input,textarea,select')
+        control.select_option(value) if field=='call_result' else control.fill(value)
+        self.page.locator('h1').click();expect(self.page.locator('#queue-status')).to_contain_text('저장 대기')
+
+    def save(self):
+        self.page.locator('#save-now').click();expect(self.page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
+
+    def test_label_readonly_first_column_confirmed_save_and_responsive(self):
+        self.seed();page=self.page
+        expect(page.locator('h1')).to_have_text('오늘의 TM');expect(page).to_have_title('오늘의 TM · 두드림 TM')
+        expect(page.locator('#employee-grid .tabulator-col-title').first).to_have_text('TM 상태')
+        expect(self.status()).to_have_text('-');self.status().dblclick();expect(self.status().locator('input,select,textarea')).to_have_count(0)
+        self.edit('call_result','NO_ANSWER');expect(self.status()).to_have_text('-')
+        self.save();expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        page.reload();expect(self.status()).to_have_text('완료')
+        for width in [1440,390,320]:
+            page.set_viewport_size({'width':width,'height':960})
+            page.locator('#employee-grid').evaluate('grid=>grid.querySelector(".tabulator-tableholder").scrollLeft=0')
+            self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
+            box=self.status().bounding_box();self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],width+1)
+            page.screenshot(path=str(artifact_path(f'today-tm-{width}.png')),full_page=True)
+        page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
+        expect(page.locator('#employee-grid .tabulator-col[tabulator-field=tm_status]')).to_have_count(0)
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
+
+    def test_notes_and_inherited_result_stay_pending_then_callback_completion_is_confirmed(self):
+        self.seed(inherited=True);page=self.page
+        self.edit('memo','가상 비고만 정정');self.save();expect(self.status()).to_have_text('-')
+        self.edit('call_result','INTERESTED');self.save();expect(self.status()).to_have_text('완료')
+        self.db(lambda:Callback.objects.create(customer=self.row,due_at=timezone.now(),created_by=self.employee,updated_by=self.employee))
+        page.locator('#reload-rows').click();expect(self.status()).to_have_text('-')
+        check=page.get_by_role('checkbox',name='재콜 완료',exact=True);check.scroll_into_view_if_needed();check.click()
+        expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        self.assertEqual(self.errors,[])
+
+    def test_auto_save_failure_never_marks_done_retry_keeps_same_row(self):
+        self.page.clock.install();self.seed();page=self.page
+        def fail(route):route.fulfill(status=503,json={'error':{'message':'가상 저장 실패'}})
+        page.route('**/api/employee/batch-update',fail)
+        self.edit('call_result','NO_ANSWER');page.clock.fast_forward(91000)
+        expect(page.locator('#pending-panel')).to_contain_text('결과를 확인하지 못했습니다')
+        expect(self.status()).to_have_text('-')
+        self.assertEqual(self.db(lambda:ConsultationRevision.objects.filter(customer=self.row).count()),0)
+        page.unroute('**/api/employee/batch-update',fail);self.save()
+        expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        self.assertEqual(self.errors,[])
+
+    def test_kst_midnight_automatically_refreshes_without_discarding_work(self):
+        self.page.clock.install();self.seed();page=self.page
+        self.edit('call_result','NO_ANSWER');self.save();expect(self.status()).to_have_text('완료')
+        tomorrow=self.start+timedelta(days=1)
+        phase={'next':False}
+        def clocked(route):
+            if phase['next']:
+                with patch('django.utils.timezone.now',return_value=tomorrow):response=route.fetch()
+                route.fulfill(response=response)
+            else:
+                response=route.fetch();data=response.json();data['as_of']=(tomorrow-timedelta(seconds=1)).isoformat();route.fulfill(response=response,json=data)
+        self.db(lambda:Session.objects.update(expire_date=tomorrow+timedelta(days=1)))
+        page.route('**/api/customers?*',clocked)
+        with page.expect_response(lambda response:'/api/customers?' in response.url):page.locator('#reload-rows').click()
+        expect(page.locator('#employee-grid')).to_have_attribute('aria-busy','false')
+        expect(page.locator('#tm-business-date')).to_contain_text(self.start.date().isoformat())
+        self.edit('memo','자정에 보존할 가상 변경')
+        phase['next']=True;page.clock.fast_forward(31000)
+        expect(page.locator('#employee-grid .tabulator-row')).to_have_count(1)
+        expect(page.locator('#queue-status')).to_contain_text('저장 대기')
+        self.save()
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.row.pk).memo),'자정에 보존할 가상 변경')
+        page.clock.fast_forward(31000)
+        expect(page.locator('#employee-grid .tabulator-row')).to_have_count(0)
+        expect(page.locator('#list-state')).to_contain_text('오늘의 TM 고객이 없습니다.')
+        expect(page.locator('#tm-business-date')).to_contain_text(tomorrow.date().isoformat())
+        self.assertEqual(self.errors,[])

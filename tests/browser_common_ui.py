@@ -37,7 +37,7 @@ class CommonUIBrowserTests(Fixtures, StaticLiveServerTestCase):
             (self.admin,'/app/admin/trash','휴지통'),(self.admin,'/app/admin/assignments','DB 분배·회수'),
             (self.admin,'/app/admin/users','사용자 관리'),(self.admin,'/app/admin/imports','엑셀 업로드'),
             (self.admin,'/app/admin/ai','AI 보고서'),(self.admin,f'/app/admin/ai/cases/{self.rows[0].pk}','보고서에 인용된 고객'),
-            (self.employee,'/app/employee','직원 대시보드'),(self.employee,'/app/employee/today','오늘 할 일'),
+            (self.employee,'/app/employee','직원 대시보드'),(self.employee,'/app/employee/today','오늘의 TM'),
             (self.employee,'/app/employee/mine','나의 DB'),(self.employee,'/app/guides','팀 상담 가이드')]
         previous=None
         for actor,path,title in paths:

@@ -123,7 +123,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.locator('#employee-dashboard-site').select_option(str(self.second.pk))
         cards=self.page.locator('#dashboard-summary .overview-metric')
         expect(cards.nth(3).locator('dd')).to_have_text('1명')
-        self.page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
+        self.page.locator('.workspace-nav').get_by_role('link',name='오늘의 TM',exact=True).click()
         expect(self.page.locator('#site')).to_have_value(str(self.second.pk))
         expect(self.page.locator('#page-info')).to_contain_text('검색 1명')
         expect(self.page.locator('.tabulator-row [tabulator-field="customer_name"]')).to_have_text('가상고객0040')
@@ -133,7 +133,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
         expect(self.page.locator('#employee-dashboard-site')).to_have_value(str(self.second.pk))
         expect(cards.nth(3).locator('dd')).to_have_text('1명')
-        self.page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
+        self.page.locator('.workspace-nav').get_by_role('link',name='오늘의 TM',exact=True).click()
         expect(self.page.locator('#site')).to_have_value(str(self.second.pk))
         expect(self.page.locator('#page-info')).to_contain_text('검색 1명')
         # Returning to the default still works without modifying the global default.
@@ -166,7 +166,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         db(lambda:change_assignee(self.admin,self.rows[1].pk,self.assignee_body(self.rows[1],self.other)))
         self.page.locator('#dashboard-refresh').click()
         expect(today.locator('dd')).to_have_text('0명')
-        self.page.locator('.workspace-nav').get_by_role('link',name='오늘 할 일',exact=True).click()
+        self.page.locator('.workspace-nav').get_by_role('link',name='오늘의 TM',exact=True).click()
         expect(self.page.locator('#page-info')).to_contain_text('검색 0명')
         self.page.locator('.workspace-nav').get_by_role('link',name='대시보드',exact=True).click()
 

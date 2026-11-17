@@ -2,8 +2,7 @@
 
 2026-11-13 고객정보 `-` 표시·선택 해제와 필터 개선은 새 migration이 없다. 기존 0004까지 적용한 HTTPS 서버는 [이번 변경 반영 명령](GRID_FILTERS.md#기존-https-서버-반영)을 사용한다.
 
-기준일: 2026-11-12 KST. 현재 사용자 서버의 `/root/TMDB`, `compose.yaml` + `compose.server.yaml` 조합을 기준으로 한다. 선택형 입력·필터와 상담내용 열 이동을 포함한 최신 `main`을 반영한다. 이 문서를 작성하면서 실제 서버 명령을 실행하지 않았다.
-
+기존 `/root/TMDB` 서버의 Compose 배포 절차다. 현재 필요한 고객 migration은 0004까지다. 실제 서버 상태와 로컬 미커밋 작업의 배포 여부는 별도로 확인한다. `git pull`은 원격에 반영된 변경만 가져오며 로컬 작업 트리의 변경을 서버에 배포하지 않는다.
 
 직원 고객명 편집도 새 migration 없이 이미지 갱신으로 반영한다. [최신 고객 그리드 권한·서버 반영](CUSTOMER_GRID_EDITING.md#기존-docker-서버-반영)을 따른다.
 
@@ -11,7 +10,7 @@
 
 신규 이력 저장 중복·SQL 조회 메모리 최적화도 migration 없이 이미지 갱신으로 반영한다. [DB·메모리 측정과 진단 명령](DATABASE_MEMORY_OPTIMIZATION.md)을 확인한다. 기존 DB 파일 축소나 worker 수 강제 감소를 수행하는 업데이트가 아니다.
 
-현재 필요한 고객 migration은 `0004_customer_selection_options`까지다. `0004`가 이미 적용됐다면 아래 migration 명령은 추가 변경 없이 끝난다. 미적용이면 `0003` 중복 정책 등 선행 migration도 함께 적용한다. **DB 변경 전에는 현재 DB의 새 백업과 별도 DB 복구 확인을 완료한다.** [백업·복구 방법](OPERATIONS.md#암호화-백업)을 따른다.
+현재 필요한 고객 migration은 `0004_customer_selection_options`, 상담 migration은 `0003_performancetracking_customeractivity`까지다. 새 상담 migration은 직원의 통화·실제 방문 기록과 도입 시점을 추가한다. 아래 전체 앱 migration 명령은 미적용 변경만 적용한다. **DB 변경 전에는 현재 DB의 새 백업과 별도 DB 복구 확인을 완료한다.** [백업·복구 방법](OPERATIONS.md#암호화-백업)을 따른다.
 
 기존 `.env`·`.env.ai`·`compose.server.yaml`을 그대로 사용하며 PostgreSQL 컨테이너와 데이터 볼륨은 유지한다. 서버의 Docker·Compose와 PostgreSQL 서비스가 준비된 상태에서 실행한다. 호스트의 Python이나 `.venv`는 사용하지 않는다.
 
@@ -24,7 +23,7 @@ cd /root/TMDB &&
 git pull --ff-only &&
 bash scripts/compose_https.sh config --quiet &&
 bash scripts/compose_https.sh --profile ai build web scheduler ai_worker &&
-bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --plan
+bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate --plan
 ```
 
 계획과 백업을 확인한 뒤 실행한다. AI는 중단 상태로 유지하며 PostgreSQL을 재생성하지 않는다.
@@ -32,14 +31,14 @@ bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate cu
 ```bash
 cd /root/TMDB &&
 bash scripts/compose_https.sh --profile ai stop web scheduler ai_worker &&
-bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --noinput &&
-bash scripts/compose_https.sh run --rm --no-deps web python manage.py showmigrations customers &&
+bash scripts/compose_https.sh run --rm --no-deps web python manage.py migrate --noinput &&
+bash scripts/compose_https.sh run --rm --no-deps web python manage.py showmigrations customers consultations &&
 bash scripts/compose_https.sh up -d --no-deps --no-build --force-recreate web scheduler &&
 bash scripts/compose_https.sh up -d --no-deps proxy &&
 bash scripts/compose_https.sh ps
 ```
 
-고객 migration 네 개가 모두 `[X]`이고 웹 health가 `healthy`인지 확인한다. `https://165.140.21.197`로 접속해 아래 브라우저 확인 항목과 상담 저장을 확인한다. 인증서·외부 접속 확인은 [HTTPS 안내](HTTPS_IP_SETUP.md#4-확인)를 따른다.
+고객 migration 네 개와 상담 migration 세 개가 모두 `[X]`이고 웹 health가 `healthy`인지 확인한다. `https://165.140.21.197`로 접속해 아래 브라우저 확인 항목과 상담 저장을 확인한다. 인증서·외부 접속 확인은 [HTTPS 안내](HTTPS_IP_SETUP.md#4-확인)를 따른다.
 
 ## 1. HTTP 서버: 최신 코드·이미지 준비와 적용 계획 확인
 
@@ -50,12 +49,12 @@ cd /root/TMDB &&
 git pull --ff-only &&
 unset TM_SERVER_SECRET TM_DB_PASSWORD &&
 docker compose -f compose.yaml -f compose.server.yaml --profile ai build web scheduler ai_worker &&
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --plan
+docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate --plan
 ```
 
 `TM_SERVER_SECRET`·`TM_DB_PASSWORD`의 셸 덮어쓰기만 해제하고 보호된 `.env`의 기존 값을 사용한다. 키나 DB 비밀번호를 새로 만들거나 출력하지 않는다. AI 작업자 이미지를 빌드해도 AI 호출이나 작업자 실행은 발생하지 않는다.
 
-계획에 `0004_customer_selection_options`까지 필요한 변경이 표시되는지 확인한다. 이미 적용한 서버는 `No planned migration operations.`가 표시될 수 있다. 오류·연결 실패·예상하지 않은 역방향 migration이 표시되면 다음 단계로 진행하지 말고 원인을 확인한다.
+계획에 고객 `0004_customer_selection_options`와 상담 `0003_performancetracking_customeractivity`까지 필요한 변경이 표시되는지 확인한다. 이미 적용한 서버는 `No planned migration operations.`가 표시될 수 있다. 오류·연결 실패·예상하지 않은 역방향 migration이 표시되면 다음 단계로 진행하지 말고 원인을 확인한다.
 
 ## 2. HTTP 서버: 쓰기 중단·DB 적용·웹과 스케줄러 재시작
 
@@ -65,19 +64,24 @@ docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web pyt
 cd /root/TMDB &&
 unset TM_SERVER_SECRET TM_DB_PASSWORD &&
 docker compose -f compose.yaml -f compose.server.yaml --profile ai stop web scheduler ai_worker &&
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate customers 0004_customer_selection_options --noinput &&
-docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py showmigrations customers &&
+docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py migrate --noinput &&
+docker compose -f compose.yaml -f compose.server.yaml run --rm --no-deps web python manage.py showmigrations customers consultations &&
 docker compose -f compose.yaml -f compose.server.yaml up -d --no-deps --no-build --force-recreate web scheduler &&
 docker compose -f compose.yaml -f compose.server.yaml ps
 ```
 
-고객 migration 결과에 다음 네 줄이 모두 `[X]`로 표시돼야 한다.
+고객·상담 migration 결과에 다음 항목이 모두 `[X]`로 표시돼야 한다.
 
 ```text
 [X] 0001_initial
 [X] 0002_customer_metadata
 [X] 0003_live_phone_unique
 [X] 0004_customer_selection_options
+
+consultations
+[X] 0001_initial
+[X] 0002_consultationrevision_source_ai_result
+[X] 0003_performancetracking_customeractivity
 ```
 
 이미 적용된 경우 `No migrations to apply.`는 정상이다. 마지막 `ps`에서 웹·스케줄러·PostgreSQL 실행 상태를 확인한다. 웹·PostgreSQL의 health가 `starting`이면 잠시 후 아래 상태 확인을 다시 실행해 `healthy`인지 확인한다. 스케줄러에는 현재 Compose에서 별도 health check가 없으므로 실행 상태를 확인한다.

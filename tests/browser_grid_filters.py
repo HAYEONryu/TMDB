@@ -312,7 +312,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_empty_states_and_failed_search_keep_last_successful_list_and_conditions(self):
         self.seed();page=self.page
-        for actor,path,empty in [(self.admin,'admin/customers','등록된 고객이 없습니다.'),(self.employee,'employee/mine','담당 고객이 없습니다.'),(self.employee,'employee/today','오늘 할 일이 없습니다.')]:
+        for actor,path,empty in [(self.admin,'admin/customers','등록된 고객이 없습니다.'),(self.employee,'employee/mine','담당 고객이 없습니다.'),(self.employee,'employee/today','오늘의 TM 고객이 없습니다.')]:
             self.login(actor);page.goto(self.live_server_url+f'/app/{path}?site_id={self.site.pk}');self.count(2)
             page.locator('#search').fill('0001');page.locator('#search').press('Enter');self.count(1)
             def fail(route):route.fulfill(status=503,json={'error':{'message':'가상 조회 실패'}})

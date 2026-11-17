@@ -10,6 +10,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.common.http import api_errors,identifier,json_object
 from apps.customers.models import Customer
+from apps.customers.tm import with_tm_state
 from apps.customers.choices import customer_schema
 from apps.customers.queries import enriched,serialize,visible_values
 from apps.customers.services import digest
@@ -54,7 +55,7 @@ def check_one(actor,item):
     if not isinstance(item["key"],str) or not 1<=len(item["key"])<=500:
         raise AccessError("VALIDATION_ERROR","대기열 키를 확인해 주세요.",422)
     if not Site.objects.filter(pk=sid).exists():return {**result,"code":"SITE_DELETED"}
-    customer=enriched(Customer.objects.filter(pk=cid,site_id=sid)).first()
+    customer=with_tm_state(enriched(Customer.objects.filter(pk=cid,site_id=sid))).first()
     historical=Assignment.objects.filter(pk=aid,customer_id=cid,employee=actor).exists()
     if not customer:return {**result,"code":"CUSTOMER_DELETED" if historical else "FORBIDDEN"}
     if customer.deleted_at:return {**result,"code":"CUSTOMER_DELETED" if historical else "FORBIDDEN"}

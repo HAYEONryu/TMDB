@@ -1,0 +1,12 @@
+<p id="activity-notice" role="status" aria-live="polite"></p>
+<section id="activity-pending" class="card card-body mb-3" hidden aria-live="polite"><p>통화·방문 기록 결과를 확인하지 못했습니다. 새로 기록하지 말고 같은 요청으로 확인하세요.</p><div class="d-flex flex-wrap gap-2"><button id="activity-retry" type="button" class="btn btn-primary">기록 결과 다시 확인</button><button id="activity-dismiss" type="button" class="btn btn-outline-secondary">확인 알림 닫기</button></div></section>
+<dialog id="activity-dialog" aria-labelledby="activity-title"><form id="activity-form" data-async>
+  <h2 id="activity-title" class="h5">통화·실제 방문 기록</h2><p id="activity-customer"></p>
+  <p class="small text-secondary">통화 한 번마다 1건을 기록하세요. 상담 저장·재콜 완료·방문예약과 별개입니다. 연결 여부가 불명확하면 ‘확인 불가’를 선택하세요.</p>
+  <label class="d-block mb-3">기록 종류<select id="activity-kind" class="form-select"><option value="CALL">통화 시도</option><option value="VISIT">실제 방문</option></select></label>
+  <div id="activity-call-fields"><label class="d-block mb-3">통화 시각 (한국 시간)<input id="activity-at" class="form-control" type="datetime-local" step="1" required></label><label class="d-block mb-3">통화 연결 여부<select id="activity-connection" class="form-select"><option value="UNKNOWN">확인 불가</option><option value="CONNECTED">연결</option><option value="NOT_CONNECTED">미연결·부재·미응답</option></select></label></div>
+  <label id="activity-visit-fields" class="d-block mb-3" hidden>실제 방문일 (한국 날짜)<input id="activity-visit-date" class="form-control" type="date"><span class="small text-secondary">실제로 방문한 날짜만 입력하세요. 예약일로 대신하지 마세요.</span></label>
+  <p id="activity-error" class="field-error" role="alert"></p><p id="activity-result" role="status" aria-live="polite"></p>
+  <div id="activity-recent" class="small text-secondary"></div>
+  <div class="dialog-actions"><button id="activity-close" type="button" class="btn btn-outline-secondary">닫기</button><button id="activity-submit" type="submit" class="btn btn-primary">통화 기록</button></div>
+</form></dialog>

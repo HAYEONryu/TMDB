@@ -1,4 +1,6 @@
 import {api,option} from './api.js';
+import {ActivityRecorder} from './activity-recorder.js';
+import {EmployeePerformance} from './employee-performance.js';
 import {renderDashboard,dashboardTime,showDashboardSetupError} from './dashboard.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 import {customerLabels,choiceLabel} from './customer-columns.js';
@@ -10,6 +12,8 @@ const categories={held:'현재 보유 고객',callbacks_remaining:'오늘 남은
 let generation=0,listSequence=0,selectedCategory=null,defaultSite='',activeSite=null,lastList=null,counts={};
 let scheduleSequence=0,lastSchedule=null;
 const date=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)):'-';
+const performance=new EmployeePerformance();
+const recorder=new ActivityRecorder({userId:document.body.dataset.userId,changed:()=>performance.load(select.value)});
 function syncButtons(){for(const button of document.querySelectorAll('[data-customer-category]'))button.setAttribute('aria-expanded',String(!panel.hidden&&button.dataset.customerCategory===selectedCategory));}
 function closeDetails(){selectedCategory=null;panel.hidden=true;listSequence++;area.replaceChildren();area.setAttribute('aria-busy','false');lastList=null;syncButtons();}
 $('employee-customer-close').onclick=()=>{const category=selectedCategory;closeDetails();document.querySelector(`[data-customer-category="${category}"]`)?.focus();};
@@ -25,7 +29,7 @@ function customerCard(row,schema){
   for(const field of ['callback_due_at','visit_at','assigned_at','call_result']){const item=text('div',''),value=field==='call_result'?choiceLabel(schema,field,row[field]):date(row[field]);item.append(text('dt',customerLabels[field]),text('dd',value));facts.append(item);}
   card.append(facts);
   if(row.notes)card.append(text('p',row.notes.length>200?row.notes.slice(0,200)+'…':row.notes,'customer-note-preview'));
-  const link=text('a','고객 열기','btn btn-sm btn-outline-primary');link.href='/app/employee/mine?'+new URLSearchParams({site_id:row.site_id,q:row.phone_normalized});link.setAttribute('aria-label',(row.customer_name||'이름 미입력')+' 고객 열기');card.append(link);return card;
+  const link=text('a','고객 열기','btn btn-sm btn-outline-primary');link.href='/app/employee/mine?'+new URLSearchParams({site_id:row.site_id,q:row.phone_normalized});link.setAttribute('aria-label',(row.customer_name||'이름 미입력')+' 고객 열기');card.append(link,recorder.button(row));return card;
 }
 async function loadList(category,page=1){
   const sequence=++listSequence,revision=generation,site=select.value,same=lastList?.site===site&&lastList.category===category&&lastList.page===page;
@@ -69,7 +73,7 @@ async function loadSchedule(page=1){
         const row=text('tr','');row.dataset.customerId=customer.id;
         const times=text('td',''),events=[['재콜',customer.callback_due_at],['방문예약',customer.visit_at]].filter(([,value])=>value&&date(value).slice(0,10)===data.business_date).sort((a,b)=>new Date(a[1])-new Date(b[1]));
         for(const [label,at] of events){const item=text('div','','schedule-event'),time=text('time',date(at).slice(11));time.dateTime=at;item.append(time,text('span',label,'schedule-kind'));if(new Date(at)<new Date(data.as_of))item.append(text('small','예정 시각 지남','schedule-past'));times.append(item);}
-        const action=text('td',''),link=text('a','고객 열기','btn btn-sm btn-outline-primary');link.href='/app/employee/mine?'+new URLSearchParams({site_id:customer.site_id,q:customer.phone_normalized});link.setAttribute('aria-label',(customer.customer_name||'이름 미입력')+' 고객 열기');action.append(link);
+        const action=text('td',''),link=text('a','고객 열기','btn btn-sm btn-outline-primary');link.href='/app/employee/mine?'+new URLSearchParams({site_id:customer.site_id,q:customer.phone_normalized});link.setAttribute('aria-label',(customer.customer_name||'이름 미입력')+' 고객 열기');action.append(link,recorder.button(customer));
         row.append(times,text('td',customer.customer_name||'이름 미입력'),text('td',customer.phone_normalized.replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3')),text('td',choiceLabel(data.schema,'call_result',customer.call_result)),action);
         Array.from(row.cells).forEach((cell,index)=>cell.dataset.label=headers[index]);body.append(row);
       }
@@ -98,9 +102,9 @@ function work(data){
 function clear(){closeDetails();$('employee-contracts').replaceChildren();scheduleSequence++;lastSchedule=null;$('employee-today-schedule').replaceChildren(text('p','통계를 조회하면 오늘 상담 일정을 표시합니다.'));$('employee-today-schedule').setAttribute('aria-busy','false');}
 async function refresh(){
   $('dashboard-refresh').onclick=refresh;
-  if(activeSite!==select.value){generation++;clear();activeSite=select.value;}
+  if(activeSite!==select.value){generation++;clear();performance.clear();activeSite=select.value;}
   syncEmployeeSiteLinks(select.value,defaultSite);
   const url=new URL(location.href);if(select.value&&select.value!==defaultSite)url.searchParams.set('site_id',select.value);else url.searchParams.delete('site_id');history.replaceState(null,'',url);
-  await renderDashboard(select.value,{draw:work,clear});
+  await Promise.all([renderDashboard(select.value,{draw:work,clear}),performance.load(select.value)]);
 }
-try{const data=await api('/api/sites');defaultSite=data.default_site_id||'';select.replaceChildren(...data.items.map(site=>option(site.id,site.name)));select.value=new URL(location.href).searchParams.get('site_id')||defaultSite;select.onchange=refresh;$('dashboard-refresh').onclick=refresh;await refresh();}catch(error){showDashboardSetupError(error,{clear});}
+try{const data=await api('/api/sites');defaultSite=data.default_site_id||'';select.replaceChildren(...data.items.map(site=>option(site.id,site.name)));select.value=new URL(location.href).searchParams.get('site_id')||defaultSite;select.onchange=refresh;$('dashboard-refresh').onclick=refresh;await refresh();}catch(error){performance.clear();$('performance-status').textContent='현장 목록을 불러오지 못했습니다. 새로고침으로 다시 확인해 주세요.';showDashboardSetupError(error,{clear});}

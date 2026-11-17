@@ -1,12 +1,13 @@
 {% extends 'base.html' %}
 {% load static %}
-{% block title %}{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %} · 두드림 TM{% endblock %}
+{% block title %}{% if employee_view == 'today' %}오늘의 TM{% else %}나의 DB{% endif %} · 두드림 TM{% endblock %}
 {% block assets %}<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator.min.css' %}"><script src="{% static 'vendor/tabulator/tabulator.min.js' %}" defer></script><script type="module" src="{% static 'employee-grid.js' %}"></script>{% endblock %}
 {% block content %}
 <section id="employee" data-view="{{ employee_view }}" data-user-id="{{ user.pk }}">
-  <div class="page-heading"><div><h1 class="h2">{% if employee_view == 'today' %}오늘 할 일{% else %}나의 DB{% endif %}</h1>
-  <p class="text-secondary">{% if employee_view == 'today' %}연락할 고객과 새로 받은 고객을 순서대로 확인하세요.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div><button id="save-now" class="btn btn-primary">지금 저장</button></div>
+  <div class="page-heading"><div><h1 class="h2">{% if employee_view == 'today' %}오늘의 TM{% else %}나의 DB{% endif %}</h1>
+  <p class="text-secondary">{% if employee_view == 'today' %}오늘 받은 고객과 이전 배정의 미완료 통화·재콜을 확인하세요. 오늘 완료한 고객은 자정까지 남습니다.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div><button id="save-now" class="btn btn-primary">지금 저장</button></div>
   <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>고객명과 상담 칸을 두 번 클릭해 편집하세요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요. 고객명은 최대 100자이며 빈 값도 가능합니다.</span></p>
+  {% if employee_view == 'today' %}<p id="tm-business-date" class="small text-secondary" role="status"></p><p class="small text-secondary">TM 상태의 완료는 현재 배정에서 담당 직원이 남긴 통화 결과 저장 이력과 재콜 완료 기록을 기준으로 합니다. 부재도 통화 업무 완료입니다. 새 통화 결과 이력이 없는 경우는 -로 표시합니다.</p>{% endif %}
   {% include 'customers/query-toolbar.html' %}
   <div class="list-heading"><h2 class="h5">고객 목록</h2><div class="list-actions"><span id="queue-status" role="status" aria-live="polite"></span><button id="reload-rows" class="btn btn-outline-secondary">목록 새로고침</button></div></div>
   <p id="employee-message" role="alert" class="grid-message"></p><p id="storage-warning" class="field-error" role="alert"></p>
@@ -18,6 +19,7 @@
 </section>
 <dialog id="leave-dialog"><h2 class="h5">저장을 확인하지 못했습니다</h2><p id="leave-message"></p><p>대기값을 버려도 이미 서버에 저장된 변경은 취소되지 않습니다. 복구 가능한 값은 이 브라우저에 보관합니다.</p><div class="dialog-actions"><button id="leave-cancel" class="btn btn-outline-secondary">이동 취소</button><button id="leave-discard" class="btn btn-outline-danger">내 변경 버리고 이동</button><button id="leave-retry" class="btn btn-primary">저장 재시도</button></div></dialog>
 <dialog id="employee-conflict"><h2 class="h5">서버 값과 내 대기값 비교</h2><p id="conflict-message"></p><div class="conflict-scroll"><table class="table"><thead><tr><th>항목</th><th>서버 값</th><th>내 대기값</th></tr></thead><tbody id="employee-compare"></tbody></table></div><div class="dialog-actions"><button data-close class="btn btn-outline-secondary">닫기</button><button id="employee-discard" class="btn btn-outline-danger">내 변경 버리기</button><button id="employee-reapply" class="btn btn-primary">내 변경 다시 저장</button></div></dialog>
+{% include 'customers/activity-record.html' %}
 {% include 'customers/filter.html' %}
 {{ customer_schema|json_script:'customer-schema' }}
 {% include 'customers/history.html' %}

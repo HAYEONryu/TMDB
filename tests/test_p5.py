@@ -120,6 +120,12 @@ class EmployeeTests(Fixtures,TestCase):
         Assignment.objects.filter(pk=self.assignment.pk).update(assigned_at=now)
         for c,due in [(rows[0],now-timedelta(days=1)),(rows[1],now+timedelta(hours=5)),(rows[2],now.replace(hour=0)+timedelta(days=1)),(self.customer,now-timedelta(minutes=10))]:
             Callback.objects.create(customer=c,due_at=due,created_by=self.employee,updated_by=self.employee)
+        # These old assignments have already completed their initial calls;
+        # only the overdue/today callback cohorts should add them to this list.
+        for c in rows[2:]:
+            ConsultationRevision.objects.create(customer=c,assignment=c.current_assignment,actor=self.employee,
+                customer_version=1,source='MANUAL',saved_at=now-timedelta(days=1),
+                changed_fields=['call_result'],after_values={'call_result':'NO_ANSWER'})
         with patch('apps.customers.queries.timezone.now',return_value=now):
             response=self.client.get('/api/customers',{'view':'today','site_id':self.site.pk},**self.headers).json()
         self.assertEqual([row['id'] for row in response['data']],[str(rows[0].pk),str(self.customer.pk),str(rows[1].pk)])

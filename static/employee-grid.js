@@ -1,4 +1,5 @@
 import {confirmAction} from './shared-ui.js';
+import {ActivityRecorder} from './activity-recorder.js';
 import {EmployeeQueue,changes,normalized} from './employee-queue.js';
 import {employeeSupportError} from './browser-environment.js';
 import {withRequestTimeout} from './request-timeout.js';
@@ -34,6 +35,7 @@ async function request(url,body){
 }
 const queue=new EmployeeQueue(userId,request);
 const environmentProblem=employeeSupportError();
+const recorder=new ActivityRecorder({userId});
 const statusLabels={dirty:'미저장',saving:'저장 중',offline:'오프라인 대기',retry:'저장 결과 확인 대기',failed:'저장하지 못함',conflict:'충돌',blocked:'전송 불가',review:'수동 확인 필요',checking:'복구 확인 중',clearing:'보관 정리 중'};
 const params=()=>new URLSearchParams({site_id:state.site,view,q:state.q,filters:JSON.stringify(state.filters),...(state.category?{dashboard_category:state.category}:{})});
 function error(error){notice(error.message);}
@@ -126,7 +128,7 @@ function deletionCell(cell){
 function actions(cell){
   const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','이력');
   history.className='btn btn-sm btn-outline-secondary';history.setAttribute('aria-label','상담·재콜 이력');history.title='저장된 상담 변경과 재콜 이력을 조회합니다.';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};wrap.append(history);
-  const control=text('button','AI 도움');control.className='btn btn-sm btn-outline-primary ms-2';control.title='기능 설명·사용 준비·기존 AI 결과를 확인합니다.';control.disabled=queue.paused||ai?.busy||callbacks?.busy||deletions?.busy;control.onclick=()=>{commitEditor();ai.open(row.id);};wrap.append(control);return wrap;
+  const control=text('button','AI 도움');control.className='btn btn-sm btn-outline-primary ms-2';control.title='기능 설명·사용 준비·기존 AI 결과를 확인합니다.';control.disabled=queue.paused||ai?.busy||callbacks?.busy||deletions?.busy;control.onclick=()=>{commitEditor();ai.open(row.id);};wrap.append(control);const activity=recorder.button(row);activity.disabled ||= !!actionBlocked(row);wrap.append(activity);wrap.className='d-inline-flex flex-wrap gap-2';return wrap;
 }
 function rowStyle(row){
   const data=queue.rows.get(row.getData().id)||row.getData(),entry=queue.entry(data.id),element=row.getElement();
@@ -136,10 +138,12 @@ function rowStyle(row){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:' ',selectableRows:false,clipboard:false,
   rowFormatter:rowStyle,
-  columns:[...customerFields().flatMap(field=>[
+  columns:[...(view==='today'?[{title:'TM 상태',field:'tm_status',frozen:true,width:104,headerSort:false,editor:false,
+    headerTooltip:'현재 배정의 담당 직원이 통화 결과를 저장하고 오늘까지의 미완료 재콜이 없으면 완료입니다. 메모·이름·방문예약만 수정한 경우는 제외합니다.',
+    formatter:cell=>{const label=(queue.rows.get(cell.getRow().getData().id)?.tm_status||cell.getValue())==='COMPLETED'?'완료':'-';const badge=text('span',label);badge.className='tm-state';badge.dataset.complete=String(label==='완료');return badge;}}]:[]),...customerFields().flatMap(field=>[
     {...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})},
     ...(field==='call_result'?[{title:'삭제 요청',field:'_deletion',headerSort:false,minWidth:120,headerTooltip:deletionHelp,titleFormatter:()=>{const label=text('span','삭제 요청');label.tabIndex=0;label.setAttribute('aria-label',deletionHelp);return label;},formatter:deletionCell}]:[])
-  ]),{title:'작업',field:'_actions',headerSort:false,minWidth:220,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
+  ]),{title:'작업',field:'_actions',headerSort:false,minWidth:380,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=readOnly?'조회 전용':queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
@@ -156,6 +160,7 @@ function renderStatus(){
     const data=row.getData(),entry=queue.entry(data.id),base=queue.rows.get(data.id),values=entry?.state==='blocked'?{}:{...base,...(entry?changes(entry):{})};
     if(entry?.state==='blocked'){row.delete().catch(()=>{});continue;}
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
+    const tm=row.getCell('tm_status');if(tm&&base&&tm.getValue()!==base.tm_status)tm.setValue(base.tm_status);
     const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
     const actionState=JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]);
     for(const field of ['_actions','_deletion']){const cell=row.getCell(field);if(cell)cell.setValue(actionState);}
@@ -165,7 +170,13 @@ function renderStatus(){
 }
 const eState=e=>[e.state,e.version,Object.keys(e.pending).length,e.error].join(':');
 queue.addEventListener('change',renderStatus);
-let loadGeneration=0;
+let loadGeneration=0,loadedBusinessDate=null,serverClock=null;
+const businessDate=value=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
+function refreshTMDate(){
+  if(view!=='today'||!serverClock||loading||navigating||document.hidden||!navigator.onLine||activeEditor||queue.entries.size||queue.invalid.size||callbacks?.busy||deletions?.busy||ai?.busy||callbacks?.pending.value||deletions?.pending.value||ai?.pending.value||(queue.paused&&!readOnly))return;
+  const current=businessDate(serverClock.at+Date.now()-serverClock.received);
+  if(current!==loadedBusinessDate)void runQuery(load).catch(error);
+}
 const runQuery=createQueryScheduler(guarded);
 $('#search').value=state.q;
 const queryUI=createQueryUI({getState:()=>state,labels,display,view,grid:$('#employee-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(error)});
@@ -177,6 +188,8 @@ async function load(){
     const query=params();query.set('page',state.page);query.set('page_size',state.size);query.set('sort',state.sort);
     const data=await request('/api/customers?'+query);if(generation!==loadGeneration)return;if(data.last_page<state.page){state.page=data.last_page;return await load();}
     queue.setRows(data.data);lastPage=data.last_page;
+    loadedBusinessDate=businessDate(data.as_of);serverClock={at:new Date(data.as_of).getTime(),received:Date.now()};
+    if($('#tm-business-date'))$('#tm-business-date').textContent='기준일 '+loadedBusinessDate+' · 한국 시간';
     await table.setData(data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )})));
     if(generation!==loadGeneration)return;
     $('#page-info').textContent=`검색 ${data.total.toLocaleString()}명 · ${state.page} / ${lastPage}페이지`;
@@ -235,7 +248,7 @@ for(const name of ['copy','cut','contextmenu'])$('#employee-grid').addEventListe
 $('#employee-grid').addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&['c','x'].includes(event.key.toLowerCase()))event.preventDefault();});
 window.addEventListener('beforeunload',event=>{if(queue.entries.size||queue.invalid.size||callbacks?.pending.value||deletions?.pending.value||ai?.pending.value){event.preventDefault();event.returnValue='';}});
 window.addEventListener('offline',()=>{for(const entry of queue.all())if(['dirty','retry'].includes(entry.state))entry.state='offline';renderStatus();});
-async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){accessRevoked=true;readOnly=false;queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}if(environmentProblem){if(!accessRevoked){readOnly=true;renderStatus();}return;}await queue.resume();}catch(e){error(e);}}
+async function resume(){try{const me=await request('/api/me');if(me.id!==userId||me.role!=='EMPLOYEE'||me.must_change_password){accessRevoked=true;readOnly=false;queue.pause('로그인 정보가 변경되었습니다. 다시 로그인해 주세요.');return;}if(environmentProblem){if(!accessRevoked){readOnly=true;renderStatus();}return;}await queue.resume();refreshTMDate();}catch(e){error(e);}}
 window.addEventListener('online',resume);document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')resume();});window.addEventListener('focus',resume);
 window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial){accessRevoked=true;readOnly=false;queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');}});
 $('#open-filters').onclick=()=>{
@@ -259,5 +272,5 @@ try{
   const context=await request('/api/employee/context'),receivedAt=Date.now();await queue.start(context);queueReady=!queue.paused;renderStatus();if(queue.paused)throw new Error(queue.pauseMessage);installPreRecall({serverTime:context.server_time,receivedAt,commit:commitEditor,flush:()=>queue.flush(true),notice});
   }
   const sites=await request('/api/sites');defaultSite=sites.default_site_id||'';$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||defaultSite;$('#site').value=state.site;
-  await load();await ai.refreshAvailability();queue.tick();
+  await load();await ai.refreshAvailability();queue.tick();if(view==='today')setInterval(refreshTMDate,30000);
 }catch(e){error(e);loading=false;}

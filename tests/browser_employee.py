@@ -170,9 +170,9 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         second.close()
 
     def test_navigation_logout_failure_cancel_retry_and_confirmed_discard(self):
-        page=self.page;self.context.set_offline(True);self.edit('가상 이동 실패 대기');page.get_by_role('link',name='오늘 할 일',exact=True).click();expect(page.locator('#leave-dialog')).to_be_visible();page.locator('#leave-cancel').click();expect(page).to_have_url(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
+        page=self.page;self.context.set_offline(True);self.edit('가상 이동 실패 대기');page.get_by_role('link',name='오늘의 TM',exact=True).click();expect(page.locator('#leave-dialog')).to_be_visible();page.locator('#leave-cancel').click();expect(page).to_have_url(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         page.get_by_role('button',name='로그아웃',exact=True).click();expect(page.locator('#leave-cancel')).to_have_text('로그아웃 취소');page.locator('#leave-cancel').click()
-        self.context.set_offline(False);page.get_by_role('link',name='오늘 할 일',exact=True).click();expect(page).to_have_url(self.live_server_url+'/app/employee/today');self.saved();self.assertEqual(len(self.sent),1)
+        self.context.set_offline(False);page.get_by_role('link',name='오늘의 TM',exact=True).click();expect(page).to_have_url(self.live_server_url+'/app/employee/today');self.saved();self.assertEqual(len(self.sent),1)
         expect(page.locator('#page-info')).to_contain_text('검색 3명');self.context.set_offline(True);self.edit('가상 버릴 대기');page.get_by_role('button',name='로그아웃',exact=True).click();page.locator('#leave-discard').click();confirm_action(page,False);expect(page.locator('#leave-dialog')).to_be_visible();self.assertEqual(len(self.records()),1)
         self.context.set_offline(False);page.locator('#leave-discard').click();confirm_action(page);expect(page).to_have_url(self.live_server_url+'/auth/login');self.assertEqual(self.records(),[])
 

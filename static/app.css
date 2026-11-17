@@ -685,3 +685,20 @@ dialog .dialog-actions .btn{min-height:44px;}
   .account-menu{flex:1 1 100%;justify-content:flex-end;margin-top:0;}
   .workspace-menu .workspace-nav{grid-template-columns:repeat(2,minmax(0,1fr));}
 }
+
+/* Employee activity evidence and calendar metrics. */
+.today-call-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;margin:0 0 8px;}
+.today-call-metrics dt{font-size:16px;color:var(--muted);}
+.today-call-metrics dd{font-size:30px;font-weight:750;margin:8px 0;overflow-wrap:anywhere;}
+.monthly-performance-table{min-width:500px;table-layout:fixed;}
+.monthly-performance-table th:first-child{width:16%;}
+.monthly-performance-table td{overflow-wrap:anywhere;}
+.performance-today{background:#e8f0fe;font-weight:700;}
+#performance-month{max-width:230px;}
+#activity-recent{overflow-wrap:anywhere;margin:16px 0;}
+#activity-visit-fields[hidden],#activity-call-fields[hidden]{display:none!important;}
+#employee-today-schedule td:last-child .btn{margin:3px;}
+@media(max-width:575px){.today-call-metrics{gap:12px;}.today-call-metrics dd{font-size:24px;}.today-call-metrics dt{font-size:15px;}}
+
+.tm-state{display:inline-flex;align-items:center;justify-content:center;min-width:44px;font-weight:700;color:#61728b;}
+.tm-state[data-complete=true]{padding:3px 8px;border-radius:6px;background:#e9f5ed;color:#20613d;}

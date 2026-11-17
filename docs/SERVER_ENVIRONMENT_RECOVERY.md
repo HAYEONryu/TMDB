@@ -52,7 +52,7 @@ docker compose -f compose.yaml -f compose.server.yaml \
   run --rm --no-deps web python manage.py showmigrations customers
 ```
 
-새 migration이 포함되어 있고 아직 적용하지 않았다면 `[ ] 0002_customer_metadata`가 표시돼야 한다. 이 도구는 서비스 재시작이나 DB migration을 수행하지 않는다. 실제 적용은 [대상 DB 백업·migration·재시작 절차](EXCEL_TEMPLATE_GUIDANCE.md)로 이어가며 대상·백업·복구 방식을 먼저 확인한다. 기존 AI 활성화와 무료 등급 확인 설정을 바꾸지 않는다.
+현재 고객 migration은 `0004_customer_selection_options`까지다. `showmigrations`에서 대상 DB의 적용 상태를 확인한다. 이 도구는 서비스 재시작이나 DB migration을 수행하지 않는다. 실제 적용은 [대상 DB 백업·migration·재시작 절차](SERVER_UPDATE_COMMANDS.md)로 이어가며 대상·백업·복구 방식을 먼저 확인한다. 기존 AI 활성화와 무료 등급 확인 설정을 바꾸지 않는다.
 
 ## 검증 범위
 
