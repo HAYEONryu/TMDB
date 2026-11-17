@@ -47,3 +47,13 @@ def delete_site(request,site_id):
 @api_errors
 def confirm_site_view(request,site_id):
     actor_identity(request);return JsonResponse(confirm_site(request.user,site_id,json_object(request)))
+
+
+@require_POST
+@require_role(User.Role.ADMIN)
+@api_errors
+def bulk_approve_requests(request):
+    from apps.customers.bulk_deletions import approve_bulk
+    actor_identity(request)
+    result,status=approve_bulk(request.user,json_object(request))
+    return JsonResponse(result,status=status)

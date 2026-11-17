@@ -134,6 +134,8 @@ AI를 비활성화하고 고객관리만 계속 사용하려면 먼저 AI 작업
 - [관리자 현장명 변경 방법·중복/동시 수정 처리](docs/SITE_RENAMING.md)
 - [대시보드 집계·계약 현황·연결 목록](docs/DASHBOARD_METRICS.md)
 - [직원 통화·월간 일별 실적과 기록 방법](docs/EMPLOYEE_PERFORMANCE.md)
+- [오늘의 TM 완료 상태·미완료 이월·검증](docs/TODAY_TM.md)
+- [관리자 삭제 요청 일괄 승인·미완료 TM 회수](docs/ADMIN_TM_OPERATIONS.md)
 - [현재 92개 검수 기준과 결과 생성](docs/ACCEPTANCE_CRITERIA.md)
 - [공통 UI와 최신 로컬 검증](docs/UI_CONSISTENCY_20261116.md)
 - [오래된 문서·자료·미사용 코드 정리](docs/REPOSITORY_CLEANUP_20261117.md)

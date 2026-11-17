@@ -702,3 +702,9 @@ dialog .dialog-actions .btn{min-height:44px;}
 
 .tm-state{display:inline-flex;align-items:center;justify-content:center;min-width:44px;font-weight:700;color:#61728b;}
 .tm-state[data-complete=true]{padding:3px 8px;border-radius:6px;background:#e9f5ed;color:#20613d;}
+
+#deletion-notifications .request-select-column{min-width:54px!important;width:54px;}
+#bulk-approval-results{overflow-wrap:anywhere;}
+#bulk-approval-results li{margin-bottom:8px;}
+#tm-recall-preview{max-height:50vh;overflow:auto;}
+#deletion-notifications>.section-heading{flex-wrap:wrap;align-items:flex-start;}

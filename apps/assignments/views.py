@@ -43,3 +43,24 @@ def recall(request):
 @api_errors
 def assignee(request,customer_id):
     result,status=services.change_assignee(request.user,customer_id,json_object(request));return JsonResponse(result,status=status)
+
+
+@require_POST
+@require_role(User.Role.ADMIN)
+@api_errors
+def tm_preview(request):
+    from apps.accounts.access import actor_identity
+    from apps.assignments.tm_recall import preview
+    actor_identity(request)
+    return JsonResponse(preview(request.user,json_object(request)))
+
+
+@require_POST
+@require_role(User.Role.ADMIN)
+@api_errors
+def tm_recall(request):
+    from apps.accounts.access import actor_identity
+    from apps.assignments.tm_recall import recall_unfinished
+    actor_identity(request)
+    result,status=recall_unfinished(request.user,json_object(request))
+    return JsonResponse(result,status=status)

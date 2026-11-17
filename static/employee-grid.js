@@ -1,4 +1,5 @@
 import {confirmAction} from './shared-ui.js';
+import {listenAdminUpdates} from './admin-updates.js';
 import {ActivityRecorder} from './activity-recorder.js';
 import {EmployeeQueue,changes,normalized} from './employee-queue.js';
 import {employeeSupportError} from './browser-environment.js';
@@ -274,3 +275,10 @@ try{
   const sites=await request('/api/sites');defaultSite=sites.default_site_id||'';$('#site').replaceChildren(...sites.items.map(s=>option(s.id,s.name)));state.site=new URL(location.href).searchParams.get('site_id')||defaultSite;$('#site').value=state.site;
   await load();await ai.refreshAvailability();queue.tick();if(view==='today')setInterval(refreshTMDate,30000);
 }catch(e){error(e);loading=false;}
+
+
+listenAdminUpdates(()=>{
+  if((queueReady||readOnly)&&!accessRevoked&&!loading&&!navigating&&!activeEditor&&!queue.entries.size&&!queue.invalid.size&&
+      !callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&!deletions?.pending.value&&!ai?.pending.value)
+    return runQuery(load).catch(error);
+});

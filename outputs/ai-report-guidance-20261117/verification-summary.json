@@ -1,0 +1,27 @@
+{
+  "run_id": "20261117T025121897566Z-21a309e461894391914f89c93ada1afe",
+  "source_digest": "6186a667b0be61e6b725a0f5e6529ab81db87b832e842acca0bb0470f6e46412",
+  "source_unchanged_during_run": true,
+  "server_browser_tests": 78,
+  "server_browser_successful": true,
+  "javascript_tests_passed": 50,
+  "system_checks": {
+    "system_check": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "migration_drift": {
+      "exit_code": 0,
+      "status": "passed"
+    }
+  },
+  "checks": [
+    "KST weekday weekly briefing disabled with description visible",
+    "report switching and required target inputs",
+    "no employee or site selection",
+    "AI configuration and busy status remain separate",
+    "existing generation history review publication and authorization",
+    "desktop 1440px and mobile 390px"
+  ],
+  "environment": "isolated local PostgreSQL and Chromium; synthetic fixtures and fake AI responses; no external AI calls"
+}

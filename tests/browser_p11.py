@@ -71,8 +71,80 @@ class P11BrowserTests(Fixtures,StaticLiveServerTestCase):
         self.page.route('**/api/ai/availability',weekday)
         self.page.reload()
         expect(self.page.locator('#report-generate')).to_be_disabled();expect(self.page.locator('#report-rule')).to_contain_text('일요일')
-        self.page.locator('#report-refresh').click();self.page.locator('#report-type').select_option('EMPLOYEE_COACHING');expect(self.page.locator('#report-generate')).to_be_enabled()
+        self.page.locator('#report-refresh').click();self.page.locator('#report-type').select_option('EMPLOYEE_COACHING');self.page.locator('#report-employee').select_option(str(self.employee.pk));expect(self.page.locator('#report-generate')).to_be_enabled()
         self.assertEqual(self.db(lambda:AIRequest.objects.count()),0);self.assertEqual(self.posts,[])
+
+    def test_report_description_switches_on_kst_weekday_without_generation(self):
+        from datetime import datetime
+        from unittest.mock import patch
+        from apps.customers.queries import KST
+        # Tuesday in Korea while UTC is still Monday. Use the actual server date rule.
+        with patch('django.utils.timezone.now',return_value=datetime(2026,11,17,0,30,tzinfo=KST)):
+            with self.page.expect_response('**/api/ai/availability') as response:self.page.reload()
+            self.assertEqual(response.value.json()['korean_date'],'2026-11-17')
+            expect(self.page.locator('#report-type')).to_have_value('WEEKLY_BRIEFING')
+            expect(self.page.locator('#report-description')).to_be_visible()
+            expect(self.page.locator('#report-contents')).to_contain_text('고객 반응·거절 이유')
+            expect(self.page.locator('#report-rule')).to_contain_text('월요일 00:00')
+            expect(self.page.locator('#report-rule')).to_contain_text('일요일')
+            expect(self.page.locator('#report-message')).not_to_contain_text('일요일')
+            expect(self.page.locator('#report-generate')).to_be_disabled()
+            expect(self.page.locator('#report-site-wrap')).to_be_hidden();expect(self.page.locator('#report-employee-wrap')).to_be_hidden()
+            for kind,content,field in [('EMPLOYEE_COACHING','강점·보완점','employee'),('TEAM_GUIDE','거절·보류 응대','site')]:
+                self.page.locator('#report-type').select_option(kind)
+                expect(self.page.locator('#report-contents')).to_contain_text(content)
+                expect(self.page.locator('#report-rule')).to_contain_text('최근 30일')
+                expect(self.page.locator('#report-description')).not_to_contain_text('일요일')
+                expect(self.page.locator('#report-message')).not_to_contain_text('일요일')
+                expect(self.page.locator('#report-'+field+'-wrap')).to_be_visible()
+                expect(self.page.locator('#report-'+('site' if field=='employee' else 'employee')+'-wrap')).to_be_hidden()
+            self.page.locator('#report-type').select_option('WEEKLY_BRIEFING')
+            expect(self.page.locator('#report-rule')).to_contain_text('일요일')
+            self.page.set_viewport_size({'width':390,'height':844})
+            self.assertEqual(self.page.evaluate('Math.max(0,document.documentElement.scrollWidth-innerWidth)'),0)
+            self.page.screenshot(path=str(self.evidence/'p11-report-description-mobile.png'),full_page=True)
+            self.assertEqual(self.posts,[]);self.assertEqual(self.db(lambda:AIRequest.objects.count()),0)
+
+    def test_unselected_report_targets_keep_description_and_do_not_query_invalid_scope(self):
+        invalid=[]
+        self.context.on('request',lambda r:invalid.append(r.url) if '/sites//' in r.url or '/employees//' in r.url else None)
+        self.page.locator('#report-type').select_option('EMPLOYEE_COACHING')
+        expect(self.page.locator('#report-employee')).to_have_value('')
+        expect(self.page.locator('#report-generate')).to_be_disabled()
+        expect(self.page.locator('#report-description')).to_be_visible()
+        expect(self.page.locator('#report-history')).to_contain_text('직원을 선택')
+        self.page.locator('#report-employee').select_option(str(self.employee.pk));expect(self.page.locator('#report-generate')).to_be_enabled()
+        self.page.locator('#report-employee').select_option('');expect(self.page.locator('#report-generate')).to_be_disabled()
+        self.page.locator('#report-type').select_option('TEAM_GUIDE')
+        expect(self.page.locator('#report-site')).to_have_value(str(self.site.pk))
+        self.page.locator('#report-site').select_option('')
+        expect(self.page.locator('#report-generate')).to_be_disabled();expect(self.page.locator('#report-description')).to_be_visible()
+        expect(self.page.locator('#report-history')).to_contain_text('현장을 선택')
+        expect(self.page.locator('#knowledge-panel')).to_be_hidden()
+        self.page.locator('#report-refresh').click();expect(self.page.locator('#report-history')).to_contain_text('현장을 선택')
+        self.page.locator('#report-site').select_option(str(self.site.pk));expect(self.page.locator('#report-generate')).to_be_enabled()
+        self.assertEqual(invalid,[]);self.assertEqual(self.posts,[])
+
+    def test_global_service_status_keeps_each_report_description_visible(self):
+        state={'message':'AI 설정 또는 공급자 연결이 준비되지 않았습니다.','reason':'AI_NOT_CONFIGURED'}
+        def availability(route):
+            response=route.fetch();data=response.json()
+            data.update(generation_available=False,message=state['message'],reason=state['reason'],server_limit={'remaining_count':7,'daily_limit':500})
+            route.fulfill(response=response,json=data)
+        self.page.route('**/api/ai/availability',availability)
+        for message,reason in [('AI 설정 또는 공급자 연결이 준비되지 않았습니다.','AI_NOT_CONFIGURED'),('이미 접수된 AI 작업이 있습니다.','AI_BUSY')]:
+            state.update(message=message,reason=reason)
+            self.page.locator('#report-refresh').click()
+            expect(self.page.locator('#report-message')).to_contain_text(message)
+            for kind in ['WEEKLY_BRIEFING','EMPLOYEE_COACHING','TEAM_GUIDE']:
+                self.page.locator('#report-type').select_option(kind)
+                expect(self.page.locator('#report-description')).to_be_visible();expect(self.page.locator('#report-generate')).to_be_disabled()
+                expect(self.page.locator('#report-message')).to_contain_text('서버 공용 남은 7회 / 500회')
+                expect(self.page.locator('#report-message')).not_to_contain_text('일요일')
+                self.assertNotIn('공용',self.page.locator('#report-description').inner_text())
+        self.page.set_viewport_size({'width':1440,'height':960})
+        self.page.screenshot(path=str(self.evidence/'p11-report-description-desktop.png'),full_page=True)
+        self.assertEqual(self.posts,[])
     def test_guide_review_publish_employee_read_only_and_mobile(self):
         self.guide();expect(self.page.locator('#guide-publish')).to_be_disabled();self.assertFalse(self.db(lambda:GuidePublication.objects.exists()))
         self.page.screenshot(path=str(self.evidence/'p11-guide-desktop.png'),full_page=True)

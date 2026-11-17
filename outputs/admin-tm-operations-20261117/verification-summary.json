@@ -1,0 +1,28 @@
+{
+  "date_kst": "2026-11-17",
+  "git_head": "532ea8a",
+  "run_id": "20261117T024600218077Z-7e4d6a07771f437ebc604bbe3acc5328",
+  "source_digest": "5630375af0c23eb55fe87138629efdbd5365adb016e0cbc33e36758b8adf921e",
+  "source_unchanged_during_run": true,
+  "server_browser": {
+    "passed": 138,
+    "failed": 0
+  },
+  "javascript": {
+    "command": "node --test --test-reporter=dot tests/*.test.mjs",
+    "passed": 50,
+    "failed": 0
+  },
+  "system_check_run_id": "20261117T024739689343Z-427cd44b0ebe4b728b88772fb206b7cb",
+  "checks": {
+    "system_check": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "migration_drift": {
+      "exit_code": 0,
+      "status": "passed"
+    }
+  },
+  "environment": "isolated local PostgreSQL and Chromium; synthetic fixtures only"
+}

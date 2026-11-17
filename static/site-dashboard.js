@@ -1,4 +1,5 @@
 import {api,option} from './api.js';
+import {listenAdminUpdates} from './admin-updates.js';
 import {renderDashboard,showDashboardSetupError} from './dashboard.js';
 const select=document.querySelector('#default-site'),button=document.querySelector('#set-default'),message=document.querySelector('#site-message');
 let version,defaultSite='';
@@ -17,3 +18,5 @@ async function load(){
 select.onchange=refresh;document.querySelector('#dashboard-refresh').onclick=refresh;
 button.onclick=async()=>{button.disabled=true;const site=select.value;try{const data=await api('/api/settings/default-site',{site_id:site,expected_version:version},'PATCH');version=data.settings_version;message.textContent='기본 현장을 설정했습니다. 다음 화면부터 적용됩니다.';}catch(error){message.textContent=error.message;if(error.code==='VERSION_CONFLICT')await load();}finally{button.disabled=!select.options.length;}};
 load().catch(error=>{showDashboardSetupError(error);button.disabled=true;});
+
+listenAdminUpdates(refresh);
