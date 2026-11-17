@@ -12,6 +12,7 @@ from apps.consultations.activities import record_activity
 from apps.consultations.models import ConsultationRevision, CustomerActivity, PerformanceTracking
 from apps.customers.models import Customer
 from apps.customers.queries import KST
+from apps.assignments.services import change_assignee
 from scripts.verification_evidence import artifact_path
 from tests import browser_customer_metadata as metadata
 from tests.test_p4 import Fixtures
@@ -43,6 +44,20 @@ class EmployeePerformanceBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.a,self.b,self.foreign,self.outside,self.today=self.db(create)
 
     def today_row(self):return self.page.locator(f'#performance-rows tr[data-date="{self.today.isoformat()}"]')
+
+    def test_monthly_prospect_removed_after_recall_without_changing_calls_visits_or_daily_results(self):
+        self.seed();self.login(self.employee);page=self.page
+        expect(self.today_row().locator('td')).to_have_text(['2','1','0'])
+        expect(page.locator('[data-call-result="INTERESTED"]')).to_have_text('0명')  # Seed has notes-only snapshots.
+        def recall_customer():
+            self.a.refresh_from_db();change_assignee(self.admin,self.a.pk,self.assignee_body(self.a,None))
+        self.db(recall_customer);page.locator('#dashboard-refresh').click()
+        expect(self.today_row().locator('td')).to_have_text(['2','0','0'])
+        expect(page.locator('#today-call-attempts')).to_have_text('2콜');expect(page.locator('#today-call-connected')).to_have_text('1콜')
+        yesterday=self.today-timedelta(days=1)
+        expect(page.locator(f'#performance-rows tr[data-date="{yesterday}"] td').last).to_have_text('1')
+        page.reload();expect(self.today_row().locator('td')).to_have_text(['2','0','0'])
+        self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
     def test_missing_performance_relation_error_and_restored_schema_retry(self):
         self.seed();self.login(self.employee);page=self.page

@@ -15,10 +15,10 @@
 | 오늘 통화 시도 | `CustomerActivity(kind=CALL).occurred_at`의 한국 날짜가 오늘인 기록 수. 같은 고객의 별도 발신은 각각 1콜 |
 | 오늘 연결된 통화 | 위 기록 중 `connection=CONNECTED`인 기록 수. `NOT_CONNECTED`(부재·미응답 포함)·`UNKNOWN`은 제외 |
 | 월간 콜 수 | 같은 발신 기록을 한국 날짜별로 집계. 오늘 행과 상단은 같은 응답·읽기 스냅샷의 동일한 기록을 사용 |
-| 가망고객 수 | `consultation_saves()`의 직접 저장·실제 적용한 AI 저장 중 `after_values.call_result=INTERESTED`인 기록을 실제 `actor`와 `saved_at` 한국 날짜별 고유 고객으로 집계. 이름·연락처·관리자 비고만 정정, 무변경·업로드·기초/시스템 기록은 제외 |
+| 가망고객 수 | `consultation_saves()`의 직접 저장·실제 적용한 AI 저장 중 `after_values.call_result=INTERESTED`인 기록을 실제 `actor`와 `saved_at` 한국 날짜별 고유 고객으로 집계. 해당 기록의 배정이 수동·자동 회수되면 제외. 이름·연락처·관리자 비고만 정정, 무변경·업로드·기초/시스템 기록은 제외 |
 | 방문고객 수 | `CustomerActivity(kind=VISIT).visited_on`의 실제 방문일별 고유 고객 수. 기록을 입력한 직원에게 귀속. 같은 고객의 같은 날짜 방문 기록은 여러 건이어도 1명 |
 
-모든 지표는 선택 현장·로그인 직원 본인만 조회한다. 직원 ID를 요청 인수로 받지 않는다. 고객의 현재 담당자나 최종 상태로 과거 실적을 재귀속하지 않는다. 회수·재배정·휴지통 이동 후에도 원래 기록 직원의 실적을 유지한다. 기존 영구 삭제에서는 고객/현장과 연관된 기록을 함께 삭제하므로 영구 삭제한 고객의 실적은 남기지 않는다.
+모든 지표는 선택 현장·로그인 직원 본인만 조회한다. 직원 ID를 요청 인수로 받지 않는다. 고객의 현재 담당자나 최종 상태로 과거 실적을 재귀속하지 않는다. 통화·실제 방문은 회수·재배정·휴지통 이동 후에도 원래 기록 직원의 실적을 유지한다. 월간 가망은 2026-11-18 추가 요청에 따라 기록에 연결된 배정의 수동·자동 회수를 반영해 원래 날짜에서도 제외한다. 기존 영구 삭제에서는 고객/현장과 연관된 기록을 함께 삭제하므로 영구 삭제한 고객의 실적은 남기지 않는다.
 
 ## 기록 방법과 중복 방지
 
@@ -106,6 +106,22 @@ DB 조회 실패 로그에는 뷰 이름·SQLSTATE만 기록하며 SQL·고객 �
 | SQLSTATE·503 재현·migration 복구·조회 상태 구분 | `tests/test_employee_performance.py`, `tests/browser_employee_performance.py` |
 | 최신 판정과 검증 근거 | `docs/TODAY_TM.md`, `docs/EMPLOYEE_PERFORMANCE.md` |
 
+## 월간 가망의 회수 제외 (2026-11-18)
+
+가망 기록의 `ConsultationRevision.assignment_id`가 가리키는 배정이 조회 시점까지 `MANUAL_RECALL`(수동 회수) 또는 `AUTO_RECALL`(스케줄러 자동 회수)로 종료됐으면 월간 가망 집계에서 제외한다. 회수일이 기록일보다 늦거나 다른 달이어도 기록일의 집계에서 빠진다. 원본 상담·배정 이력에는 수정·삭제를 하지 않는다.
+
+오늘 배정 회수·미완료 TM 회수·담당자 선택 해제는 기존 `end_locked()`를 통해 `MANUAL_RECALL`을 기록한다. 스케줄러는 `AUTO_RECALL`을 기록한다. 스케줄러의 미진행 고객 대상 선정 규칙은 바꾸지 않는다. 단순 담당자 변경(`REASSIGNED`), 비활성 계정 처리(`USER_DISABLED`), 휴지통 이동(`SOFT_DELETED`)을 임의로 두 회수 사유에 합치지 않는다.
+
+같은 고객이 A나 B에게 새로 배정돼도 옛 기록은 옛 배정에 연결돼 있으므로 되살아나거나 새 직원에게 이전되지 않는다. 새 배정에서 가망으로 다시 저장한 새 상담 이력은 새 배정과 실제 저장 직원 기준으로 센다. 같은 고객의 같은 날짜에 유효한 기록이 여러 건 있어도 1명이다.
+
+이전 기록에 배정 연결이 없으면 회수 여부를 확인할 근거가 없다. 현재 담당자·고객의 미배정 상태·이후 새 배정으로 추정하지 않고 기존 가망 조건을 만족하면 유지한다. 따라서 이런 이전 자료는 회수 후에도 남을 수 있다. 결과 스냅샷마저 부족한 경우에는 기존대로 `집계 자료 없음`이다. 회수로 집계 대상에서 확정 제외된 배정의 불완전한 스냅샷은 남은 가망 집계의 자료 부족 사유로 사용하지 않는다.
+
+통화 시도·연결·실제 방문과 별도의 일별 통화결과 표는 이번 회수 제외 규칙을 적용하지 않는다. 이번 보완의 변경 파일은 `apps/operations/employee_performance.py`, `templates/accounts/home.html`, `tests/test_employee_performance.py`, `tests/browser_employee_performance.py`와 이 문서·일별 통계 문서다. 새 migration은 없다.
+
 2026-11-18 최종 검증: 관련 서버·브라우저 **57/57 통과**, 실행 중 소스 변경 없고 현재 소스 해시와 일치한다. 실행 ID `20261117T154610498168Z-42066ba0e950499ab6ca9944c4f3dc20`. 최종 스크롤 안내 간격 조정 전의 광범위 회귀 검사도 **138/138 통과**했다. JavaScript **50/50**, Django 설정·migration drift 검사도 통과했다. 1440·390·320px의 버튼 높이·글자 크기·여백·그리드 간격과 키보드 저장/새로고침을 확인했다. 중단된 자동 승인 검토의 사용량 한도 문제는 재개 후 해결됐으며, 차단됐던 명령을 통과로 기록하지 않았다.
 
 [최종 검증 요약](../outputs/tm-performance-fixes-20261118/verification-summary.json) · [최종 상세 결과](../outputs/tm-performance-fixes-20261118/final-server-browser-results.json) · [브라우저 503·SQLSTATE 재현](../outputs/tm-performance-fixes-20261118/performance-read-reproduction.json) · [데스크톱 저장 버튼](../outputs/tm-performance-fixes-20261118/tm-cleared-save-buttons-1440.png) · [320px 저장 버튼](../outputs/tm-performance-fixes-20261118/tm-cleared-save-buttons-320.png).
+
+회수 제외 보완 최종 검증: 서버·브라우저 **119개 모두 통과**. 실행 ID 20261117T214421517080Z-674f83f54a27469380cc4cbc9af886b0; 실행 중 소스가 바뀌지 않았고 최종 작업 트리의 소스 해시와 일치한다. Django 설정·migration drift 검사도 통과했다.
+
+[월간 가망 회수 제외 검증 요약](../outputs/prospect-recall-20261118/verification-summary.json) · [상세 결과](../outputs/prospect-recall-20261118/server-browser-results.json).

@@ -1,0 +1,10 @@
+{
+  "run_id": "20261117T162116201768Z-069f376f8a864c19b52a867b7c939ccf",
+  "tests_run": 158,
+  "successful": true,
+  "source_unchanged_during_run": true,
+  "source_digest": "f42586b0463c31fd808864aba3040e8f7a67100402bacf16f160166cddb2a3f1",
+  "phase": "grid/date/planned-visit/daily-results before subsequent monthly prospect recall exclusion",
+  "javascript_tests_passed": 50,
+  "followup_current_run": "20261117T214421517080Z-674f83f54a27469380cc4cbc9af886b0"
+}

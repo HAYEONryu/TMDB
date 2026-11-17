@@ -1,0 +1,49 @@
+{
+  "date_kst": "2026-11-18",
+  "base_commit": "8b2f80a",
+  "run_id": "20261117T214421517080Z-674f83f54a27469380cc4cbc9af886b0",
+  "tests_run": 119,
+  "successful": true,
+  "source_unchanged_during_run": true,
+  "source_digest": "b92a282f494086665ab9b9bb31060f5b47316cef406c3dbe7d5a538178267ef5",
+  "matches_current_source": true,
+  "system_checks": {
+    "system_check": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "migration_drift": {
+      "exit_code": 0,
+      "status": "passed"
+    }
+  },
+  "rule": {
+    "metric": "monthly prospect_count",
+    "evidence": "ConsultationRevision.assignment end_reason and ended_at",
+    "excluded_reasons": [
+      "MANUAL_RECALL",
+      "AUTO_RECALL"
+    ],
+    "no_assignment": "retain eligible historical credit; never infer from current owner",
+    "not_changed": [
+      "original consultation and assignment records",
+      "call attempts and connections",
+      "actual visits",
+      "daily call-result statistics"
+    ]
+  },
+  "verified": [
+    "manual recall 1 to 0",
+    "later-day recall changes original day",
+    "reassignment to same/other employee never resurrects prior credit",
+    "new assignment requires new prospect record",
+    "two prospects minus one recalled leaves one",
+    "automatic scheduler end reason",
+    "unlinked legacy records remain",
+    "other end reasons not merged"
+  ],
+  "limitations": [
+    "production data and deployment not used",
+    "cannot infer recall for legacy revisions without assignment links"
+  ]
+}

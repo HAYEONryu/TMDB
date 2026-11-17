@@ -9,15 +9,18 @@ from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.recorder import MigrationRecorder
 from django.test import Client, TransactionTestCase, override_settings
 from apps.accounts.models import User
-from apps.assignments.services import change_assignee, recall
+from apps.assignments.services import change_assignee, recall, end_locked
 from apps.consultations.activities import record_activity
 from apps.consultations.models import CustomerActivity, ConsultationRevision, PerformanceTracking
 from apps.customers.models import Customer
 from apps.customers.queries import KST
 from apps.customers.services import update_row, trash_operation
 from apps.operations.employee_performance import performance
+from apps.assignments.models import Assignment
+from apps.operations.scheduler import run_jobs
 from tests.helpers import TEST_HASHERS, login
 from tests.test_p4 import Fixtures
+from apps.common.transactions import business_write
 
 
 @override_settings(PASSWORD_HASHERS=TEST_HASHERS)
@@ -54,6 +57,87 @@ class EmployeePerformanceTests(Fixtures, TransactionTestCase):
         return ConsultationRevision.objects.create(customer=customer,assignment=customer.current_assignment,actor=actor or self.employee,
             saved_at=at or self.now,customer_version=ConsultationRevision.objects.filter(customer=customer).count()+1,
             changed_fields=fields or ['notes'],after_values={'call_result':result} if snapshot else {},source=source)
+
+    def save_result(self,customer,value,actor=None):
+        customer.refresh_from_db()
+        result=update_row(actor or self.employee,{**self.mutation(customer),'changes':{'call_result':value}})
+        self.assertTrue(result['ok']);customer.refresh_from_db();return result
+
+    def recall_one(self,customer):
+        customer.refresh_from_db();assignment=customer.current_assignment
+        change_assignee(self.admin,customer.pk,self.assignee_body(customer,None))
+        customer.refresh_from_db();assignment.refresh_from_db()
+        self.assertEqual(assignment.end_reason,Assignment.EndReason.MANUAL_RECALL)
+        return assignment
+
+    def test_recalled_prospect_assignment_excluded_but_call_and_visit_evidence_kept(self):
+        self.save_result(self.a,'INTERESTED');self.record(connection='CONNECTED');self.record(connection='NOT_CONNECTED');self.record(kind='VISIT')
+        before=self.report();self.assertEqual(self.day(before,'2026-11-17')['prospect_count'],1)
+        revisions=ConsultationRevision.objects.count()
+        self.recall_one(self.a)
+        after=self.report();self.assertEqual(self.day(after,'2026-11-17')['prospect_count'],0)
+        self.assertEqual((after['today']['attempts'],after['today']['connected']),(2,1))
+        self.assertEqual(self.day(after,'2026-11-17')['visit_count'],1)
+        self.assertEqual(ConsultationRevision.objects.count(),revisions)
+        daily=self.client.get('/api/dashboard/call-results',{'date':'2026-11-17','site_id':str(self.site.pk)}).json()
+        self.assertEqual(next(r['count'] for r in daily['items'] if r['code']=='INTERESTED'),1)
+
+    def test_later_recall_rewrites_original_prospect_day_and_reassignment_cannot_resurrect_it(self):
+        self.save_result(self.a,'INTERESTED');self.record(connection='CONNECTED')
+        self.now+=timedelta(days=1);self.client=login(self.employee)
+        self.recall_one(self.a)
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],0)
+        self.assertEqual(self.day(self.report(),'2026-11-17')['call_count'],1)
+        for recipient in [self.employee,self.other]:
+            self.a.refresh_from_db();change_assignee(self.admin,self.a.pk,self.assignee_body(self.a,recipient));self.a.refresh_from_db()
+            self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],0)
+            recipient_report=self.report(client=login(recipient))
+            self.assertEqual(self.day(recipient_report,'2026-11-18')['prospect_count'],0)
+            self.save_result(self.a,None,recipient);self.save_result(self.a,'INTERESTED',recipient)
+            self.assertEqual(self.day(self.report(client=login(recipient)),'2026-11-18')['prospect_count'],1)
+            self.recall_one(self.a)
+            self.assertEqual(self.day(self.report(client=login(recipient)),'2026-11-18')['prospect_count'],0)
+
+    def test_two_same_day_prospects_only_recalled_assignment_removed(self):
+        self.save_result(self.a,'INTERESTED');self.save_result(self.b,'INTERESTED')
+        self.record(connection='CONNECTED');self.record(self.b,connection='NOT_CONNECTED')
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],2)
+        self.recall_one(self.a)
+        data=self.report();self.assertEqual(self.day(data,'2026-11-17')['prospect_count'],1)
+        self.assertEqual((data['today']['attempts'],data['today']['connected']),(2,1))
+        self.b.refresh_from_db();self.assertIsNotNone(self.b.current_assignment_id)
+
+    def test_automatic_recall_end_reason_excludes_legacy_prospect_record(self):
+        # A legacy revision may exist without the current first_activity marker.
+        # Do not change the scheduler's existing unprogressed-only eligibility.
+        self.revision();self.record(connection='CONNECTED')
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],1)
+        assignment=self.a.current_assignment
+        self.now=self.now.replace(hour=23,minute=1);self.client=login(self.employee)
+        run_jobs(now=self.now)
+        assignment.refresh_from_db();self.assertEqual(assignment.end_reason,Assignment.EndReason.AUTO_RECALL)
+        data=self.report();self.assertEqual(self.day(data,'2026-11-17')['prospect_count'],0)
+        self.assertEqual(data['today']['attempts'],1)
+
+    def test_unlinked_legacy_assignment_is_not_inferred_from_current_owner(self):
+        revision=self.revision();revision.assignment=None;revision.save(update_fields=['assignment'])
+        self.recall_one(self.a)
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],1)
+        self.a.refresh_from_db();change_assignee(self.admin,self.a.pk,self.assignee_body(self.a,self.other))
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],1)
+        self.assertEqual(self.day(self.report(client=login(self.other)),'2026-11-17')['prospect_count'],0)
+
+    def test_other_assignment_end_reasons_are_not_merged_with_recalls(self):
+        for i,reason in enumerate([Assignment.EndReason.REASSIGNED,Assignment.EndReason.USER_DISABLED,Assignment.EndReason.SOFT_DELETED]):
+            row=self.customers(offset=100+i)[0];assignment=self.assign(row);self.revision(row)
+            with business_write():end_locked([row],[assignment],self.admin,reason,self.now)
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],3)
+
+    def test_recalled_incomplete_snapshot_no_longer_makes_eligible_prospect_day_unknown(self):
+        self.revision(snapshot=False)
+        self.assertIsNone(self.day(self.report(),'2026-11-17')['prospect_count'])
+        self.recall_one(self.a)
+        self.assertEqual(self.day(self.report(),'2026-11-17')['prospect_count'],0)
 
     def test_two_calls_one_connected_retry_unknown_and_today_row_match(self):
         body=self.body_for(connection='CONNECTED');result,status=record_activity(self.employee,self.a.pk,body)

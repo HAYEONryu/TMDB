@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET
 from apps.accounts.access import AccessError, actor_identity, require_role
 from apps.accounts.models import User
+from apps.assignments.models import Assignment
 from apps.common.http import api_errors, identifier
 from apps.consultations.models import CustomerActivity, PerformanceTracking
 from apps.consultations.queries import consultation_saves, audit_started_at
@@ -27,19 +28,23 @@ def performance(person, site_id, month, now):
     # The original revision table has always audited manual/AI-applied saves.
     audit_start = audit_started_at()
     saves = consultation_saves().filter(actor=person, customer__site_id=site_id, saved_at__lte=now)
+    # The receipt's assignment is the only recall evidence. Later assignments or
+    # current ownership must not resurrect/transfer recalled prospect credit.
+    prospect_saves = saves.exclude(assignment__ended_at__lte=now,
+        assignment__end_reason__in=[Assignment.EndReason.MANUAL_RECALL,Assignment.EndReason.AUTO_RECALL])
     # An isolated backdated revision does not prove coverage of earlier days.
     prospect_start = audit_start
     calls = CustomerActivity.objects.filter(actor=person, site_id=site_id, kind='CALL', occurred_at__lte=now)
     call_days = {r['day']: r for r in calls.filter(occurred_at__gte=start, occurred_at__lt=end)
         .annotate(day=TruncDate('occurred_at', tzinfo=KST)).values('day').annotate(count=Count('pk'))}
-    prospects = {r['day']: r['count'] for r in saves.filter(saved_at__gte=start, saved_at__lt=end,
+    prospects = {r['day']: r['count'] for r in prospect_saves.filter(saved_at__gte=start, saved_at__lt=end,
         after_values__call_result=Customer.CallResult.INTERESTED)
         .annotate(day=TruncDate('saved_at', tzinfo=KST)).values('day').annotate(count=Count('customer_id', distinct=True))}
     visits = {r['visited_on']: r['count'] for r in CustomerActivity.objects.filter(actor=person, site_id=site_id,
         kind='VISIT', visited_on__gte=month, visited_on__lt=end.date(), visited_on__lte=today)
         .values('visited_on').annotate(count=Count('customer_id', distinct=True))}
     # Missing result snapshots are unknown evidence, never a definite zero.
-    incomplete = set(saves.filter(saved_at__gte=start, saved_at__lt=end).exclude(after_values__has_key='call_result')
+    incomplete = set(prospect_saves.filter(saved_at__gte=start, saved_at__lt=end).exclude(after_values__has_key='call_result')
         .annotate(day=TruncDate('saved_at', tzinfo=KST)).values_list('day', flat=True))
     def status(day, beginning):
         if day > today:

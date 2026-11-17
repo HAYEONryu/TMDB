@@ -1,0 +1,12 @@
+{
+  "checks": {
+    "system_check": {
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "migration_drift": {
+      "exit_code": 0,
+      "status": "passed"
+    }
+  }
+}
