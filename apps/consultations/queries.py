@@ -1,7 +1,12 @@
 """Consultation activity excludes identity and private-note corrections alone."""
 from .models import ConsultationRevision
+from django.db.migrations.recorder import MigrationRecorder
 
 NON_CONSULTATION_FIELDS = ['customer_name', 'phone_normalized', 'admin_notes']
+
+
+def audit_started_at():
+    return MigrationRecorder.Migration.objects.filter(app='consultations',name='0001_initial').values_list('applied',flat=True).first()
 
 
 def consultation_saves(query=None):

@@ -42,7 +42,13 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.login(self.employee);self.page.goto(self.live_server_url+f'/app/employee/today?site_id={self.site.pk}')
         expect(self.page.locator('#page-info')).to_contain_text('검색 1명')
 
-    def status(self):return self.page.locator('#employee-grid .tabulator-row [tabulator-field=tm_status]')
+    def status(self):return self.page.locator('#employee-grid .tabulator-row [tabulator-field=last_tm_date]')
+
+    def assert_state(self,label):
+        response=self.context.request.get(self.live_server_url+f'/api/customers?view=today&site_id={self.site.pk}')
+        self.assertEqual(response.status,200)
+        row=next(r for r in response.json()['data'] if r['id']==str(self.row.pk))
+        self.assertEqual(row['tm_status'],'COMPLETED' if label=='완료' else 'PENDING')
 
     def edit(self,field,value):
         cell=self.page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]')
@@ -57,11 +63,11 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
     def test_label_readonly_first_column_confirmed_save_and_responsive(self):
         self.seed();page=self.page
         expect(page.locator('h1')).to_have_text('오늘의 TM');expect(page).to_have_title('오늘의 TM · 두드림 TM')
-        expect(page.locator('#employee-grid .tabulator-col-title').first).to_have_text('TM 상태')
-        expect(self.status()).to_have_text('-');self.status().dblclick();expect(self.status().locator('input,select,textarea')).to_have_count(0)
-        self.edit('call_result','NO_ANSWER');expect(self.status()).to_have_text('-')
-        self.save();expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        page.reload();expect(self.status()).to_have_text('완료')
+        expect(page.locator('#employee-grid .tabulator-col-title').first).to_have_text('최종 TM 날짜')
+        self.assert_state('-');self.status().dblclick();expect(self.status().locator('input,select,textarea')).to_have_count(0)
+        self.edit('call_result','NO_ANSWER');self.assert_state('-')
+        self.save();self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        page.reload();self.assert_state('완료')
         for width in [1440,390,320]:
             page.set_viewport_size({'width':width,'height':960})
             page.locator('#employee-grid').evaluate('grid=>grid.querySelector(".tabulator-tableholder").scrollLeft=0')
@@ -69,17 +75,18 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
             box=self.status().bounding_box();self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],width+1)
             page.screenshot(path=str(artifact_path(f'today-tm-{width}.png')),full_page=True)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
-        expect(page.locator('#employee-grid .tabulator-col[tabulator-field=tm_status]')).to_have_count(0)
+        expect(page.locator('#employee-grid .tabulator-col[tabulator-field=last_tm_date]')).to_have_count(0)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
     def test_notes_and_inherited_result_stay_pending_then_callback_completion_is_confirmed(self):
         self.seed(inherited=True);page=self.page
-        self.edit('memo','가상 비고만 정정');self.save();expect(self.status()).to_have_text('-')
-        self.edit('call_result','INTERESTED');self.save();expect(self.status()).to_have_text('완료')
+        self.edit('memo','가상 비고만 정정');self.save();self.assert_state('-')
+        self.edit('call_result','INTERESTED');self.save();self.assert_state('완료')
         self.db(lambda:Callback.objects.create(customer=self.row,due_at=timezone.now(),created_by=self.employee,updated_by=self.employee))
-        page.locator('#reload-rows').click();expect(self.status()).to_have_text('-')
+        page.locator('#reload-rows').click();self.assert_state('-')
         check=page.get_by_role('checkbox',name='재콜 완료',exact=True);check.scroll_into_view_if_needed();check.click()
-        expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        expect(page.get_by_role('checkbox',name='재콜 완료',exact=True)).to_have_count(0)
+        self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
         self.assertEqual(self.errors,[])
 
     def test_auto_save_failure_never_marks_done_retry_keeps_same_row(self):
@@ -88,19 +95,19 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.route('**/api/employee/batch-update',fail)
         self.edit('call_result','NO_ANSWER');page.clock.fast_forward(91000)
         expect(page.locator('#pending-panel')).to_contain_text('결과를 확인하지 못했습니다')
-        expect(self.status()).to_have_text('-')
+        self.assert_state('-')
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.filter(customer=self.row).count()),0)
         page.unroute('**/api/employee/batch-update',fail);self.save()
-        expect(self.status()).to_have_text('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
         self.assertEqual(self.errors,[])
 
     def test_result_clear_then_reenter_and_save_buttons_keyboard_responsive(self):
         self.seed();page=self.page
-        self.edit('call_result','NO_ANSWER');self.save();expect(self.status()).to_have_text('완료')
-        self.edit('call_result','');expect(self.status()).to_have_text('완료')
+        self.edit('call_result','NO_ANSWER');self.save();self.assert_state('완료')
+        self.edit('call_result','');self.assert_state('완료')
         page.locator('#save-now').focus();page.keyboard.press('Enter')
-        expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨');expect(self.status()).to_have_text('-')
-        page.reload();expect(self.status()).to_have_text('-')
+        expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨');self.assert_state('-')
+        page.reload();self.assert_state('-')
         self.assertIsNone(self.db(lambda:Customer.objects.get(pk=self.row.pk).call_result))
         for width in [1440,390,320]:
             page.set_viewport_size({'width':width,'height':960})
@@ -119,26 +126,26 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
             page.screenshot(path=str(artifact_path(f'tm-cleared-save-buttons-{width}.png')),full_page=True)
         page.locator('#reload-rows').focus()
         with page.expect_response(lambda response:'/api/customers?' in response.url):page.keyboard.press('Enter')
-        expect(page.locator('#employee-grid')).to_have_attribute('aria-busy','false');expect(self.status()).to_have_text('-')
-        self.edit('call_result','INTERESTED');self.save();expect(self.status()).to_have_text('완료')
-        page.reload();expect(self.status()).to_have_text('완료')
+        expect(page.locator('#employee-grid')).to_have_attribute('aria-busy','false');self.assert_state('-')
+        self.edit('call_result','INTERESTED');self.save();self.assert_state('완료')
+        page.reload();self.assert_state('완료')
         self.assertEqual(self.errors,[])
 
     def test_failed_clear_displays_confirmed_completion_and_retry_reopens(self):
         self.page.clock.install();self.seed();page=self.page
-        self.edit('call_result','NO_ANSWER');self.save();expect(self.status()).to_have_text('완료')
+        self.edit('call_result','NO_ANSWER');self.save();self.assert_state('완료')
         def fail(route):route.fulfill(status=503,json={'error':{'message':'가상 저장 실패'}})
         page.route('**/api/employee/batch-update',fail)
         self.edit('call_result','');page.clock.fast_forward(91000)
         expect(page.locator('#pending-panel')).to_contain_text('결과를 확인하지 못했습니다')
-        expect(self.status()).to_have_text('완료')
+        self.assert_state('완료')
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.row.pk).call_result),'NO_ANSWER')
-        page.unroute('**/api/employee/batch-update',fail);self.save();expect(self.status()).to_have_text('-')
-        page.reload();expect(self.status()).to_have_text('-')
+        page.unroute('**/api/employee/batch-update',fail);self.save();self.assert_state('-')
+        page.reload();self.assert_state('-')
 
     def test_kst_midnight_automatically_refreshes_without_discarding_work(self):
         self.page.clock.install();self.seed();page=self.page
-        self.edit('call_result','NO_ANSWER');self.save();expect(self.status()).to_have_text('완료')
+        self.edit('call_result','NO_ANSWER');self.save();self.assert_state('완료')
         tomorrow=self.start+timedelta(days=1)
         phase={'next':False}
         def clocked(route):

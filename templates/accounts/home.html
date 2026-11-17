@@ -12,6 +12,14 @@
   </section>
   {% if user.role == 'EMPLOYEE' %}
   <section class="card card-body dashboard-section" aria-label="오늘 통화 실적"><dl class="today-call-metrics"><div><dt>오늘 통화 시도</dt><dd id="today-call-attempts">조회 중…</dd></div><div><dt>오늘 연결된 통화</dt><dd id="today-call-connected">조회 중…</dd></div></dl><p id="today-call-basis" class="small text-secondary">개별 발신 기록 기준 · 상담 저장 횟수와 다릅니다.</p></section>
+  <section id="daily-call-results" class="card card-body dashboard-section" aria-labelledby="daily-call-results-title">
+    <div class="section-heading flex-wrap"><h2 id="daily-call-results-title" class="h5">일별 통화결과</h2><label for="call-results-date">조회 날짜<input id="call-results-date" class="form-control" type="date" min="0001-01-01"></label></div>
+    <p id="call-results-status" role="status" aria-live="polite">일별 통화결과를 불러오고 있습니다…</p>
+    <button id="call-results-retry" class="btn btn-outline-secondary align-self-start" hidden>일별 결과 다시 조회</button>
+    <dl class="daily-result-metrics"><div><dt>부재</dt><dd data-call-result="NO_ANSWER">조회 중…</dd></div><div><dt>삭제요망</dt><dd data-call-result="DELETE_REQUEST">조회 중…</dd></div><div><dt>거절</dt><dd data-call-result="REJECTED">조회 중…</dd></div><div><dt>다음현장 연락</dt><dd data-call-result="NEXT_SITE">조회 중…</dd></div><div><dt>가망고객</dt><dd data-call-result="INTERESTED">조회 중…</dd></div></dl>
+    <p class="small text-secondary">통화 횟수가 아닌 결과별 고객 수입니다. 선택 현장에서 내가 해당 날짜에 마지막으로 저장한 통화결과로 고객마다 한 번만 집계합니다. 마지막 결과가 -이거나 위 다섯 항목 외의 결과이면 제외합니다. 다른 날의 변경과 담당자 재배정으로 과거 결과를 바꾸지 않습니다.</p>
+    <p id="call-results-coverage" class="small text-secondary"></p>
+  </section>
   {% include 'customers/activity-record.html' %}
   {% endif %}
   <div id="dashboard-summary" aria-label="주요 업무 현황" aria-live="polite"><p class="summary-loading">업무 현황을 불러오고 있습니다…</p></div>

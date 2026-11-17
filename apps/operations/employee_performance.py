@@ -3,7 +3,6 @@ import calendar
 import re
 from datetime import date, datetime, time, timedelta
 from django.db import connection, transaction
-from django.db.migrations.recorder import MigrationRecorder
 from django.db.models import Count, Q
 from django.db.models.functions import TruncDate
 from django.http import JsonResponse
@@ -13,7 +12,7 @@ from apps.accounts.access import AccessError, actor_identity, require_role
 from apps.accounts.models import User
 from apps.common.http import api_errors, identifier
 from apps.consultations.models import CustomerActivity, PerformanceTracking
-from apps.consultations.queries import consultation_saves
+from apps.consultations.queries import consultation_saves, audit_started_at
 from apps.customers.employee import optional_queue_identity
 from apps.customers.models import Customer
 from apps.customers.queries import KST
@@ -26,7 +25,7 @@ def performance(person, site_id, month, now):
     end = start + timedelta(days=calendar.monthrange(month.year, month.month)[1])
     tracking = PerformanceTracking.objects.filter(pk=1).values_list('started_at', flat=True).first()
     # The original revision table has always audited manual/AI-applied saves.
-    audit_start = MigrationRecorder.Migration.objects.filter(app='consultations', name='0001_initial').values_list('applied', flat=True).first()
+    audit_start = audit_started_at()
     saves = consultation_saves().filter(actor=person, customer__site_id=site_id, saved_at__lte=now)
     # An isolated backdated revision does not prove coverage of earlier days.
     prospect_start = audit_start

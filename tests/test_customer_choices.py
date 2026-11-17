@@ -33,7 +33,7 @@ class CustomerChoiceTests(Fixtures, TestCase):
             'contract_status':['청약','청약해지','계약해지','계약'],
             'route':['티엠','사이드','대표콜','개인관리','워킹','재방'],
             'housing_status':['무주택','1주택','다주택','생애최초'],
-            'call_result':['가망고객','삭제 요망','거절','다음현장 연락 요청','부재']}
+            'call_result':['가망고객','삭제 요망','거절','다음현장 연락 요청','부재','방문예정']}
         for field, labels in expected.items():
             self.assertEqual(list(customer_schema()[field].values()),['-',*labels])
             for actor in [self.admin,self.employee]:
@@ -95,4 +95,6 @@ class CustomerChoiceMigrationTests(Fixtures, TransactionTestCase):
             self.assertEqual((current.call_result,current.contract_status,current.route,current.housing_status,current.notes),('VISIT_BOOKED','NO_CONTRACT','기존 자유문자','전세','가상 상담 보존'))
             current.call_result='DELETE_REQUEST';current.contract_status='CONTRACT_CANCELLED';current.save()
             current.refresh_from_db();self.assertEqual(current.contract_status,'CONTRACT_CANCELLED')
-        finally:MigrationExecutor(connection).migrate(latest)
+        finally:
+            executor=MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())

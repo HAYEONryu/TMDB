@@ -12,6 +12,7 @@ from apps.consultations.views import history
 from apps.operations.dashboard import dashboard
 from apps.operations.employee_dashboard import customer_details as dashboard_customers
 from apps.operations.employee_performance import monthly as employee_performance
+from apps.operations.daily_call_results import daily as daily_call_results
 from apps.consultations.activities import activities
 from apps.customers import deletion_views
 from apps.ai_assistant import views as ai_views
@@ -46,6 +47,7 @@ urlpatterns = [
     path('api/sites/<uuid:site_id>/deletion-confirmation',deletion_views.confirm_site_view),
     path('api/dashboard',dashboard),
     path('api/dashboard/performance',employee_performance),
+    path('api/dashboard/call-results',daily_call_results),
     path('api/customers/<uuid:customer_id>/activities',activities),
     path('api/dashboard/customers',dashboard_customers),
     path('api/customers/<uuid:customer_id>/callback-complete',complete_view),

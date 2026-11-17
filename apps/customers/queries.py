@@ -85,7 +85,7 @@ def scoped(actor, params, now=None):
         current_ids = current_ids.order_by("pk").distinct("pk").values("pk")
         query = query.filter(current_assignment_id__in=current_ids)
     if actor.role != User.Role.ADMIN or view == "today":
-        query = with_tm_state(query, now, include_today=view == "today")
+        query = with_tm_state(query, now, include_today=view == "today", include_call_date=actor.role != User.Role.ADMIN)
     if view == "today":
         today = timezone.localdate(now, KST)
         start = datetime.combine(today, time.min, KST)
@@ -190,6 +190,7 @@ def iso(value):
 def serialize(customer, *, admin=False):
     return {**({"admin_notes": customer.admin_notes} if admin else {}),
             **({"tm_status": customer.tm_status} if hasattr(customer, "tm_status") else {}),
+            **({'last_tm_date':customer.last_tm_at.astimezone(KST).date().isoformat() if customer.last_tm_at else None} if hasattr(customer,'last_tm_at') else {}),
             "residence": customer.residence, "route": customer.route, "memo": customer.memo,
             "id": str(customer.pk), "site_id": str(customer.site_id), "site_name": customer.site.name,
             "customer_name": customer.customer_name, "phone_normalized": customer.phone_normalized,

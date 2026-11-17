@@ -609,6 +609,11 @@ body.workspace .workspace-main,body.workspace:has(#management) main.container,.a
 .context-copy strong{display:none;}
 .section-heading p{font-size:14px;margin-top:6px;}
 .list-actions{flex-wrap:wrap;}
+.daily-result-metrics{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:16px 0;}
+.daily-result-metrics>div{padding:14px;background:#f3f6fb;border-radius:10px;min-width:0;}
+.daily-result-metrics dt{font-size:14px;color:#526a8b;overflow-wrap:anywhere;}
+.daily-result-metrics dd{font-size:24px;font-weight:700;margin:8px 0 0;overflow-wrap:anywhere;}
+@media(max-width:767px){.daily-result-metrics{grid-template-columns:repeat(2,minmax(0,1fr));}}
 .query-controls{align-items:end;}
 .query-search{flex:1 1 300px;min-width:0;}
 .query-search label{min-width:0;flex:1;}

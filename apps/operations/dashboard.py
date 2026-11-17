@@ -11,6 +11,7 @@ from apps.callbacks.models import Callback
 from apps.common.http import api_errors,identifier
 from apps.customers.employee import optional_queue_identity
 from apps.customers.models import Customer
+from apps.customers.choices import CALL_RESULTS
 from apps.customers.queries import KST
 from apps.customers.cohorts import current_customers
 from apps.sites.models import Site,GlobalSettings
@@ -28,7 +29,7 @@ def employee_counts(person,site_id,start,end,now):
         'held_total':live.count(),'assigned_today_held':held.count(),'assigned_today_removed':history.values('customer_id').distinct().count()-held.count(),
         'unprogressed_total':live.filter(current_assignment__first_activity_at=None).count(),'unprogressed_today_held':held.filter(current_assignment__first_activity_at=None).count(),
         'current_assignment_today_held':live.filter(current_assignment__assigned_at__gte=start,current_assignment__assigned_at__lt=end).count(),
-        'call_results':[{'value':value,'label':'(빈 값)' if value is None else Customer.CallResult(value).label,'count':count} for value,count in results.items()],
+        'call_results':[{'value':value,'label':'(빈 값)' if value is None else CALL_RESULTS.get(value,Customer.CallResult(value).label),'count':count} for value,count in results.items()],
         'callbacks_due_today_or_past':callbacks.count(),'callbacks_overdue':live.filter(Exists(Callback.objects.filter(customer_id=OuterRef('pk'),status='PENDING',due_at__lt=now))).count()}
 
 

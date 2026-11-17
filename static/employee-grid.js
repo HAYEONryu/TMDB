@@ -19,6 +19,7 @@ const $=selector=>document.querySelector(selector),root=$('#employee'),userId=ro
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']);
+const todayWidths={customer_name:140,phone_normalized:154,call_result:166,residence:200,notes:340,memo:300,callback_due_at:210,visit_at:174,contract_status:120};
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const display=(field,value)=>dates.has(field)?(value?(field==='visit_at'?localDate(value).replace('T',' '):localDate(value).slice(0,10)):'-'):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
@@ -36,7 +37,14 @@ async function request(url,body){
 }
 const queue=new EmployeeQueue(userId,request);
 const environmentProblem=employeeSupportError();
-const recorder=new ActivityRecorder({userId});
+const recorder=new ActivityRecorder({userId,changed:()=>refreshActivityDate().catch(()=>notice('기록은 저장되었습니다. 최종 TM 날짜는 목록을 다시 조회해 확인하세요.'))});
+async function refreshActivityDate(){
+  const row=queue.rows.get(recorder.row?.id);if(!row)return;
+  const data=await request('/api/employee/queue-check',{entries:[{key:'activity-date',site_id:row.site_id,customer_id:row.id,assignment_id:row.assignment_id,expected_version:row.version}]});
+  const fresh=data.results[0]?.server_row;
+  if(fresh){queue.setRows([fresh]);renderStatus();}
+  else notice('기록은 저장되었습니다. 현재 담당 상태를 다시 조회해 주세요.');
+}
 const statusLabels={dirty:'미저장',saving:'저장 중',offline:'오프라인 대기',retry:'저장 결과 확인 대기',failed:'저장하지 못함',conflict:'충돌',blocked:'전송 불가',review:'수동 확인 필요',checking:'복구 확인 중',clearing:'보관 정리 중'};
 const params=()=>new URLSearchParams({site_id:state.site,view,q:state.q,filters:JSON.stringify(state.filters),...(state.category?{dashboard_category:state.category}:{})});
 function error(error){notice(error.message);}
@@ -78,7 +86,8 @@ function editor(cell,onRendered,success,cancel){
   onRendered(()=>{activeEditor={finish,input};input.focus();});return input;
 }
 function column(field){
-  return {title:labels[field],field,minWidth:field==='notes'?320:dates.has(field)?190:145,headerSort:false,
+  return {title:labels[field],field,minWidth:view==='today'?(todayWidths[field]||145):field==='notes'?320:dates.has(field)?190:145,headerSort:false,
+    ...(view==='today'?{width:todayWidths[field]||145}:{}),
     formatter:cell=>text('span',display(field,cell.getValue())),
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
@@ -139,11 +148,12 @@ function rowStyle(row){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:' ',selectableRows:false,clipboard:false,
   rowFormatter:rowStyle,
-  columns:[...(view==='today'?[{title:'TM 상태',field:'tm_status',frozen:true,width:104,headerSort:false,editor:false,
-    headerTooltip:'현재 배정의 담당 직원이 통화 결과를 저장하고 오늘까지의 미완료 재콜이 없으면 완료입니다. 메모·이름·방문예약만 수정한 경우는 제외합니다.',
-    formatter:cell=>{const label=(queue.rows.get(cell.getRow().getData().id)?.tm_status||cell.getValue())==='COMPLETED'?'완료':'-';const badge=text('span',label);badge.className='tm-state';badge.dataset.complete=String(label==='완료');return badge;}}]:[]),...customerFields().flatMap(field=>[
-    {...column(field),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:260}:{})},
-    ...(field==='call_result'?[{title:'삭제 요청',field:'_deletion',headerSort:false,minWidth:120,headerTooltip:deletionHelp,titleFormatter:()=>{const label=text('span','삭제 요청');label.tabIndex=0;label.setAttribute('aria-label',deletionHelp);return label;},formatter:deletionCell}]:[])
+  columns:[...(view==='today'?[{title:'최종 TM 날짜',field:'last_tm_date',frozen:true,width:140,headerSort:false,editor:false,
+    headerTooltip:'현재 배정에서 담당 직원이 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며 상담 저장 시각으로 추정하지 않습니다.',
+    formatter:cell=>text('span',queue.rows.get(cell.getRow().getData().id)?.last_tm_date||cell.getValue()||'-')}]:[]),
+    ...(view==='today'?['customer_name','phone_normalized','call_result','residence','notes','memo','callback_due_at','visit_at','contract_status']:customerFields()).flatMap(field=>[
+    {...column(field),...(view==='today'&&field==='callback_due_at'?{title:'재콜 일정'}:{}),...(view==='today'&&field==='contract_status'?{title:'계약 여부'}:{}),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:view==='today'?210:260}:{})},
+    ...(field==='call_result'?[{title:view==='today'?'삭제요청':'삭제 요청',field:'_deletion',headerSort:false,width:view==='today'?120:undefined,minWidth:120,headerTooltip:deletionHelp,titleFormatter:()=>{const label=text('span',view==='today'?'삭제요청':'삭제 요청');label.tabIndex=0;label.setAttribute('aria-label',deletionHelp);return label;},formatter:deletionCell}]:[])
   ]),{title:'작업',field:'_actions',headerSort:false,minWidth:380,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
@@ -161,7 +171,7 @@ function renderStatus(){
     const data=row.getData(),entry=queue.entry(data.id),base=queue.rows.get(data.id),values=entry?.state==='blocked'?{}:{...base,...(entry?changes(entry):{})};
     if(entry?.state==='blocked'){row.delete().catch(()=>{});continue;}
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
-    const tm=row.getCell('tm_status');if(tm&&base&&tm.getValue()!==base.tm_status)tm.setValue(base.tm_status);
+    const tm=row.getCell('last_tm_date');if(tm&&base&&tm.getValue()!==base.last_tm_date)tm.setValue(base.last_tm_date);
     const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
     const actionState=JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]);
     for(const field of ['_actions','_deletion']){const cell=row.getCell(field);if(cell)cell.setValue(actionState);}

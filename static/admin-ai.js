@@ -13,7 +13,7 @@ const reportDescriptions={
   EMPLOYEE_COACHING:{contents:'선택 직원이 실제로 작성한 상담 기록을 바탕으로 강점·보완점, 이전 코칭 이후 관찰된 변화, 상담 사례와 다음 확인할 일을 정리합니다. 비교 근거가 부족하면 판단 불가로 표시합니다.',rule:'직원을 선택하세요. 요청 시각 기준 최근 30일의 기록과 이전 유효 코칭을 사용하며, 직원별로 한국 날짜 하루 1회 생성할 수 있습니다.'},
   TEAM_GUIDE:{contents:'선택 현장의 시작 질문, 관심 확인, 자주 묻는 질문 초안, 거절·보류 응대, 재콜·방문 확인과 기록 기준을 정리합니다.',rule:'현장을 선택하세요. 요청 시각 기준 최근 30일의 상담 기록과 검토·유효 처리된 현장 안내자료를 사용하며, 현장별로 한국 날짜 하루 1회 생성할 수 있습니다. 생성 후 검토하고 게시해야 직원에게 표시됩니다.'},
 };
-const callNames={NO_ANSWER:'부재',REJECTED:'거절',INTERESTED:'관심',CALL_AGAIN:'재통화',VISIT_BOOKED:'방문예약',VISITED:'방문',REVISITED:'재방',UNSPECIFIED:'미지정'};
+const callNames={NO_ANSWER:'부재',REJECTED:'거절',INTERESTED:'관심',CALL_AGAIN:'재통화',VISIT_BOOKED:'방문예정',VISITED:'방문',REVISITED:'재방',UNSPECIFIED:'미지정'};
 const labelNames={PRICE:'가격',LOCATION:'위치',TIMING:'시기',COMPARISON:'비교',OTHER:'기타',UNSPECIFIED:'미지정'};
 const operationNames={IMPORT_COMMITTED:'업로드 확정',DISTRIBUTE:'분배',MANUAL_RECALL:'수동 회수',ASSIGNEE_CHANGED:'담당자 변경',DELETION_APPROVE:'삭제 승인',SOFT_DELETE:'휴지통 이동',RESTORE:'복구',AI_GUIDE_EDIT:'가이드 편집',AI_GUIDE_PUBLISH:'가이드 게시',USER_ACCESS_CHANGED:'계정 권한 변경',USER_CREATED:'계정 생성'};
 const personOperations=new Set(['IMPORT_COMMITTED','DISTRIBUTE','MANUAL_RECALL','ASSIGNEE_CHANGED','DELETION_APPROVE','SOFT_DELETE','RESTORE','USER_ACCESS_CHANGED','USER_CREATED']);

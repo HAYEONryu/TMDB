@@ -3,13 +3,14 @@ from django.db.models import BooleanField, Case, CharField, Exists, OuterRef, Su
 from django.utils import timezone
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
+from apps.consultations.models import CustomerActivity
 from apps.customers.cohorts import day_bounds
 from apps.customers.models import Customer
 
 HUMAN_SOURCES = ['MANUAL', 'AI_APPLIED']
 
 
-def with_tm_state(query, now=None, *, include_today=False):
+def with_tm_state(query, now=None, *, include_today=False, include_call_date=False):
     now = now or timezone.now()
     start, end = day_bounds(now)
     calls = ConsultationRevision.objects.filter(
@@ -29,6 +30,12 @@ def with_tm_state(query, now=None, *, include_today=False):
     query = query.annotate(tm_status=Case(
         When(tm_initial_done=True, tm_due_pending=False, then=Value('COMPLETED')),
         default=Value('PENDING'), output_field=CharField()))
+    if include_call_date:
+        attempts = CustomerActivity.objects.filter(customer_id=OuterRef('pk'),
+            assignment_id=OuterRef('current_assignment_id'), actor_id=OuterRef('current_assignment__employee_id'),
+            site_id=OuterRef('site_id'), kind='CALL', occurred_at__gte=OuterRef('current_assignment__assigned_at'),
+            occurred_at__lte=now).order_by('-occurred_at', '-pk')
+        query = query.annotate(last_tm_at=Subquery(attempts.values('occurred_at')[:1]))
     if not include_today:
         return query
     # Callback lacks an assignment FK. Its completion service writes a revision

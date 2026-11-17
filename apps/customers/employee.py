@@ -55,7 +55,7 @@ def check_one(actor,item):
     if not isinstance(item["key"],str) or not 1<=len(item["key"])<=500:
         raise AccessError("VALIDATION_ERROR","대기열 키를 확인해 주세요.",422)
     if not Site.objects.filter(pk=sid).exists():return {**result,"code":"SITE_DELETED"}
-    customer=with_tm_state(enriched(Customer.objects.filter(pk=cid,site_id=sid))).first()
+    customer=with_tm_state(enriched(Customer.objects.filter(pk=cid,site_id=sid)),include_call_date=True).first()
     historical=Assignment.objects.filter(pk=aid,customer_id=cid,employee=actor).exists()
     if not customer:return {**result,"code":"CUSTOMER_DELETED" if historical else "FORBIDDEN"}
     if customer.deleted_at:return {**result,"code":"CUSTOMER_DELETED" if historical else "FORBIDDEN"}

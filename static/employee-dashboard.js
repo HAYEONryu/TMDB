@@ -1,6 +1,7 @@
 import {api,option} from './api.js';
 import {ActivityRecorder} from './activity-recorder.js';
 import {EmployeePerformance} from './employee-performance.js';
+import {DailyCallResults} from './daily-call-results.js';
 import {renderDashboard,dashboardTime,showDashboardSetupError} from './dashboard.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 import {customerLabels,choiceLabel} from './customer-columns.js';
@@ -13,6 +14,7 @@ let generation=0,listSequence=0,selectedCategory=null,defaultSite='',activeSite=
 let scheduleSequence=0,lastSchedule=null;
 const date=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)):'-';
 const performance=new EmployeePerformance();
+const dailyResults=new DailyCallResults();
 const recorder=new ActivityRecorder({userId:document.body.dataset.userId,changed:()=>performance.load(select.value)});
 function syncButtons(){for(const button of document.querySelectorAll('[data-customer-category]'))button.setAttribute('aria-expanded',String(!panel.hidden&&button.dataset.customerCategory===selectedCategory));}
 function closeDetails(){selectedCategory=null;panel.hidden=true;listSequence++;area.replaceChildren();area.setAttribute('aria-busy','false');lastList=null;syncButtons();}
@@ -102,9 +104,9 @@ function work(data){
 function clear(){closeDetails();$('employee-contracts').replaceChildren();scheduleSequence++;lastSchedule=null;$('employee-today-schedule').replaceChildren(text('p','통계를 조회하면 오늘 상담 일정을 표시합니다.'));$('employee-today-schedule').setAttribute('aria-busy','false');}
 async function refresh(){
   $('dashboard-refresh').onclick=refresh;
-  if(activeSite!==select.value){generation++;clear();performance.clear();activeSite=select.value;}
+  if(activeSite!==select.value){generation++;clear();performance.clear();dailyResults.clear();activeSite=select.value;}
   syncEmployeeSiteLinks(select.value,defaultSite);
   const url=new URL(location.href);if(select.value&&select.value!==defaultSite)url.searchParams.set('site_id',select.value);else url.searchParams.delete('site_id');history.replaceState(null,'',url);
-  await Promise.all([renderDashboard(select.value,{draw:work,clear}),performance.load(select.value)]);
+  await Promise.all([renderDashboard(select.value,{draw:work,clear}),performance.load(select.value),dailyResults.load(select.value)]);
 }
-try{const data=await api('/api/sites');defaultSite=data.default_site_id||'';select.replaceChildren(...data.items.map(site=>option(site.id,site.name)));select.value=new URL(location.href).searchParams.get('site_id')||defaultSite;select.onchange=refresh;$('dashboard-refresh').onclick=refresh;await refresh();}catch(error){performance.clear();$('performance-status').textContent='현장 목록을 불러오지 못했습니다. 새로고침으로 다시 확인해 주세요.';showDashboardSetupError(error,{clear});}
+try{const data=await api('/api/sites');defaultSite=data.default_site_id||'';select.replaceChildren(...data.items.map(site=>option(site.id,site.name)));select.value=new URL(location.href).searchParams.get('site_id')||defaultSite;select.onchange=refresh;$('dashboard-refresh').onclick=refresh;await refresh();}catch(error){performance.clear();dailyResults.clear();$('call-results-status').textContent='현장 목록을 불러오지 못했습니다. 새로고침으로 다시 확인해 주세요.';$('performance-status').textContent='현장 목록을 불러오지 못했습니다. 새로고침으로 다시 확인해 주세요.';showDashboardSetupError(error,{clear});}

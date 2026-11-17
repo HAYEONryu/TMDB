@@ -6,6 +6,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.consultations.models import ConsultationRevision
 from apps.customers.models import Customer
+from apps.customers.choices import CALL_RESULTS
 from apps.customers.queries import KST
 from apps.customers.cohorts import current_customers, valid_assignment
 from apps.callbacks.models import Callback
@@ -22,7 +23,7 @@ def periods(now):
 
 
 def result_rows(counts):
-    return [{"value": value, "label": "미입력" if value is None else Customer.CallResult(value).label,
+    return [{"value": value, "label": "미입력" if value is None else CALL_RESULTS.get(value,Customer.CallResult(value).label),
              "count": counts.get(value, 0)} for value in [None, *Customer.CallResult.values]]
 
 

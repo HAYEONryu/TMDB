@@ -7,7 +7,7 @@
   <div class="page-heading"><div><h1 class="h2">{% if employee_view == 'today' %}오늘의 TM{% else %}나의 DB{% endif %}</h1>
   <p class="text-secondary">{% if employee_view == 'today' %}오늘 받은 고객과 이전 배정의 미완료 통화·재콜을 확인하세요. 오늘 완료한 고객은 자정까지 남습니다.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div>{% if employee_view != 'today' %}<button id="save-now" class="btn btn-primary">지금 저장</button>{% endif %}</div>
   <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>고객명과 상담 칸을 두 번 클릭해 편집하세요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요. 고객명은 최대 100자이며 빈 값도 가능합니다.</span></p>
-  {% if employee_view == 'today' %}<p id="tm-business-date" class="small text-secondary" role="status"></p><p class="small text-secondary">TM 상태는 현재 배정에서 담당 직원이 마지막으로 저장한 통화 결과와 남은 재콜을 기준으로 합니다. 결과를 비우면 -로 돌아갑니다. 부재도 통화 업무 완료입니다.</p>{% endif %}
+  {% if employee_view == 'today' %}<p id="tm-business-date" class="small text-secondary" role="status"></p><p class="small text-secondary">최종 TM 날짜는 현재 배정에서 내가 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며, 통화 기록이 없으면 -로 표시합니다. 미완료 이월과 회수는 기존 통화 결과·재콜 업무 상태를 기준으로 합니다.</p>{% endif %}
   {% include 'customers/query-toolbar.html' %}
   <p id="employee-message" role="alert" class="grid-message"></p><p id="storage-warning" class="field-error" role="alert"></p>
   <section id="ai-toolbar" class="card card-body mb-3"><p id="ai-usage" role="status"></p><p id="ai-availability" class="small text-secondary"></p><button id="ai-task-open" class="btn btn-outline-secondary align-self-start" hidden>AI 작업 확인</button></section>

@@ -105,7 +105,7 @@ def snapshot(customer, callback):
 def safe_row(customer_id, actor=None):
     admin = bool(actor and actor.role == User.Role.ADMIN)
     query = Customer.objects.filter(pk=customer_id)
-    if not admin:query = with_tm_state(query.defer('admin_notes'))
+    if not admin:query = with_tm_state(query.defer('admin_notes'),include_call_date=True)
     return serialize(enriched(query).get(), admin=admin)
 
 
@@ -188,8 +188,8 @@ def update_row(actor, body, *, employee_only=False):
             result = visible_values(receipt.result, admin=actor.role == User.Role.ADMIN)
             if actor.role != User.Role.ADMIN and result.get('row'):
                 # Preserve the write receipt; refresh only the time-sensitive read state.
-                status = with_tm_state(Customer.objects.filter(pk=cid)).values_list('tm_status', flat=True).get()
-                result = {**result, 'row': {**result['row'], 'tm_status': status}}
+                fresh = safe_row(cid,actor)
+                result = {**result, 'row': {**result['row'], 'tm_status': fresh['tm_status'], 'last_tm_date':fresh['last_tm_date']}}
             return result
         try:
             if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and set(body["changes"]) & ADMIN_ONLY_FIELDS:
