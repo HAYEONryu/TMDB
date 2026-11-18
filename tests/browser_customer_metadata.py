@@ -72,12 +72,12 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(page.locator('#commit-summary')).to_contain_text('1행을 등록')
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('1명')
-        for field,value in [('route','티엠'),('memo','관리자가 수정한 일반 비고'),('admin_notes','SYNTHETIC_PRIVATE_BROWSER updated')]:
+        for field,value in [('memo','관리자가 수정한 일반 비고'),('admin_notes','SYNTHETIC_PRIVATE_BROWSER updated')]:
             self.edit('customer-grid',field,value)
         page.locator('#save').click()
         expect(page.locator('#message')).to_have_text('저장했습니다.')
         customer=self.db(lambda:Customer.objects.get(phone_normalized='01090000008'))
-        self.assertEqual((customer.customer_name,customer.notes,customer.route,customer.memo,customer.admin_notes),('','','티엠','관리자가 수정한 일반 비고','SYNTHETIC_PRIVATE_BROWSER updated'))
+        self.assertEqual((customer.customer_name,customer.notes,customer.memo,customer.admin_notes),('','','관리자가 수정한 일반 비고','SYNTHETIC_PRIVATE_BROWSER updated'))
         self.db(lambda:self.assign(customer))
         self.login(self.employee)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
@@ -86,12 +86,11 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         response=self.context.request.get(self.live_server_url+f'/api/customers?site_id={self.site.pk}').text()
         self.assertNotIn('admin_notes',response)
         self.assertNotIn('SYNTHETIC_PRIVATE_BROWSER',response)
-        for field,value in [('route','개인관리'),('memo','직원이 수정한 일반 비고')]:
-            self.edit('employee-grid',field,value)
+        self.edit('employee-grid','memo','직원이 수정한 일반 비고')
         page.locator('#save-now').click()
         expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         customer=self.db(lambda:Customer.objects.get(pk=customer.pk))
-        self.assertEqual((customer.route,customer.memo,customer.notes,customer.admin_notes),('개인관리','직원이 수정한 일반 비고','','SYNTHETIC_PRIVATE_BROWSER updated'))
+        self.assertEqual((customer.memo,customer.notes,customer.admin_notes),('직원이 수정한 일반 비고','','SYNTHETIC_PRIVATE_BROWSER updated'))
         page.get_by_role('button',name='상담·재콜 이력',exact=True).click()
         page.locator('#history-kind').select_option('consultations')
         expect(page.locator('#history-content')).to_contain_text('비고')
@@ -101,37 +100,56 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
 
     def test_requested_column_order_admin_identity_and_employee_name_edit(self):
         customer=self.db(lambda:Customer.objects.create(site=self.site,customer_name='가상 원본',
-            phone_normalized='01094000001',admin_notes='SYNTHETIC_PRIVATE_GRID'))
+            phone_normalized='01094000001',residence='가상 서울 강동구',admin_notes='SYNTHETIC_PRIVATE_GRID',memo='가상 공용 메모'))
         self.db(lambda:self.assign(customer))
         page=self.page;self.login(self.admin)
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        fields=['customer_name','phone_normalized','contract_status','admin_notes','assignee_name',
-                'call_result','callback_due_at','visit_at','residence','housing_status','notes','route','memo','assigned_at','_actions','_status']
-        labels=['고객명','연락처','계약여부','관리자 비고','담당직원명','통화결과','재콜일정',
-                '방문예약 날짜','고객 거주지','주택보유상황','상담내용','루트','비고','배정일','작업','저장상태']
+        fields=['last_tm_date','customer_name','phone_normalized','residence','assignee_name','admin_notes',
+                'contract_status','call_result','callback_due_at','visit_at','notes','memo']
+        labels=['최종 TM 날짜','고객명','연락처','거주지','담당직원','비고','계약여부','통화결과','재콜일정',
+                '방문예약날짜','상담내용','메모']
         def header(grid):
             return page.locator(f'#{grid} .tabulator-header .tabulator-col[tabulator-field]').evaluate_all(
-                "cells=>cells.filter(c=>c.getAttribute('tabulator-field')).map(c=>[c.getAttribute('tabulator-field'),c.querySelector('.tabulator-col-title').textContent.replace('▾','').trim()])")
+                "cells=>cells.map(c=>[c.getAttribute('tabulator-field'),c.querySelector('.tabulator-col-title').textContent.replace(/[↕↑↓▾]/g,'').trim()])")
+        columns = page.locator('#customer-grid .tabulator-header .tabulator-col')
+        expect(columns).to_have_count(13)
+        expect(columns.first.locator('input[type=checkbox]')).to_have_count(1)
+        expect(columns.nth(4)).to_have_attribute('tabulator-field','residence')
         self.assertEqual(header('customer-grid'),list(map(list,zip(fields,labels))))
+        row = page.locator('#customer-grid .tabulator-row').first
+        residence = row.locator('[tabulator-field=residence]')
+        expect(residence).to_have_text('가상 서울 강동구')
+        expect(residence).to_be_in_viewport(ratio=1)
+        expect(row.locator('[tabulator-field=admin_notes]')).to_have_text('SYNTHETIC_PRIVATE_GRID')
+        expect(row.locator('[tabulator-field=memo]')).to_have_text('가상 공용 메모')
         self.edit('customer-grid','customer_name','가상 정정')
         self.edit('customer-grid','phone_normalized','010-9400-0002')
+        self.edit('customer-grid','residence','가상 경기 성남시')
         self.edit('customer-grid','notes','관리자 상담 입력')
         self.edit('customer-grid','admin_notes','SYNTHETIC_PRIVATE_GRID updated')
         page.locator('#customer-grid .tabulator-row [tabulator-field="contract_status"]').first.click()
         page.get_by_text('계약',exact=True).click()
         page.locator('#save').click();expect(page.locator('#message')).to_have_text('저장했습니다.')
+        page.reload()
+        expect(residence).to_have_text('가상 경기 성남시')
         current=self.db(lambda:Customer.objects.get(pk=customer.pk))
-        self.assertEqual((current.customer_name,current.phone_normalized,current.contract_status,current.notes),
-                         ('가상 정정','01094000002','CONTRACTED','관리자 상담 입력'))
+        self.assertEqual((current.customer_name,current.phone_normalized,current.residence,current.contract_status,current.notes),
+                         ('가상 정정','01094000002','가상 경기 성남시','CONTRACTED','관리자 상담 입력'))
+        page.set_viewport_size({'width':320,'height':960})
+        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),320)
+        holder=page.locator('#customer-grid .tabulator-tableholder')
+        self.assertTrue(holder.evaluate('(element) => element.scrollWidth > element.clientWidth'))
+        residence.scroll_into_view_if_needed()
+        expect(residence).to_be_in_viewport(ratio=1)
+        page.set_viewport_size({'width':1440,'height':960})
         self.login(self.employee)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        employee_header=[[field,label] for field,label in zip(fields,labels) if field not in {'admin_notes','assignee_name'}]
-        employee_header.insert(4,['_deletion','삭제 요청'])
-        self.assertEqual(header('employee-grid'),employee_header)
+        self.assertEqual([field for field,_ in header('employee-grid')], ['_number','last_tm_date','customer_name',
+            'phone_normalized','call_result','_deletion','residence','notes','callback_due_at','memo','visit_at','_actions','_status'])
         self.assertEqual(page.locator('#employee-grid [tabulator-field="assignee_name"]').count(),0)
-        for field in ['phone_normalized','assigned_at']:
+        for field in ['phone_normalized','last_tm_date','_number']:
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click();expect(cell.locator('input,textarea,select')).to_have_count(0)
         self.assertEqual(page.locator('#employee-grid [tabulator-field="admin_notes"]').count(),0)
@@ -187,15 +205,16 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).customer_name),'')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
-    def test_admin_and_employee_four_fixed_selects_and_legacy_display(self):
+    def test_visible_fixed_selects_and_hidden_legacy_values_preserved(self):
         customer=self.db(lambda:Customer.objects.create(site=self.site,phone_normalized='01094000001',call_result='NO_ANSWER',contract_status='NO_CONTRACT',housing_status='전세',route='소개'))
         self.db(lambda:self.assign(customer))
         from apps.customers.choices import CURRENT_CHOICES
         self.login(self.admin);page=self.page
         page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        expect(page.locator('#customer-grid .tabulator-row [tabulator-field="housing_status"]').first).to_have_text('이전값: 전세')
-        for field,choices in CURRENT_CHOICES.items():
+        expect(page.locator('#customer-grid .tabulator-row [tabulator-field="contract_status"]').first).to_have_text('이전값: 미계약')
+        for field in ['call_result','contract_status']:
+            choices = CURRENT_CHOICES[field]
             cell=page.locator(f'#customer-grid .tabulator-row [tabulator-field="{field}"]').first
             cell.click()
             self.assertEqual(page.locator('.tabulator-edit-list-item').all_text_contents(),['-',*choices.values()])
@@ -203,14 +222,15 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.locator('#save').click();expect(page.locator('#message')).to_have_text('저장했습니다.')
         self.login(self.employee);page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        for field,choices in CURRENT_CHOICES.items():
-            cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first
-            cell.click();select=cell.locator('select')
-            self.assertEqual(select.locator('option:not([disabled])').all_text_contents(),['-',*choices.values()])
-            select.select_option(list(choices)[1]);page.locator('h1').click()
+        choices = CURRENT_CHOICES['call_result']
+        cell=page.locator('#employee-grid .tabulator-row [tabulator-field="call_result"]').first
+        cell.dblclick();select=cell.locator('select')
+        self.assertEqual(select.locator('option:not([disabled])').all_text_contents(),['-',*choices.values()])
+        select.select_option(list(choices)[1]);page.locator('h1').click()
         page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         updated=self.db(lambda:Customer.objects.get(pk=customer.pk))
-        self.assertEqual((updated.call_result,updated.contract_status,updated.housing_status,updated.route),('DELETE_REQUEST','SUB_CANCELLED','1주택','사이드'))
+        self.assertEqual((updated.call_result,updated.contract_status,updated.housing_status,updated.route),
+            ('DELETE_REQUEST',next(iter(CURRENT_CHOICES['contract_status'])),'전세','소개'))
         self.assertIsNone(updated.deleted_at)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
@@ -252,5 +272,5 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
             if actor==self.employee:self.assertNotIn('다른직원 이전값',options.inner_text())
             options.get_by_role('checkbox',name='이전값: 티엠 소개',exact=True).check();page.locator('#filter-apply').click()
             expect(page.locator('#page-info')).to_contain_text('검색 1명')
-            expect(page.locator(f'#{grid} .tabulator-row [tabulator-field="route"]').first).to_have_text('이전값: 티엠 소개')
+            expect(page.locator(f'#{grid} .tabulator-row [tabulator-field="phone_normalized"]').first).to_have_text('010-9400-0002')
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])

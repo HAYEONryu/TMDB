@@ -139,8 +139,8 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
             page.locator("#page-size").select_option("100")
         self.assertEqual(len(response.value.json()["data"]),65)
         expect(page.locator("#page-info")).to_contain_text("1 / 1페이지")
-        assigned=page.locator('.tabulator-row [tabulator-field="assigned_at"]').first
-        assigned.dblclick();expect(assigned.locator("input")).to_have_count(0)
+        tm_date=page.locator('.tabulator-row [tabulator-field="last_tm_date"]').first
+        tm_date.dblclick();expect(tm_date.locator("input")).to_have_count(0)
         self.edit("notes","<img src=x onerror=window.p2Injected=1> 가상 상담")
         self.db(self.target.refresh_from_db);self.assertEqual(self.target.notes,"")
         page.get_by_role("button",name="저장",exact=True).click()
@@ -198,7 +198,9 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         expect(page.locator("#site-counts")).to_contain_text("현재 고객 65명")
         page.locator("#default-site").select_option(selected)
         page.get_by_role("button",name="기본 현장 설정",exact=True).click()
-        expect(page.locator("#site-message")).to_contain_text("다음 화면부터 적용")
+        page.locator('#service-default-site').select_option(selected)
+        page.locator('#default-site-save').click()
+        expect(page.locator("#site-message")).to_contain_text("다음에 여는 업무 화면부터 적용")
         expect(working.locator("#site")).to_have_value(str(self.site.pk))
         working.reload()
         expect(working.locator("#site")).to_have_value(selected)
@@ -231,7 +233,7 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         self.assertTrue(response.json()["results"][0]["ok"])
         page.get_by_role("button",name="저장",exact=True).click()
         expect(page.locator("#message")).to_contain_text("저장하지 못했습니다")
-        page.locator('.tabulator-row [tabulator-field="_status"]').first.get_by_role("button",name="확인").click()
+        page.locator('.tabulator-row .row-save-state').first.get_by_role("button",name="확인").click()
         expect(page.locator("#conflict-values")).to_contain_text("다른 관리자 저장")
         expect(page.locator("#conflict-values")).to_contain_text("내 충돌 값")
         page.screenshot(path=str(self.evidence/"p2-conflict.png"),full_page=True)
@@ -244,7 +246,7 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         page.get_by_role("button",name="저장하고 이동",exact=True).click()
         expect(page.locator("#message")).to_contain_text("저장하지 못했습니다")
         expect(page.locator("#page-info")).to_contain_text("1 / 2페이지")
-        page.locator('.tabulator-row [tabulator-field="_status"]').first.get_by_role("button",name="확인").click()
+        page.locator('.tabulator-row .row-save-state').first.get_by_role("button",name="확인").click()
         page.get_by_role("button",name="내 변경 버리기",exact=True).click()
         expect(page.locator("#dirty-count")).to_have_text("변경사항 없음")
         self.edit("notes","응답 유실 재시도")
@@ -257,7 +259,7 @@ class AdminGridBrowserTests(StaticLiveServerTestCase):
         page.route("**/api/customers/batch-update",lose_response,times=1)
         page.get_by_role("button",name="저장",exact=True).click()
         expect(page.locator("#dirty-count")).to_contain_text("미저장 1행")
-        expect(page.locator('.tabulator-row [tabulator-field="_status"]').first).to_contain_text("결과 확인 필요")
+        expect(page.locator('.tabulator-row .row-save-state').first).to_contain_text("결과 확인 필요")
         self.db(self.target.refresh_from_db);version=self.target.version
         count=self.db(lambda:ConsultationRevision.objects.filter(customer=self.target).count())
         with page.expect_request("**/api/customers/batch-update") as retried:

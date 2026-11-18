@@ -16,7 +16,7 @@ from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.consultations.snapshots import audit_snapshot
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
-from apps.customers.tm import with_tm_state
+from apps.customers.tm import with_last_tm_date, with_tm_state
 from apps.customers.choices import CURRENT_CHOICES, FIELD_LABELS
 from apps.customers.queries import KST, enriched, iso, serialize, visible_values
 from apps.operations.models import IdempotencyRecord, MutationReceipt, OperationEvent
@@ -105,7 +105,8 @@ def snapshot(customer, callback):
 def safe_row(customer_id, actor=None):
     admin = bool(actor and actor.role == User.Role.ADMIN)
     query = Customer.objects.filter(pk=customer_id)
-    if not admin:query = with_tm_state(query.defer('admin_notes'),include_call_date=True)
+    query = (with_last_tm_date(query) if admin else
+             with_tm_state(query.defer('admin_notes'), include_call_date=True))
     return serialize(enriched(query).get(), admin=admin)
 
 

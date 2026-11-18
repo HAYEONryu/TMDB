@@ -168,6 +168,10 @@ class CustomerMetadataMigrationTests(Fixtures,TransactionTestCase):
     def test_previous_schema_synthetic_upgrade_preserves_existing_data(self):
         self.prepare()
         executor=MigrationExecutor(connection)
+        # Rolling customers back also rolls dependent consultations migrations
+        # back. Restore every original leaf so later performance/grid tests do
+        # not run with CustomerActivity/PerformanceTracking tables missing.
+        all_targets=executor.loader.graph.leaf_nodes()
         target=[("customers","0004_customer_selection_options")]
         try:
             executor.migrate([("customers","0001_initial")])
@@ -180,4 +184,4 @@ class CustomerMetadataMigrationTests(Fixtures,TransactionTestCase):
             blank=Customer.objects.create(site=self.site,phone_normalized="01090000005")
             blank.full_clean()
         finally:
-            MigrationExecutor(connection).migrate(target)
+            MigrationExecutor(connection).migrate(all_targets)

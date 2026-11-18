@@ -11,6 +11,7 @@ from apps.consultations.models import PerformanceTracking
 from apps.customers.models import Customer
 from apps.customers.services import update_row
 from apps.sites.models import GlobalSettings
+from apps.sites.services import create_site
 from apps.customers.queries import KST
 from scripts.verification_evidence import artifact_path
 from tests import browser_customer_metadata as metadata
@@ -38,7 +39,7 @@ class HTMLFollowupBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.seed(125);self.login(self.employee);page=self.page
         self.visit('/app/employee/today')
         expect(page.locator('#page-info')).to_contain_text('50 / 125명')
-        expected=['last_tm_date','customer_name','phone_normalized','call_result','_deletion','residence','callback_due_at','housing_status','notes','visit_at','contract_status']
+        expected=['_number','last_tm_date','customer_name','phone_normalized','call_result','_deletion','residence','notes','callback_due_at','memo','visit_at']
         self.assertEqual(page.locator('#employee-grid .tabulator-col').evaluate_all('(els)=>els.slice(0,11).map(e=>e.getAttribute("tabulator-field"))'),expected)
         first=page.locator('#employee-grid .tabulator-row .missing-tm-date').first
         expect(first).to_have_text('-');self.assertEqual(first.evaluate('(e)=>getComputedStyle(e).backgroundColor'),'rgb(255, 240, 223)')
@@ -51,11 +52,13 @@ class HTMLFollowupBrowserTests(Fixtures,StaticLiveServerTestCase):
                 page.screenshot(path=str(artifact_path('scroll-failure.png')),full_page=True)
                 raise
         self.assertEqual(page.evaluate("new Set(Tabulator.findTable('#employee-grid')[0].getData().map(r=>r.id)).size"),125)
+        self.assertEqual(page.evaluate("Tabulator.findTable('#employee-grid')[0].getData().map(row => row._number)"),list(range(1,126)))
         page.locator('[data-sort-field=customer_name]').focus();page.keyboard.press('Enter');expect(page.locator('#page-info')).to_contain_text('50 / 125명')
         expect(page.locator('.tabulator-col[tabulator-field=customer_name]')).to_have_attribute('aria-sort','ascending')
         page.locator('[data-sort-field=customer_name]').click();expect(page.locator('.tabulator-col[tabulator-field=customer_name]')).to_have_attribute('aria-sort','descending')
         expect(page.locator('#employee-grid .tabulator-row [tabulator-field=customer_name]').first).to_have_text('가상고객0124')
         page.locator('#search').fill('0124');page.locator('#search-form button').click();expect(page.locator('#result-count')).to_have_text('검색 결과 1명')
+        expect(page.locator('#employee-grid .tabulator-row [tabulator-field=_number]')).to_have_text('1')
         page.locator('#clear-filters').click();expect(page.locator('#result-count')).to_have_text('검색 결과 125명')
         open_detail_filter(page,'callback_due_at',match=False)
         page.locator('#filter-dialog').press('Escape')
@@ -90,17 +93,22 @@ class HTMLFollowupBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_lookup_and_default_independent_and_staff_monthly_details(self):
         self.seed();self.login(self.admin);page=self.page
+        new_default, _ = self.db(lambda: create_site(self.admin, '새 기본 가상 현장'))
         page.locator('#default-site').select_option(str(self.second.pk));expect(page.locator('#dashboard-updated')).to_contain_text(self.second.name)
         page.locator('#set-default').click();expect(page.locator('#service-default-site')).to_have_value(str(self.site.pk))
-        page.locator('#service-default-site').select_option(str(self.site.pk));page.locator('#default-site-save').click()
+        page.locator('#service-default-site').select_option(str(new_default.pk));page.locator('#default-site-save').click()
         expect(page.locator('#default-site-dialog')).to_be_hidden();expect(page.locator('#default-site')).to_have_value(str(self.second.pk))
-        self.assertEqual(self.db(lambda:GlobalSettings.objects.get(pk=1).default_site_id),self.site.pk)
+        self.assertEqual(self.db(lambda:GlobalSettings.objects.get(pk=1).default_site_id),new_default.pk)
+        expect(page.locator('#staff-record-preview meter')).to_have_count(2)
+        expect(page.locator('.legacy-chart').first).not_to_have_attribute('open','')
         page.locator('[data-staff-detail]').first.click();expect(page.locator('#staff-day-detail')).to_be_visible()
         for width in [1440,390,320]:
             page.set_viewport_size({'width':width,'height':960});self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)
             page.screenshot(path=str(artifact_path(f'followup-admin-dashboard-{width}.png')),full_page=True)
         page.set_viewport_size({'width':1440,'height':960})
-        page.get_by_role('link',name='DB 관리',exact=True).click();expect(page.locator('#site')).to_have_value(str(self.site.pk))
+        page.get_by_role('link',name='DB 관리',exact=True).click();expect(page.locator('#site')).to_have_value(str(new_default.pk))
+        self.login(self.employee)
+        expect(page.locator('#employee-dashboard-site')).to_have_value(str(new_default.pk))
         self.assertEqual(self.errors,[])
 
     def test_assignment_select_all_subset_distribution_confirm_and_recall(self):
@@ -114,6 +122,41 @@ class HTMLFollowupBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.locator('#tm-recall-confirm').click();expect(page.locator('#assignment-result')).to_contain_text('3명을 회수')
         self.assertEqual(self.db(lambda:Customer.objects.filter(current_assignment__employee=self.employee).count()),0)
         self.assertEqual(self.errors,[])
+
+    def test_manual_assignees_remain_after_distributing_ten_more(self):
+        rows = self.db(lambda: self.customers(12))
+        self.login(self.admin)
+        page = self.page
+        self.visit('/app/admin/customers')
+        for customer in rows[:2]:
+            row = page.locator('#customer-grid .tabulator-row').filter(has_text=customer.customer_name)
+            row.get_by_role('button', name='담당 변경').click()
+            page.locator('#assignee-target').select_option(str(self.employee.pk))
+            page.locator('#assignee-confirm').click()
+            expect(row.locator('[tabulator-field=assignee_name]')).to_contain_text(self.employee.name)
+        def manual_assignments():
+            return dict(Customer.objects.filter(pk__in=[row.pk for row in rows[:2]])
+                        .values_list('pk', 'current_assignment_id'))
+        before = self.db(manual_assignments)
+        self.assertTrue(all(before.values()))
+
+        self.visit('/app/admin/assignments')
+        expect(page.locator('#availability-count')).to_contain_text('10명')
+        page.locator(f'[data-assign-staff="{self.employee.pk}"]').check()
+        page.locator('#assignment-quantity').fill('10')
+        page.locator('#distribute').click()
+        page.locator('#action-confirm-accept').click()
+        expect(page.locator('#assignment-result')).to_contain_text('10명을 배정')
+        staff = page.locator('#assignment-staff-rows tr').filter(has=page.locator(f'[data-assign-staff="{self.employee.pk}"]'))
+        expect(staff.locator('td').nth(3)).to_have_text('12명')
+        self.assertEqual(self.db(manual_assignments), before)
+
+        self.login(self.employee)
+        today = page.get_by_role('button', name='오늘 받은 고객 12명 목록 열기')
+        expect(today).to_contain_text('12명')
+        self.visit('/app/employee/today')
+        expect(page.locator('#result-count')).to_have_text('검색 결과 12명')
+        self.assertEqual(self.errors, [])
 
     def test_protected_pages_keep_original_css_and_routes(self):
         self.seed();self.login(self.admin);page=self.page

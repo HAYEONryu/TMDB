@@ -63,7 +63,8 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
     def test_label_readonly_first_column_confirmed_save_and_responsive(self):
         self.seed();page=self.page
         expect(page.locator('h1')).to_have_text('오늘의 TM');expect(page).to_have_title('오늘의 TM · 두드림 TM')
-        expect(page.locator('#employee-grid .tabulator-col-title').first).to_contain_text('최종 TM 날짜')
+        expect(page.locator('#employee-grid .tabulator-col-title').first).to_have_text('No.')
+        expect(page.locator('#employee-grid .tabulator-col-title').nth(1)).to_contain_text('최종 TM 날짜')
         self.assert_state('-');self.status().dblclick();expect(self.status().locator('input,select,textarea')).to_have_count(0)
         self.edit('call_result','NO_ANSWER');self.assert_state('-')
         self.save();self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
@@ -96,9 +97,11 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.edit('call_result','NO_ANSWER');page.clock.fast_forward(91000)
         expect(page.locator('#pending-panel')).to_contain_text('결과를 확인하지 못했습니다')
         self.assert_state('-')
+        expect(self.status()).to_have_text('-')
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.filter(customer=self.row).count()),0)
         page.unroute('**/api/employee/batch-update',fail);self.save()
         self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        expect(self.status()).to_have_text(timezone.localdate(timezone.now(), KST).isoformat())
         self.assertEqual(self.errors,[])
 
     def test_result_clear_then_reenter_and_save_buttons_keyboard_responsive(self):

@@ -78,19 +78,37 @@ class DailyCallResultTests(Fixtures,TransactionTestCase):
         self.assertEqual(self.report()['status'],'unavailable')
         self.assertTrue(all(v is None for v in self.counts().values()))
 
-    def test_last_tm_date_uses_current_assignment_explicit_calls_and_not_saves(self):
-        def listing():
-            r=self.client.get('/api/customers',{'site_id':str(self.site.pk),'view':'today'})
-            self.assertEqual(r.status_code,200);return r.json()['data'][0]
+    def test_last_tm_date_uses_current_assignment_result_changes_and_explicit_calls(self):
+        def listing(client=None, **extra):
+            response = (client or self.client).get('/api/customers', {
+                'site_id': str(self.site.pk), 'view': 'today', **extra,
+            })
+            self.assertEqual(response.status_code, 200)
+            return response.json()['data'][0]
+
         self.assertIsNone(listing()['last_tm_date'])
-        result=update_row(self.employee,{**self.mutation(self.row),'changes':{'call_result':'NO_ANSWER'}})
-        self.assertEqual(result['row']['tm_status'],'COMPLETED');self.assertIsNone(result['row']['last_tm_date'])
-        CustomerActivity.objects.create(customer=self.row,site=self.site,actor=self.employee,assignment=self.row.current_assignment,
-            kind='CALL',connection='NOT_CONNECTED',occurred_at=datetime.fromisoformat('2026-11-17T15:00:00+00:00'),idempotency_key=uuid4(),body_hash='synthetic')
-        self.assertEqual(listing()['last_tm_date'],'2026-11-18')
+        admin = login(self.admin)
+        admin_call = update_row(self.admin, {**self.mutation(self.row), 'changes': {'call_result': 'INTERESTED'}})
+        self.assertIsNone(admin_call['row']['last_tm_date'])
         self.row.refresh_from_db()
-        saved=update_row(self.employee,{**self.mutation(self.row),'changes':{'customer_name':'이름 정정','memo':'비고만 변경'}})
-        self.assertEqual(saved['row']['last_tm_date'],'2026-11-18')
+        result = update_row(self.employee, {**self.mutation(self.row), 'changes': {'call_result': 'NO_ANSWER'}})
+        self.assertEqual((result['row']['tm_status'], result['row']['last_tm_date']), ('COMPLETED', '2026-11-18'))
+        self.assertEqual(listing()['last_tm_date'], '2026-11-18')
+        self.assertEqual(listing(admin, view='all', sort='-last_tm_date')['last_tm_date'], '2026-11-18')
+        self.assertFalse(CustomerActivity.objects.filter(customer=self.row).exists())
+
+        self.now += timedelta(days=1)
+        self.client = login(self.employee)
+        self.row.refresh_from_db()
+        saved = update_row(self.employee, {**self.mutation(self.row), 'changes': {'customer_name': '이름 정정', 'memo': '메모만 변경'}})
+        self.assertEqual(saved['row']['last_tm_date'], '2026-11-18')
+        self.row.refresh_from_db()
+        clear = update_row(self.employee, {**self.mutation(self.row), 'changes': {'call_result': None}})
+        self.assertEqual((clear['row']['tm_status'], clear['row']['last_tm_date']), ('PENDING', '2026-11-18'))
+        CustomerActivity.objects.create(customer=self.row, site=self.site, actor=self.employee, assignment=self.row.current_assignment,
+            kind='CALL', connection='NOT_CONNECTED', occurred_at=datetime.fromisoformat('2026-11-18T15:00:00+00:00'),
+            idempotency_key=uuid4(), body_hash='synthetic')
+        self.assertEqual(listing()['last_tm_date'], '2026-11-19')
         self.row.refresh_from_db()
         change_assignee(self.admin,self.row.pk,self.assignee_body(self.row,self.other));self.row.refresh_from_db()
         change_assignee(self.admin,self.row.pk,self.assignee_body(self.row,self.employee));self.row.refresh_from_db()

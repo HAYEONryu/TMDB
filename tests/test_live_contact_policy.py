@@ -143,4 +143,6 @@ class LiveContactMigrationTests(ContactFixtures, TransactionTestCase):
             for previous in [a,b,trash]:self.assertEqual(Customer.objects.get(pk=previous.pk).notes,previous.notes)
             fresh=Customer.objects.create(site=self.site,phone_normalized=trash.phone_normalized)
             self.assertNotEqual(fresh.pk,trash.pk)
-        finally:MigrationExecutor(connection).migrate([("customers","0004_customer_selection_options")])
+        finally:
+            executor = MigrationExecutor(connection)
+            executor.migrate(executor.loader.graph.leaf_nodes())

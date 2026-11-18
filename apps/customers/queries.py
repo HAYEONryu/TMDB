@@ -13,7 +13,7 @@ from apps.callbacks.models import Callback
 from apps.common.http import identifier
 from apps.customers.models import Customer, CustomerDeletionRequest
 from apps.customers.cohorts import CATEGORIES, category_filter
-from apps.customers.tm import with_tm_state
+from apps.customers.tm import with_last_tm_date, with_tm_state
 from apps.sites.models import GlobalSettings, Site
 
 KST = ZoneInfo("Asia/Seoul")
@@ -218,8 +218,10 @@ def customer_list(actor, params):
     query, site_id, view = scoped(actor, params, now)
     admin = actor.role == User.Role.ADMIN
     query = apply_conditions(query, params, admin=admin, now=now)
+    if admin and view != 'trash':
+        query = with_last_tm_date(query, now)
     sort = params.get("sort", "priority" if view=="today" else "-created_at")
-    extra_sorts={'deletion_request_status'} | ({'last_tm_date'} if not admin else set())
+    extra_sorts={'deletion_request_status'} | ({'last_tm_date'} if view != 'trash' else set())
     if sort!="priority" and (not isinstance(sort, str) or sort.lstrip("-") not in SORT_FIELDS | TEXT_FIELDS | extra_sorts | ({"admin_notes"} if admin else set()) or sort.startswith("--")):
         error()
     if sort=="priority" and view!="today":error()

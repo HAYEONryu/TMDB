@@ -1,5 +1,6 @@
 """TM completion evidence for the current assignment, never inferred from state."""
 from django.db.models import BooleanField, Case, CharField, Exists, OuterRef, Subquery, Value, When
+from django.db.models.functions import Greatest
 from django.utils import timezone
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
@@ -10,14 +11,36 @@ from apps.customers.models import Customer
 HUMAN_SOURCES = ['MANUAL', 'AI_APPLIED']
 
 
-def with_tm_state(query, now=None, *, include_today=False, include_call_date=False):
-    now = now or timezone.now()
-    start, end = day_bounds(now)
-    calls = ConsultationRevision.objects.filter(
+def call_result_revisions(now):
+    return ConsultationRevision.objects.filter(
         customer_id=OuterRef('pk'), assignment_id=OuterRef('current_assignment_id'),
         actor_id=OuterRef('current_assignment__employee_id'),
         saved_at__gte=OuterRef('current_assignment__assigned_at'), saved_at__lte=now,
         source__in=HUMAN_SOURCES, changed_fields__contains=['call_result'])
+
+
+def with_last_tm_date(query, now=None):
+    now = now or timezone.now()
+    attempts = CustomerActivity.objects.filter(
+        customer_id=OuterRef('pk'), assignment_id=OuterRef('current_assignment_id'),
+        actor_id=OuterRef('current_assignment__employee_id'), site_id=OuterRef('site_id'),
+        assignment__ended_at__isnull=True, kind=CustomerActivity.Kind.CALL,
+        occurred_at__gte=OuterRef('current_assignment__assigned_at'), occurred_at__lte=now,
+    ).order_by('-occurred_at', '-pk')
+    results = call_result_revisions(now).filter(
+        assignment__ended_at__isnull=True, after_values__call_result__in=Customer.CallResult.values,
+    ).order_by('-saved_at', '-customer_version', '-pk')
+    # PostgreSQL chooses the latest available TM evidence, leaving an empty date
+    # when neither a call attempt nor a confirmed result exists.
+    return query.annotate(last_tm_at=Greatest(
+        Subquery(attempts.values('occurred_at')[:1]), Subquery(results.values('saved_at')[:1]),
+    ))
+
+
+def with_tm_state(query, now=None, *, include_today=False, include_call_date=False):
+    now = now or timezone.now()
+    start, end = day_bounds(now)
+    calls = call_result_revisions(now)
     due = Callback.objects.filter(customer_id=OuterRef('pk'), status='PENDING', due_at__lt=end)
     # An explicit clear supersedes older completion evidence. Version breaks ties
     # when multiple confirmed saves have the same timestamp; notes never override.
@@ -31,11 +54,7 @@ def with_tm_state(query, now=None, *, include_today=False, include_call_date=Fal
         When(tm_initial_done=True, tm_due_pending=False, then=Value('COMPLETED')),
         default=Value('PENDING'), output_field=CharField()))
     if include_call_date:
-        attempts = CustomerActivity.objects.filter(customer_id=OuterRef('pk'),
-            assignment_id=OuterRef('current_assignment_id'), actor_id=OuterRef('current_assignment__employee_id'),
-            site_id=OuterRef('site_id'), kind='CALL', occurred_at__gte=OuterRef('current_assignment__assigned_at'),
-            occurred_at__lte=now).order_by('-occurred_at', '-pk')
-        query = query.annotate(last_tm_at=Subquery(attempts.values('occurred_at')[:1]))
+        query = with_last_tm_date(query, now)
     if not include_today:
         return query
     # Callback lacks an assignment FK. Its completion service writes a revision

@@ -20,7 +20,7 @@ def invalid(message):raise AccessError("VALIDATION_ERROR",message,422)
 
 def selected_employee(value):
     if isinstance(value,list):
-        if not 1<=len(value)<=200:invalid('직원을 1~200명 선택해 주세요.')
+        if not value:invalid('직원을 선택해 주세요.')
         ids=tuple(sorted((identifier(v) for v in value),key=str))
         if len(set(ids))!=len(ids):invalid('같은 직원을 중복 선택할 수 없습니다.')
         return ids
@@ -125,8 +125,12 @@ def distribute(actor,body):
                 if available<needed:
                     raise AccessError("INSUFFICIENT_CUSTOMERS",f"{available//len(people)}개씩 분배할 수 있습니다.",409,
                         {"available_count":available,"employee_count":len(people),"max_per_employee":available//len(people),"allocated_count":0})
-                ids=list(eligible(site_id).order_by("?").values_list("pk",flat=True)[:needed])
-                customers={c.pk:c for c in Customer.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
+                pool = eligible(site_id)
+                ids = list(pool.order_by("?").values_list("pk", flat=True)[:needed])
+                customers = {c.pk: c for c in pool.select_for_update().filter(pk__in=ids).order_by("pk")}
+                if len(customers) != needed:
+                    raise AccessError("DISTRIBUTION_TARGETS_CHANGED",
+                        "분배 가능한 고객이 변경되었습니다. 다시 조회한 후 분배해 주세요.", 409)
                 now=timezone.now();new=[]
                 for index,cid in enumerate(ids):
                     assignment=Assignment(customer=customers[cid],employee=people[index//quantity],assigned_by=actor,assigned_at=now)

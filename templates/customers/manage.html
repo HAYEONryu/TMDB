@@ -2,7 +2,7 @@
 {% load static %}
 {% block theme %}{% if not trash %}tm-refresh{% endif %}{% endblock %}
 {% block title %}{% if trash %}휴지통{% else %}DB 관리{% endif %} · 두드림 TM{% endblock %}
-{% block assets %}<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator.min.css' %}"><script src="{% static 'vendor/tabulator/tabulator.min.js' %}" defer></script><script type="module" src="{% static 'customer-grid.js' %}"></script>{% endblock %}
+{% block assets %}<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator.min.css' %}"><script src="{% static 'vendor/tabulator/tabulator.min.js' %}" defer></script><script type="module" src="{% static 'customer-grid.js' %}{% if not trash %}?v=admin-columns-2{% endif %}"></script>{% endblock %}
 {% block content %}
 <section id="management" data-trash="{{ trash|yesno:'true,false' }}" data-user-id="{{ user.pk }}">
   <div class="page-heading d-flex flex-wrap justify-content-between gap-3 align-items-start mb-4"><div><h1 class="h2">{% if trash %}휴지통{% else %}DB 관리{% endif %}</h1><p class="text-secondary mb-0">{% if trash %}복구하면 상담 기록은 유지되고, 담당자는 미배정으로 돌아갑니다.{% else %}현장별 고객을 찾고 상담 기록을 관리하세요. 편집 후 저장을 눌러 주세요.{% endif %}</p></div>{% if not trash %}<div class="d-flex flex-wrap gap-2"><a id="open-imports" href="/app/admin/imports" class="btn btn-outline-secondary">엑셀 업로드</a><button id="add-row" class="btn btn-primary" disabled>고객 추가</button></div>{% else %}<button id="bulk" class="btn btn-outline-secondary">{% if trash %}복구{% else %}휴지통 이동{% endif %}</button>{% endif %}</div>

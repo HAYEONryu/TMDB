@@ -23,6 +23,17 @@ function renderSummary(data){
   });
   target.replaceChildren(list);target.setAttribute('aria-busy','false');
 }
+function compactChart(area,items){
+  if(!area)return;area.replaceChildren();
+  if(!items.length){area.append(text('p','집계 대상 없음 · 0명','chart-empty'));return;}
+  const list=text('ul','','compact-metrics'),max=Math.max(1,...items.map(r=>r.count));
+  for(const row of items){const item=text('li',''),meter=document.createElement('meter');meter.min=0;meter.max=max;meter.value=row.count;meter.setAttribute('aria-label',row.label+' '+format(row.count)+'명');item.append(text('span',row.label),meter,text('strong',format(row.count)+'명'));list.append(item);}
+  area.append(list);
+}
+function compactReports(report){
+  compactChart($('staff-record-preview'),report.staff.map(r=>({label:r.name,count:r.consultation_records_7d})));
+  compactChart($('result-preview'),report.distribution.results.filter(r=>r.count>0));
+}
 function staffChart(report){
   const area=$('staff-record-chart');if(!area)return;
   if(!report.staff.length){area.replaceChildren(text('p','표시할 직원이 없습니다.','chart-empty'));return;}
@@ -118,7 +129,7 @@ function legacyStatistics(data,area){
   for(const e of data.employees){const row=document.createElement('tr');row.dataset.employeeId=e.id;for(const value of [e.name,`${e.assigned_today_unique}명`,`${e.assignment_operations_today}회`,`${e.held_total}명`,`${e.assigned_today_held}명`,`${e.assigned_today_removed}명`,`${e.unprogressed_today_held}명`,`${e.unprogressed_total}명`,e.call_results.map(r=>`${r.label} ${r.count}명`).join(' · ')])row.append(text('td',value));body.append(row);}area.append(node,text('p',`이관이 필요한 고객 ${data.transfer_needed}명 (선택 현장)`));if(!data.employees.length)area.append(text('p','활성 직원이 없습니다.'));
 }
 let displayedSite=null,lastData=null;
-const managerAreas=['staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table','daily-consultation-chart','contract-status-chart','staff-performance-table'];
+const managerAreas=['staff-record-preview','result-preview','staff-record-chart','call-result-chart','contract-summary','staff-allocation-table','staff-progress-table','daily-consultation-chart','contract-status-chart','staff-performance-table'];
 function clearDashboard(message,extra){
   $('dashboard-summary').replaceChildren(text('p',message,'summary-loading'));$('dashboard-statistics').replaceChildren();
   for(const id of managerAreas)$(id)?.replaceChildren(text('p',message,'chart-empty'));
@@ -141,7 +152,7 @@ export async function renderDashboard(site,{draw,clear}={}){
     const params=new URLSearchParams();if(site)params.set('site_id',site);if($('result-period'))params.set('result_period',$('result-period').value);
     const data=await api('/api/dashboard'+(params.size?'?'+params:''),undefined,'GET',{'X-TM-Actor':document.body.dataset.userId});if(current!==generation)return;
     if(site&&data.site_id!==site)throw new Error('선택한 현장의 응답을 확인하지 못했습니다. 다시 조회해 주세요.');
-    renderSummary(data);if(data.manager){staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);performance(data);legacyStatistics(data,$('dashboard-statistics'));$('site-counts').textContent=`현재 고객 ${format(data.counts.total)}명 · 현재 담당 ${format(data.manager.held_total)}명 · 휴지통 ${format(data.counts.trash)}명`;}
+    renderSummary(data);if(data.manager){compactReports(data.manager);staffChart(data.manager);resultChart(data.manager.distribution);staffTables(data);performance(data);legacyStatistics(data,$('dashboard-statistics'));$('site-counts').textContent=`현재 고객 ${format(data.counts.total)}명 · 현재 담당 ${format(data.manager.held_total)}명 · 휴지통 ${format(data.counts.trash)}명`;}
     draw?.(data);lastData=data;$('dashboard-updated').textContent=`마지막 조회 ${data.business_date} ${dashboardTime(data.as_of)} · ${data.site_name||'현장 없음'}`;
     message.dataset.state='success';message.textContent=(data.employee?data.employee.held_total:data.counts.total)?'':'선택 현장에 집계 대상 고객이 없습니다.';
     return data;

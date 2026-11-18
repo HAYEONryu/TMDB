@@ -10,7 +10,7 @@ from apps.customers.choices import CALL_RESULTS
 from apps.customers.queries import KST
 from apps.customers.cohorts import current_customers, valid_assignment
 from apps.callbacks.models import Callback
-from apps.consultations.queries import consultation_saves
+from apps.consultations.queries import consultation_saves, staff_consultation_saves
 
 HUMAN_SAVES = [ConsultationRevision.Source.MANUAL, ConsultationRevision.Source.AI_APPLIED]
 
@@ -61,9 +61,9 @@ def manager_report(site_id, now, result_period):
         today_operations=Count("pk", filter=Q(assigned_at__gte=today, assigned_at__lt=tomorrow)),
         seven_unique=Count("customer_id", distinct=True), seven_operations=Count("pk"))}
     # Actual author, including former/inactive employees with attributable work.
-    saves = (consultation_saves().filter(customer__site_id=site_id,
-             saved_at__gte=seven_start, saved_at__lte=now)
-             .filter(Q(actor__role=User.Role.EMPLOYEE)|Q(assignment__employee_id=F("actor_id"))))
+    saves = staff_consultation_saves().filter(
+        customer__site_id=site_id, saved_at__gte=seven_start, saved_at__lte=now
+    )
     # One customer per actual employee author across the entire seven-day span,
     # even when notes/callbacks were saved repeatedly or on different days.
     records = {row["actor_id"]: row["count"] for row in saves.values("actor_id").annotate(count=Count("customer_id", distinct=True))}

@@ -7,13 +7,18 @@ import {PendingOperation} from "./pending-operation.js";
 import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
-import {customerLabels as labels,customerFields,adminGridFields,choiceLabel} from './customer-columns.js';
+import {customerLabels,customerFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter} from './grid-filter.js';
 import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
 
 const $ = selector => document.querySelector(selector);
 const trash = $("#management").dataset.trash === "true";
+const adminGridFields = ['last_tm_date', 'customer_name', 'phone_normalized', 'residence',
+  'assignee_name', 'admin_notes', 'contract_status', 'call_result', 'callback_due_at', 'visit_at',
+  'notes', 'memo'];
+const labels = trash ? customerLabels : { ...customerLabels, last_tm_date: '최종 TM 날짜',
+  residence: '거주지', assignee_name: '담당직원', admin_notes: '비고', visit_at: '방문예약날짜', memo: '메모' };
 const schema = JSON.parse($("#customer-schema").textContent);
 const editableFields = ["customer_name", "phone_normalized", "call_result", "visit_at", "contract_status", "notes", "callback_due_at", "housing_status", "residence", "route", "memo", "admin_notes"];
 const multiline = new Set(['notes','memo','admin_notes']);
@@ -45,7 +50,7 @@ function status() {
   for(const selector of ["#create-site","#open-filters","#search-form button"]){const button=$(selector);if(button)button.disabled=blocked;}
   if($('#rename-site'))$('#rename-site').disabled=blocked||!siteInfo?.items.some(site=>site.id===state.site);
   document.querySelectorAll(".assignee-action").forEach(button=>button.disabled=blocked);
-  document.querySelectorAll('.callback-action').forEach(button=>{const row=table.getRow(button.dataset.customerId);button.disabled=blocked||!row||!row.getData().callback_id;});
+  document.querySelectorAll('.callback-action').forEach(button=>button.disabled=blocked);
   document.querySelectorAll('.hard-customer').forEach(button=>button.disabled=blocked);if($('#delete-site'))$('#delete-site').disabled=blocked||!state.site;
   if(!trash){$("#assignee-pending").hidden=!assigneeOperation.value;for(const id of ["assignee-retry","assignee-discard","assignee-confirm","assignee-cancel"])$("#"+id).disabled=busy;}
   const importsLink=$("#open-imports");if(importsLink){importsLink.classList.toggle("disabled",busy);importsLink.setAttribute("aria-disabled",String(busy));}
@@ -59,7 +64,7 @@ function rowStyle(row) {
   if(row.getData()._new){const checkbox=row.getElement().querySelector('input[type=checkbox]');if(checkbox)checkbox.disabled=true;}
 }
 function refreshRows() {
-  table.getRows().forEach(row=>{const item=pending.get(row.getData().id);row.getCell("_status")?.setValue(item?`${item.mutation}:${item.error?.code||"pending"}`:"saved");row.reformat();});
+  table.getRows().forEach(row=>row.reformat());
 }
 function dateEditor(cell, onRendered, success, cancel) {
   const field=cell.getField(),original=cell.getValue(),allowTime=field==='visit_at';
@@ -83,12 +88,62 @@ function dateEditor(cell, onRendered, success, cancel) {
   });
   return input;
 }
+function rowButton(label, action) {
+  const button = text('button', label);
+  button.type = 'button';
+  button.className = 'btn btn-sm btn-outline-secondary';
+  button.addEventListener('click', action);
+  return button;
+}
+function historyButton(data) {
+  return rowButton('상담·재콜 이력', () => guarded(() => openHistory(data)).catch(showError));
+}
+function assigneeCell(cell) {
+  const data = cell.getRow().getData();
+  if (data._new) return text('span', '미배정');
+
+  const content = text('div', '');
+  const name = text('div', cell.getValue() || '-');
+  name.className = 'text-truncate';
+  const actions = text('div', '');
+  actions.className = 'd-flex flex-wrap gap-1 mt-1';
+  const change = rowButton('담당 변경', () => guarded(() => openAssignee(data.id)).catch(showError));
+  change.classList.add('assignee-action');
+  change.disabled = busy || !!assigneeOperation.value;
+  actions.append(change, historyButton(data));
+  if (data.callback_id) {
+    const complete = rowButton('재콜 완료', () => guarded(() => callbacks.run(data.id)).catch(showError));
+    complete.classList.add('callback-action');
+    complete.disabled = busy || callbacks?.busy || !!callbacks?.pending.value;
+    actions.append(complete);
+  }
+  content.append(name, actions);
+  const item = pending.get(data.id);
+  if (item) {
+    const state = text('div', item.uncertain ? '결과 확인 필요 ' : item.error ? '저장 실패 ' : '미저장');
+    state.className = 'row-save-state small mt-1';
+    if (item.error) state.append(rowButton('확인', () => openConflict(data.id)));
+    content.append(state);
+  }
+  return content;
+}
 function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
     headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue()))};
   if(!trash)definition.titleFormatter=sortTitle(field,labels[field],()=>state,sort=>runQuery(async()=>{state.sort=sort;state.page=1;await load();}).catch(showError));
-  if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{if(cell.getRow().getData()._new)return text("span","미배정");const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
+  if (!trash && field === 'last_tm_date') {
+    definition.headerTooltip = '현재 배정에서 담당직원이 마지막으로 기록한 통화 또는 저장한 통화결과의 한국 날짜입니다.';
+  }
+  if (!trash && ['customer_name', 'residence'].includes(field)) {
+    definition.width = field === 'residence' ? 180 : 160;
+  }
+  if (!trash && ['admin_notes', 'memo'].includes(field)) {
+    definition.width = 260;
+  }
+  if (field === 'assignee_name' && !trash) {
+    Object.assign(definition, { width: 245, variableHeight: true, formatter: assigneeCell });
+  }
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain && !(cell.getRow().getData()._new&&newRow?.body),
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
     ...(schema[field] ? {editorParams:{values:schema[field],clearable:false,autocomplete:false}} : {}),
@@ -98,13 +153,10 @@ function column(field) {
 const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:" ", selectableRows:true, selectableRowsCheck:row=>!row.getData()._new,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
     ...(trash?customerFields({admin:true}):adminGridFields).map(column),
-    ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
-    {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{if(cell.getRow().getData()._new)return text('span','저장 후 작업 가능');const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
-    ...(!trash ? [{title:"저장상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
-      if(cell.getRow().getData()._new)return text("span",newRow?.body?"결과 확인 필요 · 저장 재시도":newRow?.error?"추가 실패 · 입력 확인":"새 고객 · 미저장");
-      const item = pending.get(cell.getRow().getData().id); const wrap = text("span", item ? item.uncertain?"결과 확인 필요 ":item.error?"저장 실패 ":"미저장" : "저장됨");
-      if (item?.error) { const button = text("button", "확인"); button.className="btn btn-sm btn-outline-secondary"; button.addEventListener("click",()=>openConflict(cell.getRow().getData().id)); wrap.append(button); } return wrap;
-    }}] : [])]});
+    ...(trash ? [
+      {title:'현장',field:'site_name',headerSort:false,minWidth:140,formatter:cell=>text('span',cell.getValue())},
+      {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>historyButton(cell.getRow().getData())},
+    ] : [])]});
 const ready = new Promise(resolve => table.on("tableBuilt",resolve));
 table.on("cellEdited", cell => {
   const data = cell.getRow().getData(), field=cell.getField(), base=rows.get(data.id);
@@ -128,7 +180,7 @@ async function loadSites(selected) {
 let loadGeneration=0;
 const runQuery=createQueryScheduler(guarded);
 $('#search').value=state.q;
-const queryUI=createQueryUI({getState:()=>state,labels,display,view:trash?'trash':'all',grid:$('#customer-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(showError)});
+const queryUI=createQueryUI({getState:()=>state,labels:customerLabels,display,view:trash?'trash':'all',grid:$('#customer-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(showError)});
 $('#list-retry').onclick=()=>runQuery(load).catch(showError);
 async function load() {
   const generation=++loadGeneration;
@@ -303,7 +355,7 @@ $("#bulk-confirm").onclick=async()=>{
 
 $('#open-filters').onclick=()=>{
   if(!commitEditor()||busy)return;
-  openGridFilter({fields:customerFields({admin:true}),labels,schema,current:state.filters,request:api,params,display,
+  openGridFilter({fields:customerFields({admin:true}),labels:customerLabels,schema,current:state.filters,request:api,params,display,
     apply:filters=>runQuery(async()=>{state.filters=filters;state.page=1;await load();})});
 };
 async function openAssignee(id){

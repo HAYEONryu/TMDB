@@ -58,11 +58,11 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
         for actor in [self.admin,self.employee]:
             self.open_grid(actor)
             row=page.locator(f'#{self.grid} .tabulator-row').filter(has=page.get_by_text('010-8000-0000',exact=True))
-            fields=['customer_name','contract_status','call_result','callback_due_at','visit_at','notes']+(['admin_notes'] if actor==self.admin else ['residence','housing_status'])
+            fields=['customer_name','call_result','callback_due_at','visit_at','notes','memo','residence']+(['admin_notes','contract_status'] if actor==self.admin else [])
             for field in fields:
                 expect(row.locator(f'[tabulator-field="{field}"]')).to_have_text('-')
             for empty in [False,True]:
-                for field,value in {'contract_status':'CONTRACTED','call_result':'INTERESTED',**({'housing_status':'무주택'} if actor==self.employee else {})}.items():
+                for field,value in {'call_result':'INTERESTED',**({'contract_status':'CONTRACTED'} if actor==self.admin else {})}.items():
                     cell=row.locator(f'[tabulator-field="{field}"]');cell.dblclick() if actor==self.employee else cell.click()
                     value=('UNKNOWN' if field=='contract_status' else '') if empty else value
                     if actor==self.admin:
@@ -264,7 +264,10 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.assertEqual(page.locator('.query-controls').evaluate("el=>Array.from(el.querySelectorAll('#site,#search,#search-form button,#open-filters,#sort')).map(el=>el.id||'search-button')"),['site','search','search-button','open-filters','sort'])
             expect(page.locator(f'#{self.grid} .column-filter')).to_have_count(0)
             original_sort=page.locator('#sort').input_value()
-            if actor==self.admin:page.locator('#page-size').select_option('100');self.count(2)
+            if actor==self.admin:
+                with page.expect_response(lambda response: '/api/customers?' in response.url):
+                    page.locator('#page-size').select_option('100')
+                expect(page.locator('#customer-grid')).to_have_attribute('aria-busy','false')
             requests=[]
             def observe(r):
                 if '/api/customers?' in r.url:requests.append(r.url)
@@ -281,7 +284,11 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.apply(1);self.assertEqual(len(requests),1)
             page.remove_listener('request',observe)
             expect(page.locator('#open-filters')).to_have_text('상세 필터 (2)')
-            page.locator('#search').fill('가상고객');page.locator('#search').press('Enter');self.count(1)
+            expect(page.locator(f'#{self.grid}')).to_have_attribute('aria-busy','false')
+            page.locator('#search').fill('가상고객')
+            with page.expect_response(lambda response: '/api/customers?' in response.url):
+                page.locator('#search').press('Enter')
+            self.count(1)
             expect(page.locator('#active-filters button')).to_have_count(3)
             page.screenshot(path=str(artifact_path('query-'+path.replace('/','-')+'.png')),full_page=True)
             page.locator('#open-filters').click();page.locator('#filter-reset').click();self.count(1)

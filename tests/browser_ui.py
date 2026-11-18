@@ -96,7 +96,7 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         expect(cards.nth(1).locator('dd')).to_have_text('0명')
         self.page.locator('.workspace-nav').get_by_role('link',name='나의 DB',exact=True).click()
         expect(self.page.locator('#page-info')).to_contain_text('검색 2명')
-        expect(self.page.locator('#employee-grid .tabulator-header .tabulator-col').first).to_have_attribute('tabulator-field','last_tm_date')
+        expect(self.page.locator('#employee-grid .tabulator-header .tabulator-col').first).to_have_attribute('tabulator-field','_number')
         expect(self.page.locator('.workspace-nav [aria-current="page"]')).to_have_text('나의 DB')
         for width in [320,390,768]:
             self.page.set_viewport_size({'width':width,'height':844})
@@ -183,6 +183,8 @@ class DoodreamUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.login(self.admin)
         expect(self.page.locator('#graph-site')).to_have_count(0)
         expect(self.page.locator('#result-period option')).to_have_text(['현재 고객 상태','금주','오늘'])
+        expect(self.page.locator('#staff-record-preview')).to_contain_text(self.employee.name)
+        for summary in self.page.locator('.legacy-chart>summary').all():summary.click()
         expect(self.page.locator('#staff-record-chart svg')).to_be_visible()
         expect(self.page.locator('#staff-record-chart')).to_contain_text(self.employee.name)
         # Identify the employee rather than relying on timestamps/UUID order.

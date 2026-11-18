@@ -1,0 +1,28 @@
+{
+  "base_commit": "5cc57ecd9de73631e09022e0e66a8d2aa61b9256",
+  "test_run": "20261118T160138647183Z-f59161d49d5542f68ba64b050728401d",
+  "system_check_run": "20261118T160141438476Z-ea2ea143a0e74254b2ce4362447293a1",
+  "source_digest": "45955b616cd68b0313f8e78ac7484938e0fccc2df220fe83e07ff38bd37eaa00",
+  "source_unchanged_during_run": true,
+  "successful": true,
+  "django_tests": 233,
+  "browser_tests": 73,
+  "node_tests_passed": 24,
+  "operating_data_used": false,
+  "external_ai_calls": 0,
+  "unverified": [
+    "operating deployment and data",
+    "other browser engines and physical phones",
+    "production-scale load"
+  ],
+  "follow_up_run": {
+    "run_id": "20261118T160535829578Z-07162069ea5146d6bfe114c1a7b272b4",
+    "tests_run": 51,
+    "outcomes": {
+      "passed": 51
+    },
+    "source_digest": "5fc670704a7f7fb6af18e3c1002e6fb70269bc83ac664a116357fea0111445a3",
+    "matches_current_source": true,
+    "scope": "Default site changed to a third site, employee and admin entry, full staff selection, allocation and recall regression"
+  }
+}

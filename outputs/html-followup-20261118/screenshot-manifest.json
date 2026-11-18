@@ -1,0 +1,434 @@
+{
+  "run_id": "20261118T160138647183Z-f59161d49d5542f68ba64b050728401d",
+  "screenshots": [
+    {
+      "file": "followup-employee-dashboard-1440.png",
+      "pixels": [
+        1440,
+        3911
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/658c2064a6571d4e/followup-employee-dashboard-1440.png"
+    },
+    {
+      "file": "followup-employee-dashboard-320.png",
+      "pixels": [
+        320,
+        5447
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/658c2064a6571d4e/followup-employee-dashboard-320.png"
+    },
+    {
+      "file": "followup-employee-dashboard-390.png",
+      "pixels": [
+        390,
+        5102
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/658c2064a6571d4e/followup-employee-dashboard-390.png"
+    },
+    {
+      "file": "followup-admin-dashboard-1440.png",
+      "pixels": [
+        1440,
+        3688
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/8c0791c006f4cf4b/followup-admin-dashboard-1440.png"
+    },
+    {
+      "file": "followup-admin-dashboard-320.png",
+      "pixels": [
+        320,
+        4666
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/8c0791c006f4cf4b/followup-admin-dashboard-320.png"
+    },
+    {
+      "file": "followup-admin-dashboard-390.png",
+      "pixels": [
+        390,
+        4414
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/8c0791c006f4cf4b/followup-admin-dashboard-390.png"
+    },
+    {
+      "file": "followup-employee-grid-1440.png",
+      "pixels": [
+        1440,
+        1212
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/94abce9dada239a0/followup-employee-grid-1440.png"
+    },
+    {
+      "file": "followup-employee-grid-320.png",
+      "pixels": [
+        320,
+        1621
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/94abce9dada239a0/followup-employee-grid-320.png"
+    },
+    {
+      "file": "followup-employee-grid-390.png",
+      "pixels": [
+        390,
+        1552
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/94abce9dada239a0/followup-employee-grid-390.png"
+    },
+    {
+      "file": "ai-followup-1440.png",
+      "pixels": [
+        1440,
+        961
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/ai-followup-1440.png"
+    },
+    {
+      "file": "ai-followup-320.png",
+      "pixels": [
+        320,
+        1040
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/ai-followup-320.png"
+    },
+    {
+      "file": "ai-followup-390.png",
+      "pixels": [
+        390,
+        1001
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/ai-followup-390.png"
+    },
+    {
+      "file": "assignments-followup-1440.png",
+      "pixels": [
+        1440,
+        1022
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/assignments-followup-1440.png"
+    },
+    {
+      "file": "assignments-followup-320.png",
+      "pixels": [
+        320,
+        1513
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/assignments-followup-320.png"
+    },
+    {
+      "file": "assignments-followup-390.png",
+      "pixels": [
+        390,
+        1490
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/assignments-followup-390.png"
+    },
+    {
+      "file": "customers-followup-1440.png",
+      "pixels": [
+        1440,
+        1273
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/customers-followup-1440.png"
+    },
+    {
+      "file": "customers-followup-320.png",
+      "pixels": [
+        320,
+        1782
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/customers-followup-320.png"
+    },
+    {
+      "file": "customers-followup-390.png",
+      "pixels": [
+        390,
+        1762
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/customers-followup-390.png"
+    },
+    {
+      "file": "imports-followup-1440.png",
+      "pixels": [
+        1440,
+        961
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/imports-followup-1440.png"
+    },
+    {
+      "file": "imports-followup-320.png",
+      "pixels": [
+        320,
+        1122
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/imports-followup-320.png"
+    },
+    {
+      "file": "imports-followup-390.png",
+      "pixels": [
+        390,
+        1018
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/imports-followup-390.png"
+    },
+    {
+      "file": "reference-admin-ai-1440.png",
+      "pixels": [
+        1440,
+        960
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-admin-ai-1440.png"
+    },
+    {
+      "file": "reference-admin-assignments-1440.png",
+      "pixels": [
+        1440,
+        960
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-admin-assignments-1440.png"
+    },
+    {
+      "file": "reference-admin-dashboard-1440.png",
+      "pixels": [
+        1440,
+        1552
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-admin-dashboard-1440.png"
+    },
+    {
+      "file": "reference-admin-db-1440.png",
+      "pixels": [
+        1440,
+        960
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-admin-db-1440.png"
+    },
+    {
+      "file": "reference-employee-dashboard-1440.png",
+      "pixels": [
+        1440,
+        1184
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-employee-dashboard-1440.png"
+    },
+    {
+      "file": "reference-employee-mine-1440.png",
+      "pixels": [
+        1440,
+        960
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-employee-mine-1440.png"
+    },
+    {
+      "file": "reference-employee-today-1440.png",
+      "pixels": [
+        1440,
+        960
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/a43996200e0d5a0c/reference-employee-today-1440.png"
+    },
+    {
+      "file": "trash-protected.png",
+      "pixels": [
+        1440,
+        1308
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/trash-protected.png"
+    },
+    {
+      "file": "users-protected.png",
+      "pixels": [
+        1440,
+        1009
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/48a9c07bc915bbb2/users-protected.png"
+    },
+    {
+      "file": "today-tm-layout-1440.png",
+      "pixels": [
+        1440,
+        1286
+      ],
+      "viewport_css_px": [
+        1440,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/75ccf463a4662f36/today-tm-layout-1440.png"
+    },
+    {
+      "file": "today-tm-layout-320.png",
+      "pixels": [
+        320,
+        1745
+      ],
+      "viewport_css_px": [
+        320,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/75ccf463a4662f36/today-tm-layout-320.png"
+    },
+    {
+      "file": "today-tm-layout-390.png",
+      "pixels": [
+        390,
+        1676
+      ],
+      "viewport_css_px": [
+        390,
+        960
+      ],
+      "device_scale_factor": 1,
+      "source": ".local/verification-runs/20261118T160138647183Z-f59161d49d5542f68ba64b050728401d/artifacts/75ccf463a4662f36/today-tm-layout-390.png"
+    }
+  ]
+}

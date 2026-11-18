@@ -204,8 +204,8 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_reverted_unsent_values_do_not_create_activity_and_datetime_fields(self):
         page=self.page;self.edit('저장 전 원복할 가상 내용');self.edit('',pending=False);self.saved();self.assertEqual(self.sent,[]);self.assertFalse(self.db(lambda:Assignment.objects.filter(first_activity_at__isnull=False).exists()))
-        self.edit('INTERESTED',field='call_result');self.edit('202611051330',field='visit_at');self.edit('20261106',field='callback_due_at');self.edit('다주택',field='housing_status');self.save()
-        body=self.sent[0]['rows'][0];self.assertEqual(body['changes']['visit_at'],'2026-11-05T04:30:00.000Z');self.assertEqual(body['changes']['housing_status'],'다주택');self.assertEqual(body['changes']['callback_due_at'],'2026-11-05T15:00:00.000Z')
+        self.edit('INTERESTED',field='call_result');self.edit('202611051330',field='visit_at');self.edit('20261106',field='callback_due_at');self.edit('가상 메모',field='memo');self.save()
+        body=self.sent[0]['rows'][0];self.assertEqual(body['changes']['visit_at'],'2026-11-05T04:30:00.000Z');self.assertEqual(body['changes']['memo'],'가상 메모');self.assertEqual(body['changes']['callback_due_at'],'2026-11-05T15:00:00.000Z')
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.count()),1)
         self.cell(field='visit_at').dblclick();page.locator('h1').click();self.saved();self.assertEqual(len(self.sent),1)
 

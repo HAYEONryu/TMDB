@@ -18,6 +18,7 @@ from django.utils import timezone
 from datetime import timedelta
 from tests.test_p4 import Fixtures
 from tests.helpers import user,STRONG_PASSWORD
+from tests.browser_dialog_helpers import confirm_action
 
 
 class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
@@ -54,17 +55,21 @@ class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
         page=self.page;page.get_by_role("link",name="DB 분배·회수",exact=True).click()
         expect(page.locator("#assignment-quantity")).to_be_disabled()
         page.get_by_role("button",name="분배 가능 고객 조회",exact=True).click();expect(page.locator("#availability-count")).to_contain_text("분배 가능 95명 · 활성 직원 4명")
-        page.locator("#assignment-quantity").fill("30");page.get_by_role("button",name="분배",exact=True).click()
+        page.locator('#assignment-select-all').check()
+        page.locator("#assignment-quantity").fill("30");page.locator('#distribute').click()
+        confirm_action(page)
         expect(page.locator("#assignment-message")).to_contain_text("23명씩 분배할 수 있습니다.")
         self.assertEqual(self.db(lambda:Assignment.objects.count()),0)
-        page.locator("#assignment-quantity").fill("23");page.get_by_role("button",name="분배",exact=True).click()
+        page.locator("#assignment-quantity").fill("23");page.locator('#distribute').click()
+        confirm_action(page)
         expect(page.locator("#assignment-result")).to_contain_text("고객 92명을 배정했습니다.")
         expect(page.locator("#availability-count")).to_contain_text("분배 가능 3명")
         page.screenshot(path=str(self.evidence/"p4-allocation-desktop.png"),full_page=True)
         page.locator("#assignment-employee").select_option(str(self.employee.pk));page.locator("#assignment-quantity").fill("1")
         captured=[]
         def lose(route):captured.append(route.request.post_data_json);self.assertEqual(route.fetch().status,200);route.abort("failed")
-        page.route("**/api/assignments/distribute",lose,times=1);page.get_by_role("button",name="분배",exact=True).click()
+        page.route("**/api/assignments/distribute",lose,times=1);page.locator('#distribute').click()
+        confirm_action(page)
         expect(page.locator("#assignment-pending")).to_be_visible();self.assertEqual(self.db(lambda:Assignment.objects.count()),93)
         page.once("dialog",lambda dialog:dialog.accept());page.reload()
         expect(page.locator("#assignment-pending")).to_be_visible();expect(page.locator("#distribute")).to_be_disabled()
@@ -75,7 +80,7 @@ class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
         owned=self.context.request.get(self.live_server_url+f"/api/customers?site_id={self.site.pk}&assignee_id={self.employee.pk}").json()["data"][0]
         response=self.context.request.post(self.live_server_url+"/api/customers/batch-update",headers={"X-CSRFToken":self.csrf()},data={"rows":[{"customer_id":owned["id"],"assignment_id":owned["assignment_id"],"expected_version":owned["version"],"mutation_id":str(uuid4()),"changes":{"notes":"가상 진행 상담 보존"}}]})
         self.assertTrue(response.json()["results"][0]["ok"])
-        page.get_by_role("button",name="선택 직원의 오늘 배정 회수",exact=True).click();expect(page.locator("#recall-preview")).to_contain_text("24명")
+        page.locator('#recall').click();expect(page.locator("#recall-preview")).to_contain_text("24명")
         page.locator("#recall-confirm").click();expect(page.locator("#assignment-result")).to_contain_text("24명을 회수했습니다.")
         self.assertEqual(self.db(lambda:Customer.objects.get(pk=owned["id"]).notes),"가상 진행 상담 보존")
         self.assertEqual(self.db(lambda:Customer.objects.filter(pk=owned["id"],current_assignment=None).count()),1)
@@ -133,8 +138,7 @@ class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
         customer=self.rows[0];self.db(lambda:self.assign(customer))
         page=self.page;page.goto(self.live_server_url+f"/app/admin/customers?site_id={self.site.pk}&assignee_id={self.employee.pk}")
         expect(page.locator("#page-info")).to_contain_text("검색 1명")
-        assigned=page.locator('.tabulator-row [tabulator-field="assigned_at"] span').first
-        self.assertRegex(assigned.inner_text(),r"^\d{4}-\d{2}-\d{2}$")
+        expect(page.locator('.tabulator-row [tabulator-field="last_tm_date"]').first).to_have_text('-')
         page.get_by_role("button",name="담당 변경",exact=True).click();page.locator("#assignee-target").select_option(str(self.other.pk))
         requests=[]
         def lose(route):requests.append(route.request.post_data_json);self.assertEqual(route.fetch().status,200);route.abort("failed")

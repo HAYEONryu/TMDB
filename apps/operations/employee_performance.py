@@ -13,7 +13,7 @@ from apps.accounts.models import User
 from apps.assignments.models import Assignment
 from apps.common.http import api_errors, identifier
 from apps.consultations.models import CustomerActivity, PerformanceTracking
-from apps.consultations.queries import consultation_saves, audit_started_at
+from apps.consultations.queries import staff_consultation_saves, audit_started_at
 from apps.customers.employee import optional_queue_identity
 from apps.customers.models import Customer
 from apps.customers.queries import KST
@@ -27,7 +27,7 @@ def performance(person, site_id, month, now):
     tracking = PerformanceTracking.objects.filter(pk=1).values_list('started_at', flat=True).first()
     # The original revision table has always audited manual/AI-applied saves.
     audit_start = audit_started_at()
-    saves = consultation_saves().filter(actor=person, customer__site_id=site_id, saved_at__lte=now)
+    saves = staff_consultation_saves().filter(actor=person, customer__site_id=site_id, saved_at__lte=now)
     # The receipt's assignment is the only recall evidence. Later assignments or
     # current ownership must not resurrect/transfer recalled prospect credit.
     prospect_saves = saves.exclude(assignment__ended_at__lte=now,
@@ -108,7 +108,7 @@ def staff_monthly(request):
         if site_id and not Site.objects.filter(pk=site_id).exists():raise AccessError('SITE_DELETED','현장이 삭제되었거나 존재하지 않습니다.',409)
         # Include historical actors even after deactivation/role change.
         actors=CustomerActivity.objects.filter(site_id=site_id).values('actor_id')
-        saved=consultation_saves().filter(customer__site_id=site_id).values('actor_id')
+        saved=staff_consultation_saves().filter(customer__site_id=site_id).values('actor_id')
         people=User.objects.filter(Q(role='EMPLOYEE',is_active=True)|Q(pk__in=actors)|Q(pk__in=saved)).order_by('name','pk')
         result={'site_id':str(site_id) if site_id else None,'month':value,'business_date':now.astimezone(KST).date().isoformat(),'as_of':now.isoformat(),
             'employees':[{'id':str(p.pk),'name':p.name,**performance(p,site_id,month,now)} for p in people]}

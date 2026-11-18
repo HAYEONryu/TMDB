@@ -11,7 +11,7 @@ import {installHistory} from './customer-history.js';
 import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
-import {customerLabels as labels,customerFields,employeeGridFields,choiceLabel} from './customer-columns.js';
+import {customerLabels,employeeGridLabels as labels,customerFields,employeeGridFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter} from './grid-filter.js';
 import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
@@ -20,7 +20,7 @@ const $=selector=>document.querySelector(selector),root=$('#employee'),userId=ro
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']);
-const todayWidths={customer_name:140,phone_normalized:154,call_result:166,residence:200,notes:340,housing_status:168,memo:300,callback_due_at:210,visit_at:174,contract_status:120};
+const gridWidths={customer_name:140,phone_normalized:154,call_result:166,residence:180,notes:340,memo:260,callback_due_at:210,visit_at:174};
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const display=(field,value)=>dates.has(field)?(value?(field==='visit_at'?localDate(value).replace('T',' '):localDate(value).slice(0,10)):'-'):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
@@ -87,7 +87,7 @@ function editor(cell,onRendered,success,cancel){
   onRendered(()=>{activeEditor={finish,input};input.focus();});return input;
 }
 function column(field){
-  return {title:labels[field],field,minWidth:todayWidths[field]||145,width:todayWidths[field]||145,headerSort:false,
+  return {title:labels[field],field,minWidth:gridWidths[field],width:gridWidths[field],headerSort:false,
     titleFormatter:sortTitle(field,labels[field],()=>state,changeSort),
     formatter:cell=>text('span',display(field,cell.getValue())),
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
@@ -149,12 +149,13 @@ function rowStyle(row){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:' ',selectableRows:false,clipboard:false,
   rowFormatter:rowStyle,
-  columns:[{title:'최종 TM 날짜',field:'last_tm_date',frozen:true,width:140,headerSort:false,editor:false,
-    titleFormatter:sortTitle('last_tm_date','최종 TM 날짜',()=>state,changeSort),
-    headerTooltip:'현재 배정에서 내가 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며 상담 저장 시각으로 추정하지 않습니다.',
+  columns:[{title:'No.',field:'_number',frozen:true,width:56,minWidth:56,hozAlign:'center',headerSort:false},
+    {title:labels.last_tm_date,field:'last_tm_date',frozen:true,width:140,headerSort:false,editor:false,
+    titleFormatter:sortTitle('last_tm_date',labels.last_tm_date,()=>state,changeSort),
+    headerTooltip:'현재 배정에서 내가 마지막으로 기록한 통화 또는 저장한 통화결과의 한국 날짜입니다. 부재도 포함합니다.',
     formatter:cell=>{const value=queue.rows.get(cell.getRow().getData().id)?.last_tm_date||cell.getValue();cell.getElement().classList.toggle('missing-tm-date',!value);return text('span',value||'-');}},
     ...employeeGridFields.flatMap(field=>[
-    {...column(field),...(field==='callback_due_at'?{title:'재콜 일정',formatter:callbackCell,minWidth:210}:{}),...(field==='contract_status'?{title:'계약 여부'}:{})},
+    {...column(field),...(field==='callback_due_at'?{formatter:callbackCell}:{})},
     ...(field==='call_result'?[{title:'삭제요청',field:'_deletion',headerSort:false,width:120,minWidth:120,headerTooltip:deletionHelp,titleFormatter:sortTitle('deletion_request_status','삭제요청',()=>state,changeSort),formatter:deletionCell}]:[])
   ]),{title:'작업',field:'_actions',headerSort:false,minWidth:380,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
@@ -193,7 +194,7 @@ function refreshTMDate(){
 }
 const runQuery=createQueryScheduler(guarded);
 $('#search').value=state.q;
-const queryUI=createQueryUI({getState:()=>state,labels,display,view,grid:$('#employee-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(error)});
+const queryUI=createQueryUI({getState:()=>state,labels:customerLabels,display,view,grid:$('#employee-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(error)});
 $('#list-retry').onclick=()=>runQuery(load).catch(error);
 function changeSort(sort){runQuery(async()=>{state.sort=sort;state.page=1;await load();}).catch(error);}
 function streamStatus(){
@@ -209,7 +210,10 @@ async function load(append=false){
     queue.setRows(data.data);lastPage=data.last_page;
     loadedBusinessDate=businessDate(data.as_of);serverClock={at:new Date(data.as_of).getTime(),received:Date.now()};
     if($('#tm-business-date'))$('#tm-business-date').textContent='기준일 '+loadedBusinessDate+' · 한국 시간';
-    const values=data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )}));
+    const offset = (data.page - 1) * data.page_size;
+    const values = data.data.map((row, index) => ({
+      ...row, ...(queue.entry(row.id) ? changes(queue.entry(row.id)) : {}), _number: offset + index + 1,
+    }));
     if(append){if(values.some(row=>table.getRow(row.id)))throw new Error('목록이 변경되었습니다. 목록 새로고침으로 다시 조회해 주세요.');await table.addData(values);}else{await table.setData(values);$('#employee-grid .tabulator-tableholder').scrollTop=0;}
     nextCursor=data.next_cursor;streamTotal=data.total;appendFailed=false;
     if(generation!==loadGeneration)return;
@@ -281,7 +285,7 @@ window.addEventListener('online',resume);document.addEventListener('visibilitych
 window.addEventListener('tm-auth-context',event=>{const data=event.detail;if(data.user!==userId||data.role!=='EMPLOYEE'||data.initial){accessRevoked=true;readOnly=false;queue.pause('다른 탭에서 로그인 정보가 변경되었습니다. 대기값 전송을 중단했습니다.');}});
 $('#open-filters').onclick=()=>{
   commitEditor();
-  openGridFilter({fields:customerFields(),labels,schema,current:state.filters,request,params,display,
+  openGridFilter({fields:customerFields(),labels:customerLabels,schema,current:state.filters,request,params,display,
     apply:filters=>runQuery(async()=>{state.filters=filters;state.page=1;await load();})});
 };
 

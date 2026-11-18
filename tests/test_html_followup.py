@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.test import TransactionTestCase,override_settings
 from django.utils import timezone
 from apps.accounts.access import AccessError
+from apps.accounts.models import User
 from apps.assignments import services
 from apps.assignments.tm_recall import preview,recall_unfinished
 from apps.consultations.models import PerformanceTracking
@@ -90,9 +91,31 @@ class HTMLFollowupTests(Fixtures,TransactionTestCase):
             except AccessError as error:self.assertEqual(error.code,'VALIDATION_ERROR')
         self.assertFalse(Customer.objects.exclude(current_assignment=None).exists())
 
+    def test_distribution_applies_only_to_customers_still_eligible_when_locked(self):
+        existing, first, changed = self.customers(3)
+        current = self.assign(existing)
+        pool = services.eligible(self.site.pk)
+        locked_pool = pool.exclude(pk=changed.pk).select_for_update()
+        with patch.object(services, 'eligible', return_value=pool), patch.object(pool, 'select_for_update', return_value=locked_pool):
+            result, status = services.distribute(self.admin, self.body(employee_id=[str(self.employee.pk)], quantity=2))
+        self.assertEqual(status, 409)
+        self.assertEqual(result['error']['code'], 'DISTRIBUTION_TARGETS_CHANGED')
+        existing.refresh_from_db()
+        first.refresh_from_db()
+        self.assertEqual(existing.current_assignment_id, current.pk)
+        self.assertIsNone(first.current_assignment_id)
+
+    def test_explicit_staff_selection_keeps_every_selected_id(self):
+        ids = [uuid4() for _ in range(201)]
+        self.assertEqual(services.selected_employee([str(pk) for pk in ids]), tuple(sorted(ids)))
+
     def test_admin_monthly_matches_employee_after_later_recall_keeps_call_and_visit(self):
-        PerformanceTracking.objects.update_or_create(pk=1,defaults={'started_at':self.now.replace(day=1,hour=0)})
-        a,b=self.customers(2);self.assign(a);self.assign(b)
+        started_at = self.now.replace(day=1, hour=0)
+        audit = patch('apps.operations.employee_performance.audit_started_at', return_value=started_at)
+        audit.start()
+        self.addCleanup(audit.stop)
+        a,b,c=self.customers(3);self.assign(a);self.assign(b);self.assign(c)
+        update_row(self.admin, {**self.mutation(c), 'changes': {'call_result': 'INTERESTED'}})
         for row in [a,b]:update_row(self.employee,{**self.mutation(row),'changes':{'call_result':'INTERESTED'}})
         for kind,values in [('CALL',{'occurred_at':self.now.isoformat(),'connection':'CONNECTED'}),('CALL',{'occurred_at':self.now.isoformat(),'connection':'NOT_CONNECTED'}),('VISIT',{'visited_on':'2026-11-18'})]:
             record_activity(self.employee,a.pk,{'site_id':str(self.site.pk),'assignment_id':str(a.current_assignment_id),'kind':kind,'idempotency_key':str(uuid4()),**values})
@@ -100,9 +123,16 @@ class HTMLFollowupTests(Fixtures,TransactionTestCase):
         employee=performance(self.employee,self.site.pk,self.now.date().replace(day=1),self.now)
         response=login(self.admin).get('/api/dashboard/staff-performance',{'site_id':str(self.site.pk),'month':'2026-11'})
         self.assertEqual(response.status_code,200)
+        self.assertNotIn(str(self.admin.pk), [r['id'] for r in response.json()['employees']])
         manager=next(r for r in response.json()['employees'] if r['id']==str(self.employee.pk))
         self.assertEqual(manager['rows'],employee['rows']);self.assertEqual(manager['totals'],employee['totals'])
         day=next(r for r in manager['rows'] if r['date']=='2026-11-18')
         self.assertEqual((day['call_count'],day['connected_count'],day['prospect_count'],day['visit_count']),(2,1,1,1))
         self.assertEqual(login(self.employee).get('/api/dashboard/staff-performance').status_code,403)
         self.assertEqual(login(self.admin).get('/api/dashboard/staff-performance',{'month':'2026-12'}).status_code,422)
+        User.objects.filter(pk=self.employee.pk).update(role=User.Role.ADMIN)
+        after_role_change = login(self.admin).get('/api/dashboard/staff-performance', {
+            'site_id': str(self.site.pk), 'month': '2026-11',
+        }).json()['employees']
+        former_employee = next(row for row in after_role_change if row['id'] == str(self.employee.pk))
+        self.assertEqual(former_employee['rows'], employee['rows'])
