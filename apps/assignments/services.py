@@ -18,7 +18,17 @@ from apps.sites.services import locked_actor
 def invalid(message):raise AccessError("VALIDATION_ERROR",message,422)
 
 
-def selected_employee(value):return "all" if value=="all" else identifier(value)
+def selected_employee(value):
+    if isinstance(value,list):
+        if not 1<=len(value)<=200:invalid('직원을 1~200명 선택해 주세요.')
+        ids=tuple(sorted((identifier(v) for v in value),key=str))
+        if len(set(ids))!=len(ids):invalid('같은 직원을 중복 선택할 수 없습니다.')
+        return ids
+    return "all" if value=="all" else identifier(value)
+
+
+def selected_rows(query,value):
+    return query if value=='all' else query.filter(pk__in=value) if isinstance(value,tuple) else query.filter(pk=value)
 
 
 def employee_rows():
@@ -28,8 +38,8 @@ def employee_rows():
 def recipients(value,*,lock=False):
     query=employee_rows()
     if lock:query=query.select_for_update().order_by("pk")
-    rows=list(query if value=="all" else query.filter(pk=value))
-    if not rows:
+    rows=list(selected_rows(query,value))
+    if not rows or isinstance(value,tuple) and len(rows)!=len(value):
         if value=="all":raise AccessError("NO_ACTIVE_EMPLOYEES","분배할 활성 직원이 없습니다.",409)
         raise AccessError("INVALID_EMPLOYEE","활성 직원만 선택할 수 있습니다. 직원 목록을 다시 확인해 주세요.",409)
     return rows
@@ -48,8 +58,15 @@ def eligible(site_id):return Customer.objects.filter(site_id=site_id,deleted_at_
 def availability(params):
     if set(params)!={"site_id"}:invalid("현장을 선택해 주세요.")
     site=site_for(identifier(params["site_id"]))
-    return {"site_id":str(site.pk),"available_count":eligible(site.pk).count(),
-        "employees":[{"id":str(person.pk),"name":person.name,"phone":person.phone_normalized} for person in employee_rows()]}
+    from apps.customers.cohorts import current_customers
+    from apps.customers.tm import with_tm_state
+    now=timezone.now();employees=[]
+    for person in employee_rows():
+        live=current_customers(site.pk,now,person)
+        employees.append({'id':str(person.pk),'name':person.name,'phone':person.phone_normalized,
+            'held_total':live.count(),'today_held':today_query(site.pk,[person],now).count(),
+            'unfinished_tm':with_tm_state(live,now).filter(tm_status='PENDING').count()})
+    return {"site_id":str(site.pk),"available_count":eligible(site.pk).count(),"employees":employees}
 
 
 def today_query(site_id,people,now):
@@ -64,7 +81,8 @@ def recall_preview(body):
     site_for(site_id)
     people=recipients(value)
     now=timezone.now()
-    return {"site_id":str(site_id),"business_date":timezone.localdate(now,KST).isoformat(),"employee_count":len(people),"target_count":today_query(site_id,people,now).count()}
+    employees=[{'id':str(p.pk),'name':p.name,'count':today_query(site_id,[p],now).count()} for p in people]
+    return {"site_id":str(site_id),"business_date":timezone.localdate(now,KST).isoformat(),"employee_count":len(people),"target_count":sum(p['count'] for p in employees),'employees':employees}
 
 
 def end_locked(customers,assignments,actor,reason,now):
@@ -95,7 +113,7 @@ def distribute(actor,body):
     site_id,value,key,body_hash=checked_body(body,distribute=True)
     with business_write():
         # Resolve all-team membership while holding the global write boundary.
-        users=list(employee_rows().values_list("pk",flat=True)) if value=="all" else [value]
+        users=list(employee_rows().values_list("pk",flat=True)) if value=="all" else list(value) if isinstance(value,tuple) else [value]
         actor=locked_actor(actor,admin=True,extra_ids=users)
         site_for(site_id,lock=True)
         cached=replay(actor,"DISTRIBUTE",key,body_hash)
@@ -128,7 +146,7 @@ def distribute(actor,body):
 def recall(actor,body):
     site_id,value,key,body_hash=checked_body(body,distribute=False)
     with business_write():
-        ids=list(employee_rows().values_list("pk",flat=True)) if value=="all" else [value]
+        ids=list(employee_rows().values_list("pk",flat=True)) if value=="all" else list(value) if isinstance(value,tuple) else [value]
         actor=locked_actor(actor,admin=True,extra_ids=ids)
         site_for(site_id,lock=True)
         cached=replay(actor,"MANUAL_RECALL",key,body_hash)
@@ -137,9 +155,10 @@ def recall(actor,body):
             people=recipients(value);now=timezone.now()
             customers=list(today_query(site_id,people,now).select_for_update(of=("self",)).order_by("pk"))
             assignments=list(Assignment.objects.select_for_update().filter(pk__in=[c.current_assignment_id for c in customers]).order_by("pk"))
+            counts=[{'id':str(p.pk),'name':p.name,'count':sum(a.employee_id==p.pk for a in assignments)} for p in people]
             end_locked(customers,assignments,actor,Assignment.EndReason.MANUAL_RECALL,now)
             OperationEvent.objects.create(actor=actor,operation="MANUAL_RECALL",occurred_at=now,affected_count=len(customers))
-            result={"ok":True,"site_id":str(site_id),"business_date":timezone.localdate(now,KST).isoformat(),"recalled_count":len(customers),"available_count":eligible(site_id).count()};status=200
+            result={"ok":True,"site_id":str(site_id),"business_date":timezone.localdate(now,KST).isoformat(),"recalled_count":len(customers),"available_count":eligible(site_id).count(),'employees':counts};status=200
         except AccessError as error:result,status=failure(error)
         return remember(actor,"MANUAL_RECALL",key,body_hash,result,status=status,target_ids=[site_id])
 

@@ -11,21 +11,22 @@ export class DailyCallResults{
   }
   clear(){
     this.sequence++;this.ready=false;this.last=null;$('daily-call-results').setAttribute('aria-busy','false');$('call-results-status').textContent='일별 통화결과를 조회해 주세요.';
-    document.querySelectorAll('[data-call-result]').forEach(cell=>cell.textContent='조회 전');
+    document.querySelectorAll('[data-call-result]').forEach(cell=>{cell.textContent='조회 전';cell.parentElement.style.setProperty('--result-percent','0%');});
     $('call-results-coverage').textContent='';$('call-results-retry').hidden=true;
   }
   async load(site){
     this.site=site;this.ready=true;const sequence=++this.sequence,date=$('call-results-date').value;
     const same=this.last?.site_id===(site||null)&&this.last?.date===date;
     $('daily-call-results').setAttribute('aria-busy','true');$('call-results-status').textContent='일별 통화결과를 불러오고 있습니다…';$('call-results-retry').hidden=true;
-    if(!same)document.querySelectorAll('[data-call-result]').forEach(cell=>cell.textContent='조회 중…');
+    if(!same)document.querySelectorAll('[data-call-result]').forEach(cell=>{cell.textContent='조회 중…';cell.parentElement.style.setProperty('--result-percent','0%');});
     try{
       const params=new URLSearchParams();if(site)params.set('site_id',site);if(!this.followToday&&date)params.set('date',date);
       const data=await api('/api/dashboard/call-results?'+params,undefined,'GET',{'X-TM-Actor':document.body.dataset.userId});
       if(sequence!==this.sequence)return;
       this.last=data;this.clock={at:new Date(data.as_of).getTime(),received:Date.now(),day:data.business_date};
       $('call-results-date').value=data.date;$('call-results-date').max=data.business_date;
-      for(const item of data.items){const cell=document.querySelector('[data-call-result="'+item.code+'"]');cell.textContent=item.count===null?'집계 자료 없음':new Intl.NumberFormat('ko-KR').format(item.count)+'명';}
+      const maximum=Math.max(1,...data.items.map(item=>item.count||0));
+      for(const item of data.items){const cell=document.querySelector('[data-call-result="'+item.code+'"]');cell.textContent=item.count===null?'집계 자료 없음':new Intl.NumberFormat('ko-KR').format(item.count)+'명';cell.parentElement.style.setProperty('--result-percent',(item.count==null?0:item.count/maximum*100)+'%');}
       $('call-results-status').textContent=data.date+' · 한국 시간 · '+(data.status==='unavailable'?'집계 자료 없음':data.status==='partial'?'이력 도입일의 일부 기록입니다.':'조회 완료');
       $('call-results-coverage').textContent=data.earliest_date?'상담 이력 도입: '+data.earliest_date+' · 이전 기간이나 결과 스냅샷이 부족한 날은 집계 자료 없음입니다.':'상담 이력 도입 시점을 확인할 수 없어 집계 자료 없음으로 표시합니다.';
     }catch(error){

@@ -112,8 +112,8 @@ class AdminTMOperationsBrowserTests(Fixtures,StaticLiveServerTestCase):
             return rows
         self.rows=self.db(create);self.login(self.admin);page=self.page
         page.goto(self.live_server_url+f'/app/admin/assignments?site_id={self.site.pk}')
-        page.locator('#check-availability').click();expect(page.locator('#tm-recall')).to_be_enabled()
-        page.locator('#assignment-employee').select_option(str(self.employee.pk))
+        page.locator('#check-availability').click();expect(page.locator('#tm-recall')).to_be_disabled()
+        page.locator('#assignment-employee').select_option(str(self.employee.pk));expect(page.locator('#tm-recall')).to_be_enabled()
 
     def test_tm_recall_changed_target_requires_second_confirmation_and_keeps_completed(self):
         self.seed_tm();page=self.page

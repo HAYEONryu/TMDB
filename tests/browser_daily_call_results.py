@@ -66,10 +66,10 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
             page.screenshot(path=str(artifact_path('grid-load-diagnostic.png')),full_page=True)
             raise
         headers=page.locator('#employee-grid .tabulator-col-title')
-        self.assertEqual(headers.all_text_contents()[:11],['최종 TM 날짜','고객명','연락처','통화결과','삭제요청','고객 거주지','상담내용','비고','재콜 일정','방문예약 날짜','계약 여부'])
-        for field in ['tm_status','housing_status','route','assigned_at']:
+        self.assertEqual([v.rstrip(' ↕↑↓') for v in headers.all_text_contents()[:11]],['최종 TM 날짜','고객명','연락처','통화결과','삭제요청','고객 거주지','재콜일정','주택보유상황','상담내용','방문예약 날짜','계약여부'])
+        for field in ['tm_status','memo','route','assigned_at']:
             expect(page.locator(f'#employee-grid .tabulator-col[tabulator-field="{field}"]')).to_have_count(0)
-        for field,width in [('phone_normalized',154),('call_result',166),('notes',340),('memo',300)]:
+        for field,width in [('phone_normalized',154),('call_result',166),('notes',340),('housing_status',168)]:
             self.assertAlmostEqual(page.locator(f'#employee-grid .tabulator-col[tabulator-field="{field}"]').evaluate('e=>e.getBoundingClientRect().width'),width,delta=1)
         def cell(field):return page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]')
         expect(cell('last_tm_date')).to_have_text('-');cell('last_tm_date').dblclick();expect(cell('last_tm_date').locator('input')).to_have_count(0)
@@ -97,7 +97,7 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.locator('#activity-submit').click()
         expect(page.locator('#activity-dialog')).not_to_be_visible();expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
         self.assertEqual(self.db(lambda:CustomerActivity.objects.filter(customer=self.row,kind='CALL').count()),1)
-        edit('memo','비고만 정정');page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
+        edit('notes','상담내용만 정정');page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         edit('contract_status','CONTRACT_CANCELLED');page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
         for width in [1440,390,320]:

@@ -1,3 +1,4 @@
+import {sortTitle,syncSortHeaders} from './server-sort.js';
 import {mutationMessage} from './ui-messages.js';
 import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
@@ -6,7 +7,7 @@ import {PendingOperation} from "./pending-operation.js";
 import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
 import {HardDelete} from './hard-delete.js';
-import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
+import {customerLabels as labels,customerFields,adminGridFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter} from './grid-filter.js';
 import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
@@ -86,6 +87,7 @@ function column(field) {
   const canEdit = editableFields.includes(field) && !trash;
   const definition = {title:labels[field], field, minWidth:field === "notes" ? 300 : dates.has(field) ? 185 : 145, width:field === "notes" ? 330 : field === "phone_normalized" ? 160 : undefined,
     headerSort:false, formatter:cell => text("span", dates.has(field) ? (field==='visit_at'?localDate(cell.getValue()).replace('T',' '):localDate(cell.getValue()).slice(0,10))||"-" : display(field, cell.getValue()))};
+  if(!trash)definition.titleFormatter=sortTitle(field,labels[field],()=>state,sort=>runQuery(async()=>{state.sort=sort;state.page=1;await load();}).catch(showError));
   if(field==="assignee_name"&&!trash){definition.minWidth=245;definition.formatter=cell=>{if(cell.getRow().getData()._new)return text("span","미배정");const wrap=text("span",cell.getValue()||"-");const button=text("button","담당 변경");button.className="assignee-action btn btn-sm btn-outline-secondary ms-2";button.disabled=busy||!!assigneeOperation.value;button.onclick=()=>guarded(()=>openAssignee(cell.getRow().getData().id)).catch(showError);wrap.append(button);return wrap;};}
   if (canEdit) Object.assign(definition, {editable:cell => !busy && !callbacks?.busy && !callbacks?.pending.value && !assigneeOperation.value && !pending.get(cell.getRow().getData().id)?.uncertain && !(cell.getRow().getData()._new&&newRow?.body),
     editor: dates.has(field) ? dateEditor : schema[field] ? "list" : multiline.has(field) ? "textarea" : "input",
@@ -95,7 +97,7 @@ function column(field) {
 }
 const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout:"fitData", index:"id", data:[], placeholder:" ", selectableRows:true, selectableRowsCheck:row=>!row.getData()._new,
   rowFormatter:rowStyle, columns:[{formatter:"rowSelection",titleFormatter:"rowSelection",hozAlign:"center",headerSort:false,width:45,cellClick:(_event,cell)=>cell.getRow().toggleSelect()},
-    ...customerFields({admin:true}).map(column),
+    ...(trash?customerFields({admin:true}):adminGridFields).map(column),
     ...(trash ? [{title:"현장",field:"site_name",headerSort:false,minWidth:140,formatter:cell=>text("span",cell.getValue())}] : []),
     {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>{if(cell.getRow().getData()._new)return text('span','저장 후 작업 가능');const data=cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','상담·재콜 이력');history.className='btn btn-sm btn-outline-secondary';history.onclick=()=>guarded(()=>openHistory(data)).catch(showError);wrap.append(history);if(!trash){const complete=text('button','재콜 완료');complete.className='callback-action btn btn-sm btn-outline-secondary ms-2';complete.dataset.customerId=data.id;complete.disabled=!data.callback_id||callbacks?.busy||!!callbacks?.pending.value;complete.onclick=()=>{if(callbacks?.pending.value||callbacks?.busy)return;guarded(()=>callbacks.run(data.id)).catch(showError);};wrap.append(complete);}return wrap;}},
     ...(!trash ? [{title:"저장상태",field:"_status",headerSort:false,minWidth:160,formatter:cell=>{
@@ -141,7 +143,7 @@ async function load() {
     if(generation!==loadGeneration)return;
     $("#page-info").textContent=`검색 ${data.total.toLocaleString()}명 · ${state.page} / ${lastPage}페이지`;
     $("#counts").textContent=data.counts?`전체 고객 ${data.counts.total}명 · 미배정 ${data.counts.unassigned}명 · 휴지통 ${data.counts.trash}명`:"";
-    loadedState=structuredClone(state);queryUI.success(data);
+    loadedState=structuredClone(state);queryUI.success(data);if(!trash)syncSortHeaders(table,state.sort);
     if(!state.assignee){const url=new URL(location.href);if(url.searchParams.has('assignee_id')){url.searchParams.delete('assignee_id');history.replaceState(null,'',url);}}
     if($('#open-imports'))$('#open-imports').href='/app/admin/imports?'+new URLSearchParams({site_id:state.site});
     if (!siteInfo.items.length) notice("등록된 현장이 없습니다. 현장을 생성해 주세요.");

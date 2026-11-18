@@ -12,6 +12,7 @@ from apps.consultations.views import history
 from apps.operations.dashboard import dashboard
 from apps.operations.employee_dashboard import customer_details as dashboard_customers
 from apps.operations.employee_performance import monthly as employee_performance
+from apps.operations.employee_performance import staff_monthly
 from apps.operations.daily_call_results import daily as daily_call_results
 from apps.consultations.activities import activities
 from apps.customers import deletion_views
@@ -20,6 +21,7 @@ from apps.ai_assistant import views as ai_views
 from apps.ai_assistant import admin_views as admin_ai
 
 urlpatterns = [
+    path('api/dashboard/staff-performance',staff_monthly),
     path("app/admin/ai",admin_ai.page),
     path("app/admin/ai/cases/<uuid:customer_id>",admin_ai.case_page),
     path("app/guides",admin_ai.published_page),

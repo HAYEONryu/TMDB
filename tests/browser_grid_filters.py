@@ -58,12 +58,12 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
         for actor in [self.admin,self.employee]:
             self.open_grid(actor)
             row=page.locator(f'#{self.grid} .tabulator-row').filter(has=page.get_by_text('010-8000-0000',exact=True))
-            fields=['customer_name','contract_status','call_result','callback_due_at','visit_at','residence','housing_status','notes','route','memo']
+            fields=['customer_name','contract_status','call_result','callback_due_at','visit_at','notes']+(['admin_notes'] if actor==self.admin else ['residence','housing_status'])
             for field in fields:
                 expect(row.locator(f'[tabulator-field="{field}"]')).to_have_text('-')
             for empty in [False,True]:
-                for field,value in {'contract_status':'CONTRACTED','call_result':'INTERESTED','housing_status':'무주택','route':'티엠'}.items():
-                    cell=row.locator(f'[tabulator-field="{field}"]');cell.click()
+                for field,value in {'contract_status':'CONTRACTED','call_result':'INTERESTED',**({'housing_status':'무주택'} if actor==self.employee else {})}.items():
+                    cell=row.locator(f'[tabulator-field="{field}"]');cell.dblclick() if actor==self.employee else cell.click()
                     value=('UNKNOWN' if field=='contract_status' else '') if empty else value
                     if actor==self.admin:
                         title='-' if empty else {'CONTRACTED':'계약','INTERESTED':'가망고객'}.get(value,value)
@@ -264,7 +264,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             self.assertEqual(page.locator('.query-controls').evaluate("el=>Array.from(el.querySelectorAll('#site,#search,#search-form button,#open-filters,#sort')).map(el=>el.id||'search-button')"),['site','search','search-button','open-filters','sort'])
             expect(page.locator(f'#{self.grid} .column-filter')).to_have_count(0)
             original_sort=page.locator('#sort').input_value()
-            page.locator('#page-size').select_option('100');self.count(2)
+            if actor==self.admin:page.locator('#page-size').select_option('100');self.count(2)
             requests=[]
             def observe(r):
                 if '/api/customers?' in r.url:requests.append(r.url)
@@ -297,7 +297,7 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             expect(page.locator('#search')).to_have_value('');expect(page.locator('#active-filters button')).to_have_count(2)
             page.locator('#active-filters button').filter(has_text='계약여부').click();self.count(1);expect(page.locator('#open-filters')).to_have_text('상세 필터 (1)')
             page.locator('#clear-filters').click();self.count(2)
-            expect(page.locator('#sort')).to_have_value(original_sort);expect(page.locator('#page-size')).to_have_value('100');expect(page.locator('#site')).to_have_value(str(self.site.pk))
+            expect(page.locator('#sort')).to_have_value(original_sort);expect(page.locator('#page-size')).to_have_value('100' if actor==self.admin else '50');expect(page.locator('#site')).to_have_value(str(self.site.pk))
             page.locator('#search').fill('010 - 8000 - 0001');page.locator('#search-form button').click();self.count(1)
             page.locator('#search').fill('---');page.locator('#search').press('Enter');self.count(0)
             expect(page.locator('#list-state-message')).to_have_text('조건에 맞는 고객이 없습니다.')

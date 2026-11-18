@@ -24,7 +24,9 @@ export function createQueryUI({getState,labels,display,change,view,grid}){
   };
   const render=({search=false}={})=>{const state=getState();renderFilterChips($('active-filters'),state.filters,labels,display,remove,state);const count=Object.keys(state.filters).length;
     $('open-filters').textContent=`상세 필터 (${count})`;$('open-filters').classList.toggle('has-filters',count>0);
-    $('clear-filters').disabled=!hasConditions(state);if(search){$('search').value=state.q;searchRevision++;}$('site').value=state.site;$('sort').value=state.sort;$('page-size').value=String(state.size);
+    $('clear-filters').disabled=!hasConditions(state);if(search){$('search').value=state.q;searchRevision++;}$('site').value=state.site;
+    if(!Array.from($('sort').options).some(o=>o.value===state.sort)){const option=document.createElement('option');option.value=state.sort;option.textContent=(labels[state.sort.replace(/^-/,'')]||'선택 열')+(state.sort.startsWith('-')?' 내림차순':' 오름차순');$('sort').append(option);}
+    $('sort').value=state.sort;$('page-size').value=String(state.size);
   };
   const reset=()=>{
     const revision=searchRevision;

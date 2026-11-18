@@ -16,7 +16,12 @@ from apps.customers.services import create_customer, update_row, trash_operation
 def customers(request):
     from apps.customers.employee import optional_queue_identity
     optional_queue_identity(request)
-    return JsonResponse(customer_list(request.user, request.GET))
+    from django.db import transaction,connection
+    nested=connection.in_atomic_block
+    with transaction.atomic():
+        if not nested:
+            with connection.cursor() as cursor:cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
+        return JsonResponse(customer_list(request.user, request.GET))
 
 
 @require_GET

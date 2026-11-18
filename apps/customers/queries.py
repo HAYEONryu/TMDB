@@ -4,6 +4,7 @@ import re
 from zoneinfo import ZoneInfo
 from django.db.models import Count, F, OuterRef, Q, Subquery, Value, CharField,Case,When,IntegerField
 from django.db.models.functions import Coalesce
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from apps.accounts.access import AccessError
 from apps.accounts.models import User
@@ -211,14 +212,15 @@ def integer(params, name, default):
 
 
 def customer_list(actor, params):
-    if set(params) - {"site_id", "view", "q", "page", "page_size", "sort", "filters", "assignee_id", "dashboard_category"}:
+    if set(params) - {"site_id", "view", "q", "page", "page_size", "sort", "filters", "assignee_id", "dashboard_category", "pagination", "cursor"}:
         error()
     now = timezone.now()
     query, site_id, view = scoped(actor, params, now)
     admin = actor.role == User.Role.ADMIN
     query = apply_conditions(query, params, admin=admin, now=now)
     sort = params.get("sort", "priority" if view=="today" else "-created_at")
-    if sort!="priority" and (not isinstance(sort, str) or sort.lstrip("-") not in SORT_FIELDS | TEXT_FIELDS | ({"admin_notes"} if admin else set()) or sort.startswith("--")):
+    extra_sorts={'deletion_request_status'} | ({'last_tm_date'} if not admin else set())
+    if sort!="priority" and (not isinstance(sort, str) or sort.lstrip("-") not in SORT_FIELDS | TEXT_FIELDS | extra_sorts | ({"admin_notes"} if admin else set()) or sort.startswith("--")):
         error()
     if sort=="priority" and view!="today":error()
     size, page = integer(params, "page_size", 50), integer(params, "page", 1)
@@ -229,7 +231,18 @@ def customer_list(actor, params):
         end=datetime.combine(timezone.localdate(now,KST)+timedelta(days=1),time.min,KST)
         query=query.annotate(priority=Case(When(callback_due_at__lt=now,then=Value(0)),When(callback_due_at__lt=end,then=Value(1)),default=Value(2),output_field=IntegerField()))
         ordered=query.order_by("priority",F("callback_due_at").asc(nulls_last=True),F("assigned_at").asc(nulls_last=True),"id")
-    else:ordered=query.order_by(sort,"id")
+    else:
+        field=sort.lstrip('-')
+        if field=='last_tm_date':query=query.annotate(last_tm_date_sort=TruncDate('last_tm_at',tzinfo=KST));field='last_tm_date_sort'
+        if field=='deletion_request_status':
+            query=query.annotate(deletion_sort=Case(When(pending_deletion_request_id__isnull=False,then=Value(1)),default=Value(0),output_field=IntegerField()));field='deletion_sort'
+        ordered=query.order_by(sort,'id') if view=='trash' else query.order_by(F(field).desc(nulls_last=True) if sort.startswith('-') else F(field).asc(nulls_last=True),'id')
+    continuation={}
+    if params.get('pagination')=='infinite':
+        from apps.customers.pagination import continuation_page
+        page,continuation=continuation_page(actor,params,ordered,size,now)
+    elif params.get('pagination') or params.get('cursor'):
+        error()
     rows = list(ordered[(page-1)*size:page*size])
     counts = None
     if actor.role == User.Role.ADMIN:
@@ -239,7 +252,7 @@ def customer_list(actor, params):
             unassigned=Count("pk", filter=Q(deleted_at__isnull=True, current_assignment__isnull=True)),
             trash=Count("pk", filter=Q(deleted_at__isnull=False)))
     return {"data": [serialize(row, admin=admin) for row in rows], "total": total, "page": page, "page_size": size,
-            "last_page": max(1, (total+size-1)//size), "site_id": str(site_id) if site_id else None, "counts": counts, "as_of":now.isoformat()}
+            "last_page": max(1, (total+size-1)//size), "site_id": str(site_id) if site_id else None, "counts": counts, "as_of":now.isoformat(), **continuation}
 
 
 def filter_options(actor, params):

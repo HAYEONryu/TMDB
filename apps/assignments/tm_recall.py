@@ -3,7 +3,7 @@ from django.core import signing
 from django.utils import timezone
 from apps.accounts.access import AccessError
 from apps.assignments.models import Assignment
-from apps.assignments.services import end_locked, eligible, employee_rows, selected_employee, site_for
+from apps.assignments.services import end_locked, eligible, employee_rows, selected_employee, selected_rows, site_for
 from apps.accounts.models import User
 from apps.common.http import identifier
 from apps.common.receipts import fingerprint, remember, replay
@@ -25,6 +25,9 @@ def selection(body,fields):
 
 def current_selection(value):
     if value=='all':return list(employee_rows())
+    if isinstance(value,tuple):
+        if User.objects.filter(pk__in=value).count()!=len(value):raise AccessError('INVALID_EMPLOYEE','직원 목록을 다시 확인해 주세요.',409)
+        return list(selected_rows(employee_rows(),value))
     if not User.objects.filter(pk=value).exists():
         raise AccessError('INVALID_EMPLOYEE','직원이 존재하지 않습니다. 직원 목록을 다시 확인해 주세요.',409)
     return list(employee_rows().filter(pk=value))

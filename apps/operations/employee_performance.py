@@ -36,7 +36,7 @@ def performance(person, site_id, month, now):
     prospect_start = audit_start
     calls = CustomerActivity.objects.filter(actor=person, site_id=site_id, kind='CALL', occurred_at__lte=now)
     call_days = {r['day']: r for r in calls.filter(occurred_at__gte=start, occurred_at__lt=end)
-        .annotate(day=TruncDate('occurred_at', tzinfo=KST)).values('day').annotate(count=Count('pk'))}
+        .annotate(day=TruncDate('occurred_at', tzinfo=KST)).values('day').annotate(count=Count('pk'),connected=Count('pk',filter=Q(connection='CONNECTED')))}
     prospects = {r['day']: r['count'] for r in prospect_saves.filter(saved_at__gte=start, saved_at__lt=end,
         after_values__call_result=Customer.CallResult.INTERESTED)
         .annotate(day=TruncDate('saved_at', tzinfo=KST)).values('day').annotate(count=Count('customer_id', distinct=True))}
@@ -60,6 +60,7 @@ def performance(person, site_id, month, now):
             ps = 'unavailable'
         rows.append({'date': day.isoformat(), 'is_future': day > today,
             'call_count': call_days.get(day, {}).get('count', 0) if cs in {'available', 'partial'} else None,
+            'connected_count': call_days.get(day, {}).get('connected', 0) if cs in {'available', 'partial'} else None,
             'prospect_count': prospects.get(day, 0) if ps in {'available', 'partial'} else None,
             'visit_count': visits.get(day, 0) if cs in {'available', 'partial'} else None,
             'call_status': cs, 'prospect_status': ps, 'visit_status': cs})
@@ -68,13 +69,50 @@ def performance(person, site_id, month, now):
         connected=Count('pk', filter=Q(connection='CONNECTED')))
     available = status(today, tracking) in {'available', 'partial'}
     begins = [v.astimezone(KST).date().replace(day=1) for v in (tracking, prospect_start) if v is not None and v <= now]
-    return {'month': month.strftime('%Y-%m'), 'rows': rows,
+    return {'month': month.strftime('%Y-%m'), 'rows': rows, 'totals': monthly_totals(rows),
         'today': {'date': today.isoformat(), 'attempts': counts['attempts'] if available else None,
                   'connected': counts['connected'] if available else None, 'status': status(today, tracking)},
         'coverage': {'calls_from': tracking.isoformat() if tracking else None,
                      'visits_from': tracking.isoformat() if tracking else None,
                      'prospects_from': prospect_start.isoformat() if prospect_start else None},
         'earliest_month': min(begins).strftime('%Y-%m') if begins else today.strftime('%Y-%m')}
+
+
+def monthly_totals(rows):
+    """Sum existing daily units; incomplete coverage is explicitly labelled."""
+    totals={}
+    for metric in ['call','connected','prospect','visit']:
+        past=[r for r in rows if not r['is_future']]
+        known=[r for r in past if r[metric+'_count'] is not None]
+        key='call' if metric=='connected' else metric
+        state='unavailable' if not known else 'partial' if len(known)!=len(past) or any(r[key+'_status']=='partial' for r in known) else 'available'
+        totals[metric]={'count':sum(r[metric+'_count'] for r in known) if known else None,'status':state}
+    return totals
+
+
+@require_GET
+@require_role(User.Role.ADMIN)
+@api_errors
+def staff_monthly(request):
+    actor_identity(request)
+    if set(request.GET)-{'site_id','month'} or any(len(request.GET.getlist(k))!=1 for k in request.GET):
+        raise AccessError('VALIDATION_ERROR','현장과 조회 월만 선택해 주세요.',422)
+    with transaction.atomic():
+        with connection.cursor() as cursor:cursor.execute('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
+        now=timezone.now();value=request.GET.get('month',now.astimezone(KST).strftime('%Y-%m'))
+        if not re.fullmatch(r'[0-9]{4}-(0[1-9]|1[0-2])',value) or int(value[:4])<1:
+            raise AccessError('VALIDATION_ERROR','조회 월은 YYYY-MM 형식으로 선택해 주세요.',422)
+        month=date.fromisoformat(value+'-01')
+        if month>now.astimezone(KST).date().replace(day=1):raise AccessError('VALIDATION_ERROR','이번 달 또는 이전 달을 선택해 주세요.',422)
+        site_id=identifier(request.GET['site_id']) if request.GET.get('site_id') else GlobalSettings.objects.filter(pk=1).values_list('default_site_id',flat=True).first()
+        if site_id and not Site.objects.filter(pk=site_id).exists():raise AccessError('SITE_DELETED','현장이 삭제되었거나 존재하지 않습니다.',409)
+        # Include historical actors even after deactivation/role change.
+        actors=CustomerActivity.objects.filter(site_id=site_id).values('actor_id')
+        saved=consultation_saves().filter(customer__site_id=site_id).values('actor_id')
+        people=User.objects.filter(Q(role='EMPLOYEE',is_active=True)|Q(pk__in=actors)|Q(pk__in=saved)).order_by('name','pk')
+        result={'site_id':str(site_id) if site_id else None,'month':value,'business_date':now.astimezone(KST).date().isoformat(),'as_of':now.isoformat(),
+            'employees':[{'id':str(p.pk),'name':p.name,**performance(p,site_id,month,now)} for p in people]}
+    return JsonResponse(result)
 
 
 @require_GET

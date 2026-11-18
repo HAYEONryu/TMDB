@@ -1,22 +1,19 @@
 import {api,option} from './api.js';
 import {listenAdminUpdates} from './admin-updates.js';
 import {renderDashboard,showDashboardSetupError} from './dashboard.js';
-const select=document.querySelector('#default-site'),button=document.querySelector('#set-default'),message=document.querySelector('#site-message');
-let version,defaultSite='';
-function syncLinks(){
-  const paths=new Set(['/app/admin','/app/admin/customers','/app/admin/assignments','/app/admin/imports','/app/admin/users']);
-  for(const link of document.querySelectorAll('a[href]')){const url=new URL(link.href,location.href);if(url.origin!==location.origin||!paths.has(url.pathname))continue;if(select.value)url.searchParams.set('site_id',select.value);else url.searchParams.delete('site_id');link.href=url.pathname+url.search+url.hash;}
-  const url=new URL(location.href);if(select.value&&select.value!==defaultSite)url.searchParams.set('site_id',select.value);else url.searchParams.delete('site_id');history.replaceState(null,'',url);
-}
-async function refresh(){document.querySelector('#dashboard-refresh').onclick=refresh;syncLinks();return renderDashboard(select.value);}
-async function load(){
-  const selected=select.value||new URL(location.href).searchParams.get('site_id'),data=await api('/api/sites');
-  defaultSite=data.default_site_id||'';select.replaceChildren(...data.items.map(site=>option(site.id,site.name)));select.value=selected||data.default_site_id||'';version=data.settings_version;button.disabled=!data.items.length;
-  if(!data.items.length)message.textContent='등록된 현장이 없습니다. DB 관리에서 현장을 생성해 주세요.';
-  await refresh();
-}
-select.onchange=refresh;document.querySelector('#dashboard-refresh').onclick=refresh;
-button.onclick=async()=>{button.disabled=true;const site=select.value;try{const data=await api('/api/settings/default-site',{site_id:site,expected_version:version},'PATCH');version=data.settings_version;message.textContent='기본 현장을 설정했습니다. 다음 화면부터 적용됩니다.';}catch(error){message.textContent=error.message;if(error.code==='VERSION_CONFLICT')await load();}finally{button.disabled=!select.options.length;}};
-load().catch(error=>{showDashboardSetupError(error);button.disabled=true;});
-
-listenAdminUpdates(refresh);
+import {StaffPerformance} from './staff-performance.js';
+const $=id=>document.getElementById(id),select=$('default-site'),button=$('set-default'),message=$('site-message'),dialog=$('default-site-dialog'),service=$('service-default-site');
+const staff=new StaffPerformance();let version,defaultSite='',saving=false;
+function syncURL(){const url=new URL(location.href);if(select.value)url.searchParams.set('site_id',select.value);else url.searchParams.delete('site_id');history.replaceState(null,'',url);}
+async function refresh(){syncURL();return Promise.all([renderDashboard(select.value),staff.load(select.value)]);}
+async function settings(){const data=await api('/api/sites');defaultSite=data.default_site_id||'';version=data.settings_version;return data;}
+async function load(){const selected=select.value||new URL(location.href).searchParams.get('site_id'),data=await settings();select.replaceChildren(...data.items.map(site=>option(site.id,site.name)));select.value=selected||defaultSite;button.disabled=!data.items.length;if(!data.items.length)message.textContent='등록된 현장이 없습니다. DB 관리에서 현장을 생성해 주세요.';await refresh();}
+select.onchange=refresh;$('dashboard-refresh').onclick=refresh;
+button.onclick=async()=>{button.disabled=true;try{const data=await settings();service.replaceChildren(...data.items.map(site=>option(site.id,site.name)));service.value=defaultSite;$('default-site-error').textContent='';dialog.showModal();}catch(error){message.textContent=error.message;}finally{button.disabled=!select.options.length;}};
+$('default-site-cancel').onclick=()=>{if(!saving)dialog.close();};dialog.addEventListener('cancel',event=>{if(saving)event.preventDefault();});
+$('default-site-form').onsubmit=async event=>{event.preventDefault();if(saving)return;saving=true;$('default-site-save').disabled=true;service.disabled=true;
+  try{const data=await api('/api/settings/default-site',{site_id:service.value,expected_version:version},'PATCH');version=data.settings_version;defaultSite=data.default_site_id;message.textContent='기본 현장을 저장했습니다. 다음에 여는 업무 화면부터 적용됩니다. 현재 조회 현장은 유지합니다.';dialog.close();}
+  catch(error){$('default-site-error').textContent=error.message;if(error.code==='VERSION_CONFLICT'){const data=await settings();service.replaceChildren(...data.items.map(site=>option(site.id,site.name)));service.value=defaultSite;$('default-site-error').textContent+=' 최신 설정을 확인하고 다시 저장하세요.';}}
+  finally{saving=false;$('default-site-save').disabled=false;service.disabled=false;}
+};
+load().catch(error=>{showDashboardSetupError(error);button.disabled=true;});listenAdminUpdates(refresh);

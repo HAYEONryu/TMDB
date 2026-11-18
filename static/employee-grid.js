@@ -1,3 +1,4 @@
+import {sortTitle,syncSortHeaders} from './server-sort.js';
 import {confirmAction} from './shared-ui.js';
 import {listenAdminUpdates} from './admin-updates.js';
 import {ActivityRecorder} from './activity-recorder.js';
@@ -10,7 +11,7 @@ import {installHistory} from './customer-history.js';
 import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
-import {customerLabels as labels,customerFields,choiceLabel} from './customer-columns.js';
+import {customerLabels as labels,customerFields,employeeGridFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter} from './grid-filter.js';
 import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
@@ -19,7 +20,7 @@ const $=selector=>document.querySelector(selector),root=$('#employee'),userId=ro
 const schema=JSON.parse($('#customer-schema').textContent);
 const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']);
-const todayWidths={customer_name:140,phone_normalized:154,call_result:166,residence:200,notes:340,memo:300,callback_due_at:210,visit_at:174,contract_status:120};
+const todayWidths={customer_name:140,phone_normalized:154,call_result:166,residence:200,notes:340,housing_status:168,memo:300,callback_due_at:210,visit_at:174,contract_status:120};
 const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el;},notice=message=>{$('#employee-message').textContent=message;};
 const localDate=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)).replace(' ','T'):'';
 const display=(field,value)=>dates.has(field)?(value?(field==='visit_at'?localDate(value).replace('T',' '):localDate(value).slice(0,10)):'-'):field==='phone_normalized'&&value?String(value).replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3'):choiceLabel(schema,field,value);
@@ -86,8 +87,8 @@ function editor(cell,onRendered,success,cancel){
   onRendered(()=>{activeEditor={finish,input};input.focus();});return input;
 }
 function column(field){
-  return {title:labels[field],field,minWidth:view==='today'?(todayWidths[field]||145):field==='notes'?320:dates.has(field)?190:145,headerSort:false,
-    ...(view==='today'?{width:todayWidths[field]||145}:{}),
+  return {title:labels[field],field,minWidth:todayWidths[field]||145,width:todayWidths[field]||145,headerSort:false,
+    titleFormatter:sortTitle(field,labels[field],()=>state,changeSort),
     formatter:cell=>text('span',display(field,cell.getValue())),
     ...(editable.has(field)?{editable:cell=>!loading&&!navigating&&!callbacks?.busy&&!deletions?.busy&&!ai?.busy&&!callbacks?.pending.value&&queue.canEdit(cell.getRow().getData()),editor,variableHeight:multiline.has(field)}:{})};
 }
@@ -148,12 +149,13 @@ function rowStyle(row){
 }
 const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)',layout:'fitData',data:[],placeholder:' ',selectableRows:false,clipboard:false,
   rowFormatter:rowStyle,
-  columns:[...(view==='today'?[{title:'최종 TM 날짜',field:'last_tm_date',frozen:true,width:140,headerSort:false,editor:false,
-    headerTooltip:'현재 배정에서 담당 직원이 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며 상담 저장 시각으로 추정하지 않습니다.',
-    formatter:cell=>text('span',queue.rows.get(cell.getRow().getData().id)?.last_tm_date||cell.getValue()||'-')}]:[]),
-    ...(view==='today'?['customer_name','phone_normalized','call_result','residence','notes','memo','callback_due_at','visit_at','contract_status']:customerFields()).flatMap(field=>[
-    {...column(field),...(view==='today'&&field==='callback_due_at'?{title:'재콜 일정'}:{}),...(view==='today'&&field==='contract_status'?{title:'계약 여부'}:{}),...(field==='callback_due_at'?{formatter:callbackCell,minWidth:view==='today'?210:260}:{})},
-    ...(field==='call_result'?[{title:view==='today'?'삭제요청':'삭제 요청',field:'_deletion',headerSort:false,width:view==='today'?120:undefined,minWidth:120,headerTooltip:deletionHelp,titleFormatter:()=>{const label=text('span',view==='today'?'삭제요청':'삭제 요청');label.tabIndex=0;label.setAttribute('aria-label',deletionHelp);return label;},formatter:deletionCell}]:[])
+  columns:[{title:'최종 TM 날짜',field:'last_tm_date',frozen:true,width:140,headerSort:false,editor:false,
+    titleFormatter:sortTitle('last_tm_date','최종 TM 날짜',()=>state,changeSort),
+    headerTooltip:'현재 배정에서 내가 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며 상담 저장 시각으로 추정하지 않습니다.',
+    formatter:cell=>{const value=queue.rows.get(cell.getRow().getData().id)?.last_tm_date||cell.getValue();cell.getElement().classList.toggle('missing-tm-date',!value);return text('span',value||'-');}},
+    ...employeeGridFields.flatMap(field=>[
+    {...column(field),...(field==='callback_due_at'?{title:'재콜 일정',formatter:callbackCell,minWidth:210}:{}),...(field==='contract_status'?{title:'계약 여부'}:{})},
+    ...(field==='call_result'?[{title:'삭제요청',field:'_deletion',headerSort:false,width:120,minWidth:120,headerTooltip:deletionHelp,titleFormatter:sortTitle('deletion_request_status','삭제요청',()=>state,changeSort),formatter:deletionCell}]:[])
   ]),{title:'작업',field:'_actions',headerSort:false,minWidth:380,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
@@ -181,6 +183,7 @@ function renderStatus(){
 }
 const eState=e=>[e.state,e.version,Object.keys(e.pending).length,e.error].join(':');
 queue.addEventListener('change',renderStatus);
+let nextCursor=null,streamTotal=0,appendFailed=false;
 let loadGeneration=0,loadedBusinessDate=null,serverClock=null;
 const businessDate=value=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(value));
 function refreshTMDate(){
@@ -192,22 +195,28 @@ const runQuery=createQueryScheduler(guarded);
 $('#search').value=state.q;
 const queryUI=createQueryUI({getState:()=>state,labels,display,view,grid:$('#employee-grid'),change:mutate=>runQuery(async()=>{mutate(state);await load();}).catch(error)});
 $('#list-retry').onclick=()=>runQuery(load).catch(error);
-async function load(){
+function changeSort(sort){runQuery(async()=>{state.sort=sort;state.page=1;await load();}).catch(error);}
+function streamStatus(){
+  $('#page-info').textContent='검색 '+streamTotal.toLocaleString()+'명 · '+table.getDataCount().toLocaleString()+' / '+streamTotal.toLocaleString()+'명 표시'+(nextCursor?' · 아래로 스크롤하면 더 불러옵니다.':' · 모두 불러왔습니다.');
+  $('#previous').disabled=true;$('#next').disabled=loading||!nextCursor;$('#next').hidden=!nextCursor;
+}
+async function load(append=false){
   const generation=++loadGeneration;
-  loading=true;notice('');queryUI.start();
+  loading=true;notice('');if(!append)queryUI.start();else $('#next').disabled=true;
   try{
-    const query=params();query.set('page',state.page);query.set('page_size',state.size);query.set('sort',state.sort);
-    const data=await request('/api/customers?'+query);if(generation!==loadGeneration)return;if(data.last_page<state.page){state.page=data.last_page;return await load();}
+    const query=params();query.set('pagination','infinite');query.set('page_size',state.size);query.set('sort',state.sort);if(append&&nextCursor)query.set('cursor',nextCursor);
+    const data=await request('/api/customers?'+query);if(generation!==loadGeneration)return;
     queue.setRows(data.data);lastPage=data.last_page;
     loadedBusinessDate=businessDate(data.as_of);serverClock={at:new Date(data.as_of).getTime(),received:Date.now()};
     if($('#tm-business-date'))$('#tm-business-date').textContent='기준일 '+loadedBusinessDate+' · 한국 시간';
-    await table.setData(data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )})));
+    const values=data.data.map(row=>({...row,...(queue.entry(row.id)?changes(queue.entry(row.id)):{} )}));
+    if(append){if(values.some(row=>table.getRow(row.id)))throw new Error('목록이 변경되었습니다. 목록 새로고침으로 다시 조회해 주세요.');await table.addData(values);}else{await table.setData(values);$('#employee-grid .tabulator-tableholder').scrollTop=0;}
+    nextCursor=data.next_cursor;streamTotal=data.total;appendFailed=false;
     if(generation!==loadGeneration)return;
-    $('#page-info').textContent=`검색 ${data.total.toLocaleString()}명 · ${state.page} / ${lastPage}페이지`;
-    $('#previous').disabled=state.page<=1;$('#next').disabled=state.page>=lastPage;
+    syncSortHeaders(table,state.sort);
     loadedState=structuredClone(state);queryUI.success(data);syncEmployeeSiteLinks(state.site,defaultSite);renderStatus();
-  }catch(e){if(generation!==loadGeneration)return;if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);$('#search').value=state.q;}queryUI.failure(e);throw e;}
-  finally{if(generation===loadGeneration)loading=false;}
+  }catch(e){if(generation!==loadGeneration)return;if(loadedState){state=structuredClone(loadedState);$('#site').value=state.site;$('#sort').value=state.sort;$('#page-size').value=String(state.size);$('#search').value=state.q;}queryUI.failure(e);if(append){appendFailed=true;if(e.code==='LIST_CHANGED')nextCursor=null;}throw e;}
+  finally{if(generation===loadGeneration){loading=false;streamStatus();checkStreamEnd();}}
 }
 function choice(dialog,actions){
   return new Promise(resolve=>{let done=false;const finish=value=>{if(done)return;done=true;dialog.close();resolve(value);};for(const [id,value] of Object.entries(actions))$('#'+id).onclick=()=>finish(value);dialog.oncancel=event=>{event.preventDefault();finish('cancel');};dialog.showModal();});
@@ -252,7 +261,15 @@ $('#sort').onchange=event=>{const sort=event.target.value;event.target.value=sta
 $('#page-size').onchange=event=>{const size=Number(event.target.value);event.target.value=String(state.size);runQuery(async()=>{state.size=size;state.page=1;$('#page-size').value=String(size);await load();}).catch(error);};
 $('#search-form').onsubmit=event=>{event.preventDefault();const q=$('#search').value.trim();runQuery(async()=>{state.q=q;state.page=1;await load();}).then(moved=>{if(!moved)queryUI.render({search:true});}).catch(error);};
 
-$('#previous').onclick=()=>runQuery(async()=>{state.page--;await load();}).catch(error);$('#next').onclick=()=>runQuery(async()=>{state.page++;await load();}).catch(error);
+$('#previous').onclick=()=>runQuery(async()=>{state.page--;await load();}).catch(error);$('#next').onclick=()=>{appendFailed=false;runQuery(()=>load(true)).catch(error);};
+let scrollCheckQueued=false;
+function checkStreamEnd(){
+  if(scrollCheckQueued)return;scrollCheckQueued=true;
+  requestAnimationFrame(()=>{scrollCheckQueued=false;const holder=$('#employee-grid .tabulator-tableholder');
+    if(nextCursor&&!loading&&!navigating&&!appendFailed&&holder.scrollTop+holder.clientHeight>=holder.scrollHeight-Math.max(320,holder.clientHeight))runQuery(()=>load(true)).catch(error);
+  });
+}
+table.on('scrollVertical',checkStreamEnd);table.on('renderComplete',checkStreamEnd);
 document.addEventListener('click',event=>{const link=event.target.closest('a[href]');if(!link||link.target||event.ctrlKey||event.metaKey)return;if(new URL(link.href).origin!==location.origin)return;event.preventDefault();guarded(()=>{location.href=link.href;}).catch(error);},true);
 document.addEventListener('submit',event=>{const form=event.target;if(form.action?.endsWith('/auth/logout')){event.preventDefault();event.stopImmediatePropagation();guarded(()=>{HTMLFormElement.prototype.submit.call(form);},true).catch(error);}},true);
 for(const name of ['copy','cut','contextmenu'])$('#employee-grid').addEventListener(name,event=>event.preventDefault());
@@ -269,6 +286,9 @@ $('#open-filters').onclick=()=>{
 };
 
 await ready;
+const gridHeader=$('#employee-grid .tabulator-header-contents'),gridHolder=$('#employee-grid .tabulator-tableholder');
+gridHolder.addEventListener('scroll',checkStreamEnd,{passive:true});
+gridHeader.addEventListener('scroll',()=>{if(Math.abs(gridHolder.scrollLeft-gridHeader.scrollLeft)>1)gridHolder.scrollLeft=gridHeader.scrollLeft;});
 callbacks=new CallbackAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:async row=>{if(row)queue.setRows([row]);await load();},notice,changed:renderStatus});callbacks.update();
 deletions=new DeletionAction({userId,request,flush:async id=>{commitEditor();return queue.flush(true,id);},getRow:id=>queue.rows.get(id),refresh:load,notice,changed:renderStatus});deletions.update();
 ai=new EmployeeAI({userId,request,queue,flush:async id=>{commitEditor();return queue.flush(true,id);},notice,changed:renderStatus,labels,display,validate});

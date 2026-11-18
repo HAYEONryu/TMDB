@@ -1,21 +1,23 @@
 {% extends 'base.html' %}
 {% load static %}
+{% block theme %}tm-refresh{% endblock %}
 {% block title %}{% if employee_view == 'today' %}오늘의 TM{% else %}나의 DB{% endif %} · 두드림 TM{% endblock %}
 {% block assets %}<link rel="stylesheet" href="{% static 'vendor/tabulator/tabulator.min.css' %}"><script src="{% static 'vendor/tabulator/tabulator.min.js' %}" defer></script><script type="module" src="{% static 'employee-grid.js' %}"></script>{% endblock %}
 {% block content %}
 <section id="employee" data-view="{{ employee_view }}" data-user-id="{{ user.pk }}">
   <div class="page-heading"><div><h1 class="h2">{% if employee_view == 'today' %}오늘의 TM{% else %}나의 DB{% endif %}</h1>
-  <p class="text-secondary">{% if employee_view == 'today' %}오늘 받은 고객과 이전 배정의 미완료 통화·재콜을 확인하세요. 오늘 완료한 고객은 자정까지 남습니다.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div>{% if employee_view != 'today' %}<button id="save-now" class="btn btn-primary">지금 저장</button>{% endif %}</div>
-  <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>고객명과 상담 칸을 두 번 클릭해 편집하세요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요. 고객명은 최대 100자이며 빈 값도 가능합니다.</span></p>
-  {% if employee_view == 'today' %}<p id="tm-business-date" class="small text-secondary" role="status"></p><p class="small text-secondary">최종 TM 날짜는 현재 배정에서 내가 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며, 통화 기록이 없으면 -로 표시합니다. 미완료 이월과 회수는 기존 통화 결과·재콜 업무 상태를 기준으로 합니다.</p>{% endif %}
+  <p class="text-secondary">{% if employee_view == 'today' %}오늘 받은 고객과 이전 배정의 미완료 통화·재콜을 확인하세요. 오늘 완료한 고객은 자정까지 남습니다.{% else %}담당 고객을 찾고, 지난 대화에 이어 상담을 기록하세요.{% endif %}</p></div></div>
   {% include 'customers/query-toolbar.html' %}
   <p id="employee-message" role="alert" class="grid-message"></p><p id="storage-warning" class="field-error" role="alert"></p>
-  <section id="ai-toolbar" class="card card-body mb-3"><p id="ai-usage" role="status"></p><p id="ai-availability" class="small text-secondary"></p><button id="ai-task-open" class="btn btn-outline-secondary align-self-start" hidden>AI 작업 확인</button></section>
+
   {% include 'customers/list-state.html' %}
-  <p class="small text-secondary">선택 항목은 - 선택, 문자 칸은 내용 지우기로 비울 수 있습니다. · 상세 필터에서 조건 설정 · 날짜 숫자 8자리 → YYYY-MM-dd · 방문일정만 시간 4자리 추가 가능 (예: 202611131430 → 2026-11-13 14:30, 한국 시각) · 표 안에서 복사·잘라내기·우클릭 메뉴를 제한합니다.</p>
-  <div class="list-heading"><h2 class="h5">고객 목록</h2><div class="list-actions"><span id="queue-status" role="status" aria-live="polite"></span><div class="d-flex flex-wrap gap-2">{% if employee_view == 'today' %}<button id="save-now" class="btn btn-primary">지금 저장</button>{% endif %}<button id="reload-rows" class="btn btn-outline-secondary">목록 새로고침</button></div></div></div>
+
+  <details class="grid-help"><summary>편집·저장 및 AI 도구 안내</summary>  <p class="editing-guide"><span class="guide-check" aria-hidden="true">✓</span><span><strong>고객명과 상담 칸을 두 번 클릭해 편집하세요.</strong> 변경은 약 90초 후 자동 저장되며, 바로 저장하려면 ‘지금 저장’을 눌러 주세요. 고객명은 최대 100자이며 빈 값도 가능합니다.</span></p>
+  {% if employee_view == 'today' %}<p id="tm-business-date" class="small text-secondary" role="status"></p><p class="small text-secondary">최종 TM 날짜는 현재 배정에서 내가 기록한 마지막 통화 시도의 한국 날짜입니다. 부재도 포함하며, 통화 기록이 없으면 -로 표시합니다. 미완료 이월과 회수는 기존 통화 결과·재콜 업무 상태를 기준으로 합니다.</p>{% endif %}
+  <p class="small text-secondary">선택 항목은 - 선택, 문자 칸은 내용 지우기로 비울 수 있습니다. · 상세 필터에서 조건 설정 · 날짜 숫자 8자리 → YYYY-MM-dd · 방문일정만 시간 4자리 추가 가능 (예: 202611131430 → 2026-11-13 14:30, 한국 시각) · 표 안에서 복사·잘라내기·우클릭 메뉴를 제한합니다.</p>  <section id="ai-toolbar" class="card card-body mb-3"><p id="ai-usage" role="status"></p><p id="ai-availability" class="small text-secondary"></p><button id="ai-task-open" class="btn btn-outline-secondary align-self-start" hidden>AI 작업 확인</button></section></details>
+  <div class="list-heading"><h2 class="h5">고객 목록</h2><div class="list-actions"><span id="queue-status" role="status" aria-live="polite"></span><div class="d-flex flex-wrap gap-2"><button id="save-now" class="btn btn-primary">지금 저장</button><button id="reload-rows" class="btn btn-outline-secondary">목록 새로고침</button></div></div></div>
   <div id="employee-private"><p class="table-scroll-hint mb-1" hidden>가로로 넘기면 나머지 열을 볼 수 있습니다. <span aria-hidden="true">↔</span></p><div id="employee-grid" aria-label="직원 고객관리 표"></div></div>
-  <div class="d-flex flex-wrap gap-3 justify-content-between align-items-center mt-3"><span id="page-info" role="status"></span><div class="d-flex gap-2 align-items-center"><label for="page-size">페이지당</label><select id="page-size" class="form-select w-auto"><option value="50">50행</option><option value="100">100행</option></select><button id="previous" class="btn btn-outline-secondary">이전</button><button id="next" class="btn btn-outline-secondary">다음</button></div></div>
+  <div class="listing-footer"><span id="page-info" role="status"></span><span hidden><select id="page-size"><option value="50">50행</option><option value="100">100행</option></select><button id="previous">이전</button></span><button id="next" class="btn btn-outline-secondary">고객 더 불러오기</button></div>
   <section id="pending-panel" class="card card-body mt-4" hidden><h2 class="h5">저장 대기 확인</h2><p class="small text-secondary">다른 페이지·현장의 대기값도 포함합니다. 서버가 저장을 확인한 요청만 제거합니다.</p><div id="pending-rows"></div></section>
 </section>
 <dialog id="leave-dialog"><h2 class="h5">저장을 확인하지 못했습니다</h2><p id="leave-message"></p><p>대기값을 버려도 이미 서버에 저장된 변경은 취소되지 않습니다. 복구 가능한 값은 이 브라우저에 보관합니다.</p><div class="dialog-actions"><button id="leave-cancel" class="btn btn-outline-secondary">이동 취소</button><button id="leave-discard" class="btn btn-outline-danger">내 변경 버리고 이동</button><button id="leave-retry" class="btn btn-primary">저장 재시도</button></div></dialog>

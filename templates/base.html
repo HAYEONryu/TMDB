@@ -14,8 +14,9 @@
   <script src="{% static 'connection-status.js' %}" defer></script>
   {% block assets %}{% endblock %}
   <link rel="stylesheet" href="{% static 'app.css' %}">
+  <link rel="stylesheet" href="{% static 'followup.css' %}">
 </head>
-<body class="{% if user.is_authenticated and not user.must_change_password %}workspace{% else %}auth-page{% endif %}" data-user-id="{% if user.is_authenticated %}{{ user.pk }}{% endif %}" data-role="{{ user.role }}" data-initial="{{ user.must_change_password|yesno:'true,false' }}">
+<body class="{% if user.is_authenticated and not user.must_change_password %}workspace{% else %}auth-page{% endif %} {% block theme %}{% endblock %}" data-user-id="{% if user.is_authenticated %}{{ user.pk }}{% endif %}" data-role="{{ user.role }}" data-initial="{{ user.must_change_password|yesno:'true,false' }}">
   <a class="skip-link" href="#main-content">본문으로 바로가기</a>
   <header class="site-header"><div class="container header-inner">
     <a class="brand header-brand" href="/" aria-label="두드림 TM 홈"><img src="{% static 'brand-mark.svg' %}" width="36" height="36" alt=""><span>두드림 <b>TM</b></span></a>

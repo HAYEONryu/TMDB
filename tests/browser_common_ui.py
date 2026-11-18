@@ -125,7 +125,7 @@ class CommonUIBrowserTests(Fixtures, StaticLiveServerTestCase):
         self.page.locator('#assignment-quantity').fill('1')
         def lost(route):route.fetch();route.abort('failed')
         self.page.route('**/api/assignments/distribute',lost,times=1)
-        self.page.locator('#distribute').click()
+        self.page.locator('#distribute').click();self.page.locator('#action-confirm-accept').click()
         expect(self.page.locator('#assignment-pending')).to_be_visible()
         self.assertEqual(self.db(Assignment.objects.count),2)
         opener=self.page.locator('#assignment-discard');opener.click()

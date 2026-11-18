@@ -12,6 +12,15 @@ const number=value=>new Intl.NumberFormat('ko-KR').format(value);
 const categories={held:'현재 보유 고객',callbacks_remaining:'오늘 남은 재콜',new_today:'오늘 받은 고객',overdue:'기한 지난 재콜',visits:'오늘 방문예약',contracted:'내 담당 계약'};
 let generation=0,listSequence=0,selectedCategory=null,defaultSite='',activeSite=null,lastList=null,counts={};
 let scheduleSequence=0,lastSchedule=null;
+let scheduleOpener=null;
+function closeSchedule(restore=false){const previous=scheduleOpener;scheduleOpener=null;previous?.setAttribute('aria-expanded','false');$('schedule-customer-detail').hidden=true;$('schedule-customer-content').replaceChildren();if(restore)previous?.focus();}
+$('close-schedule-customer').onclick=()=>closeSchedule(true);
+function openSchedule(control,row,schema){
+  if(scheduleOpener===control){closeSchedule();return;}closeSchedule();scheduleOpener=control;control.setAttribute('aria-expanded','true');$('schedule-customer-name').textContent=(row.customer_name||'이름 미입력')+' 고객 정보';
+  const facts=text('dl','','employee-customer-facts');for(const field of ['phone_normalized','call_result','residence','callback_due_at','visit_at','housing_status','contract_status']){const item=text('div','');item.append(text('dt',customerLabels[field]),text('dd',['callback_due_at','visit_at'].includes(field)?date(row[field]):choiceLabel(schema,field,row[field])));facts.append(item);}
+  $('schedule-customer-content').append(facts,text('h4','상담내용'),text('p',row.notes||'-','schedule-full-notes'),text('h4','비고'),text('p',row.memo||'-','schedule-full-notes'));$('schedule-customer-detail').hidden=false;$('schedule-customer-name').focus();
+}
+
 const date=value=>value?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date(value)):'-';
 const performance=new EmployeePerformance();
 const dailyResults=new DailyCallResults();
@@ -65,7 +74,7 @@ async function loadSchedule(page=1){
     if(sequence!==scheduleSequence||revision!==generation)return;
     if(site&&data.site_id!==site)throw new Error('선택한 현장의 일정을 다시 확인해 주세요.');
     status.textContent=`${data.business_date} · 상담 예정 고객 ${number(data.total)}명 · ${dashboardTime(data.as_of)} 조회${data.total?` · ${data.page} / ${data.last_page}페이지`:''}`;
-    target.replaceChildren(status);
+    closeSchedule();target.replaceChildren(status);
     if(!data.total)target.append(text('p','오늘 예정된 재콜·방문예약 고객이 없습니다.','customer-list-empty'));
     else{
       const wrap=text('div','','table-responsive'),table=text('table','','table schedule-table'),head=text('thead',''),tr=text('tr',''),body=text('tbody','');
@@ -76,7 +85,8 @@ async function loadSchedule(page=1){
         const times=text('td',''),events=[['재콜',customer.callback_due_at],['방문예약',customer.visit_at]].filter(([,value])=>value&&date(value).slice(0,10)===data.business_date).sort((a,b)=>new Date(a[1])-new Date(b[1]));
         for(const [label,at] of events){const item=text('div','','schedule-event'),time=text('time',date(at).slice(11));time.dateTime=at;item.append(time,text('span',label,'schedule-kind'));if(new Date(at)<new Date(data.as_of))item.append(text('small','예정 시각 지남','schedule-past'));times.append(item);}
         const action=text('td',''),link=text('a','고객 열기','btn btn-sm btn-outline-primary');link.href='/app/employee/mine?'+new URLSearchParams({site_id:customer.site_id,q:customer.phone_normalized});link.setAttribute('aria-label',(customer.customer_name||'이름 미입력')+' 고객 열기');action.append(link,recorder.button(customer));
-        row.append(times,text('td',customer.customer_name||'이름 미입력'),text('td',customer.phone_normalized.replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3')),text('td',choiceLabel(data.schema,'call_result',customer.call_result)),action);
+        const name=text('td',''),control=text('button',customer.customer_name||'이름 미입력','text-control');control.type='button';control.setAttribute('aria-controls','schedule-customer-detail');control.setAttribute('aria-expanded','false');control.onclick=()=>openSchedule(control,customer,data.schema);name.append(control);
+        row.append(times,name,text('td',customer.phone_normalized.replace(/^(010)(\d{4})(\d{4})$/,'$1-$2-$3')),text('td',choiceLabel(data.schema,'call_result',customer.call_result)),action);
         Array.from(row.cells).forEach((cell,index)=>cell.dataset.label=headers[index]);body.append(row);
       }
       table.append(head,body);wrap.append(table);target.append(wrap);
@@ -101,7 +111,7 @@ function work(data){
   syncButtons();if(selectedCategory&&!panel.hidden)void loadList(selectedCategory,lastList?.page||1);
   void loadSchedule(lastSchedule?.page||1);
 }
-function clear(){closeDetails();$('employee-contracts').replaceChildren();scheduleSequence++;lastSchedule=null;$('employee-today-schedule').replaceChildren(text('p','통계를 조회하면 오늘 상담 일정을 표시합니다.'));$('employee-today-schedule').setAttribute('aria-busy','false');}
+function clear(){closeSchedule();closeDetails();$('employee-contracts').replaceChildren();scheduleSequence++;lastSchedule=null;$('employee-today-schedule').replaceChildren(text('p','통계를 조회하면 오늘 상담 일정을 표시합니다.'));$('employee-today-schedule').setAttribute('aria-busy','false');}
 async function refresh(){
   $('dashboard-refresh').onclick=refresh;
   if(activeSite!==select.value){generation++;clear();performance.clear();dailyResults.clear();activeSite=select.value;}

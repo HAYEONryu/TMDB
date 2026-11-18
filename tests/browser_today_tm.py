@@ -63,7 +63,7 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
     def test_label_readonly_first_column_confirmed_save_and_responsive(self):
         self.seed();page=self.page
         expect(page.locator('h1')).to_have_text('오늘의 TM');expect(page).to_have_title('오늘의 TM · 두드림 TM')
-        expect(page.locator('#employee-grid .tabulator-col-title').first).to_have_text('최종 TM 날짜')
+        expect(page.locator('#employee-grid .tabulator-col-title').first).to_contain_text('최종 TM 날짜')
         self.assert_state('-');self.status().dblclick();expect(self.status().locator('input,select,textarea')).to_have_count(0)
         self.edit('call_result','NO_ANSWER');self.assert_state('-')
         self.save();self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
@@ -75,12 +75,12 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
             box=self.status().bounding_box();self.assertGreaterEqual(box['x'],0);self.assertLessEqual(box['x']+box['width'],width+1)
             page.screenshot(path=str(artifact_path(f'today-tm-{width}.png')),full_page=True)
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
-        expect(page.locator('#employee-grid .tabulator-col[tabulator-field=last_tm_date]')).to_have_count(0)
+        expect(page.locator('#employee-grid .tabulator-col[tabulator-field=last_tm_date]')).to_have_count(1)
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
 
     def test_notes_and_inherited_result_stay_pending_then_callback_completion_is_confirmed(self):
         self.seed(inherited=True);page=self.page
-        self.edit('memo','가상 비고만 정정');self.save();self.assert_state('-')
+        self.edit('notes','가상 상담내용만 정정');self.save();self.assert_state('-')
         self.edit('call_result','INTERESTED');self.save();self.assert_state('완료')
         self.db(lambda:Callback.objects.create(customer=self.row,due_at=timezone.now(),created_by=self.employee,updated_by=self.employee))
         page.locator('#reload-rows').click();self.assert_state('-')
@@ -159,12 +159,12 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
         with page.expect_response(lambda response:'/api/customers?' in response.url):page.locator('#reload-rows').click()
         expect(page.locator('#employee-grid')).to_have_attribute('aria-busy','false')
         expect(page.locator('#tm-business-date')).to_contain_text(self.start.date().isoformat())
-        self.edit('memo','자정에 보존할 가상 변경')
+        self.edit('notes','자정에 보존할 가상 변경')
         phase['next']=True;page.clock.fast_forward(31000)
         expect(page.locator('#employee-grid .tabulator-row')).to_have_count(1)
         expect(page.locator('#queue-status')).to_contain_text('저장 대기')
         self.save()
-        self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.row.pk).memo),'자정에 보존할 가상 변경')
+        self.assertEqual(self.db(lambda:Customer.objects.get(pk=self.row.pk).notes),'자정에 보존할 가상 변경')
         page.clock.fast_forward(31000)
         expect(page.locator('#employee-grid .tabulator-row')).to_have_count(0)
         expect(page.locator('#list-state')).to_contain_text('오늘의 TM 고객이 없습니다.')
