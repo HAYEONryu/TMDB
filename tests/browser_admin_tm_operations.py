@@ -46,6 +46,19 @@ class AdminTMOperationsBrowserTests(Fixtures,StaticLiveServerTestCase):
 
     def test_bulk_select_confirmation_multisite_exclusion_and_dashboard_refresh(self):
         self.seed_requests();page=self.page
+        for width in [1440, 320]:
+            page.set_viewport_size({'width': width, 'height': 960})
+            bounds = page.locator('#deletion-notifications .section-heading').evaluate('''header => {
+                const approve = header.querySelector("#approve-selected").getBoundingClientRect();
+                const refresh = header.querySelector("#requests-refresh").getBoundingClientRect();
+                return {gap: refresh.left - approve.right, centerDelta: (refresh.top + refresh.bottom - approve.top - approve.bottom) / 2,
+                    scrollWidth: document.documentElement.scrollWidth};
+            }''')
+            self.assertGreaterEqual(bounds['gap'], 0)
+            self.assertLessEqual(bounds['gap'], 12)
+            self.assertAlmostEqual(bounds['centerDelta'], 0, delta=1)
+            self.assertLessEqual(bounds['scrollWidth'], width)
+        page.set_viewport_size({'width': 1440, 'height': 960})
         expect(page.locator('#approve-selected')).to_be_disabled()
         self.select_all();button=self.confirm_bulk()
         expect(page.locator('#action-confirm-dialog')).to_contain_text(self.site.name+': 2건')

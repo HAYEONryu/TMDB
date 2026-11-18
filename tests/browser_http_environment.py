@@ -159,7 +159,7 @@ class EmployeeEnvironmentBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.locator("#save-now").click()
         expect(page.locator("#queue-status")).to_have_text("모든 변경 저장됨")
         page.reload()
-        expect(page.locator('.tabulator-row [tabulator-field="notes"]').first).to_have_text("가상 시간 제한 호환 저장")
+        expect(page.locator('.tabulator-row .employee-note-preview').first).to_have_text("가상 시간 제한 호환 저장")
         self.assertEqual(self.errors, [])
 
     def test_storage_opening_denied_prevents_editing(self):

@@ -67,7 +67,7 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
             page.screenshot(path=str(artifact_path('grid-load-diagnostic.png')),full_page=True)
             raise
         headers=page.locator('#employee-grid .tabulator-col-title')
-        self.assertEqual([v.rstrip(' ↕↑↓') for v in headers.all_text_contents()[:11]],['No.','최종 TM 날짜','고객명','연락처','통화결과','삭제요청','거주지','상담내용','재콜일정','메모','방문예약날짜'])
+        self.assertEqual([v.rstrip(' ↕↑↓') for v in headers.all_text_contents()],['No.','최종 TM 날짜','고객명','연락처','통화결과','삭제요청','거주지','상담내용','재콜일정','메모','방문예약날짜'])
         for field in ['tm_status','housing_status','contract_status','route','assigned_at']:
             expect(page.locator(f'#employee-grid .tabulator-col[tabulator-field="{field}"]')).to_have_count(0)
         for field,width in [('_number',56),('phone_normalized',154),('call_result',166),('notes',340),('memo',260)]:
@@ -95,7 +95,9 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.locator('#open-filters').click();page.locator('section[data-field="call_result"] details summary').click()
         page.locator('.filter-toggle[data-value="VISIT_BOOKED"]').click();page.locator('#filter-apply').click()
         expect(page.locator('#page-info')).to_contain_text('검색 1명');expect(page.locator('#active-filters')).to_contain_text('방문예정')
-        action=page.get_by_role('button',name='통화·방문 기록',exact=True);action.scroll_into_view_if_needed();action.click()
+        action=cell('notes').get_by_role('button',name='통화·방문 기록',exact=True);action.scroll_into_view_if_needed();action.press('Enter')
+        expect(page.locator('#activity-dialog')).to_be_visible()
+        expect(cell('notes').locator('textarea')).to_have_count(0)
         page.locator('#activity-connection').select_option('NOT_CONNECTED')
         page.locator('#activity-at').fill(self.db(timezone.now).astimezone(KST).strftime('%Y-%m-%dT%H:%M:%S'))
         page.locator('#activity-submit').click()

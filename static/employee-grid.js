@@ -11,13 +11,16 @@ import {installHistory} from './customer-history.js';
 import {installPreRecall} from './pre-recall.js';
 import {DeletionAction} from './deletion-action.js';
 import {EmployeeAI} from './employee-ai.js';
-import {customerLabels,employeeGridLabels as labels,customerFields,employeeGridFields,choiceLabel} from './customer-columns.js';
+import {customerLabels,customerFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter} from './grid-filter.js';
 import {createQueryUI,createQueryScheduler} from './customer-query.js';
 import {syncEmployeeSiteLinks} from './employee-navigation.js';
 import {setupDateInput,dateInputTimestamp} from './date-input.js';
 const $=selector=>document.querySelector(selector),root=$('#employee'),userId=root.dataset.userId,view=root.dataset.view;
 const schema=JSON.parse($('#customer-schema').textContent);
+const labels = { ...customerLabels, last_tm_date: '최종 TM 날짜', residence: '거주지', memo: '메모', visit_at: '방문예약날짜' };
+const employeeGridFields = ['customer_name', 'phone_normalized', 'call_result', 'residence',
+  'notes', 'callback_due_at', 'memo', 'visit_at'];
 const editable=new Set(['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo']),dates=new Set(['visit_at','callback_due_at','assigned_at']);
 const multiline=new Set(['notes','memo']);
 const gridWidths={customer_name:140,phone_normalized:154,call_result:166,residence:180,notes:340,memo:260,callback_due_at:210,visit_at:174};
@@ -54,10 +57,10 @@ function validate(field,value,row){
   normalized(field,value);
   if(field==='customer_name'&&Array.from((value||'').trim()).length>100)throw new Error('고객명은 최대 100자입니다.');
   if(schema[field]&&!Object.hasOwn(schema[field],value??'')&&value!==(row[field]??''))throw new Error('선택값을 확인해 주세요.');
-  if(field==='notes'&&Array.from(value||'').length>Math.max(10000,Array.from(queue.rows.get(row.id)?.notes||'').length))throw new Error('비고는 최대 10,000자입니다. 기존의 긴 비고는 현재 길이까지 보존할 수 있습니다.');
+  if(field==='notes'&&Array.from(value||'').length>Math.max(10000,Array.from(queue.rows.get(row.id)?.notes||'').length))throw new Error('상담내용은 최대 10,000자입니다. 기존의 긴 상담내용은 현재 길이까지 보존할 수 있습니다.');
   if(field==='housing_status'&&Array.from(value||'').length>200)throw new Error('주택보유상황은 최대 200자입니다.');
   if(['route','residence'].includes(field)&&Array.from(value||'').length>200)throw new Error(labels[field]+'는 최대 200자입니다.');
-  if(field==='memo'&&Array.from(value||'').length>10000)throw new Error('비고는 최대 10,000자입니다.');
+  if(field==='memo'&&Array.from(value||'').length>10000)throw new Error('메모는 최대 10,000자입니다.');
 }
 function editor(cell,onRendered,success,cancel){
   const field=cell.getField(),row=cell.getRow().getData(),original=cell.getValue();
@@ -136,10 +139,48 @@ function deletionCell(cell){
   const requested=!!row.pending_deletion_request_id||deletions?.isConfirmed(row),button=text('button',deletions?.busyId===row.id?'요청 중':requested?'요청완료':'삭제 요청');button.className='btn btn-sm btn-outline-danger';
   button.disabled=!!requested||actionBlocked(row);button.title='관리자에게 삭제 승인을 요청합니다.';button.onclick=()=>{commitEditor();deletions.run(row.id);};return button;
 }
-function actions(cell){
-  const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span'),history=text('button','이력');
-  history.className='btn btn-sm btn-outline-secondary';history.setAttribute('aria-label','상담·재콜 이력');history.title='저장된 상담 변경과 재콜 이력을 조회합니다.';history.onclick=()=>{commitEditor();openHistory(row).catch(error);};wrap.append(history);
-  const control=text('button','AI 도움');control.className='btn btn-sm btn-outline-primary ms-2';control.title='기능 설명·사용 준비·기존 AI 결과를 확인합니다.';control.disabled=queue.paused||ai?.busy||callbacks?.busy||deletions?.busy;control.onclick=()=>{commitEditor();ai.open(row.id);};wrap.append(control);const activity=recorder.button(row);activity.disabled ||= !!actionBlocked(row);wrap.append(activity);wrap.className='d-inline-flex flex-wrap gap-2';return wrap;
+function notesCell(cell){
+  const data = cell.getRow().getData();
+  const row = queue.rows.get(data.id) || data;
+  const content = document.createElement('div');
+  content.className = 'employee-note-content';
+  const summary = document.createElement('div');
+  summary.className = 'd-flex align-items-center gap-2 py-2';
+  const preview = text('div', display('notes', cell.getValue()));
+  preview.className = 'employee-note-preview text-truncate flex-grow-1';
+  const actions = document.createElement('div');
+  actions.className = 'employee-note-actions d-flex flex-wrap align-items-center gap-1';
+  for (const event of ['mousedown', 'pointerdown', 'touchstart', 'dblclick', 'click', 'keydown']) {
+    actions.addEventListener(event, e => e.stopPropagation());
+  }
+
+  const history = text('button', '이력');
+  history.type = 'button';
+  history.className = 'btn btn-sm btn-outline-secondary';
+  history.setAttribute('aria-label', '상담·재콜 이력');
+  history.title = '저장된 상담 변경과 재콜 이력을 조회합니다.';
+  history.onclick = () => { commitEditor(); openHistory(queue.rows.get(row.id) || row).catch(error); };
+  const control = text('button', 'AI 도움');
+  control.type = 'button';
+  control.className = 'btn btn-sm btn-outline-primary employee-note-ai';
+  control.title = '기능 설명·사용 준비·기존 AI 결과를 확인합니다.';
+  control.onclick = () => { commitEditor(); ai.open(row.id); };
+  const activity = recorder.button(row);
+  activity.classList.add('employee-note-activity');
+  const state = text('span', '');
+  state.className = 'employee-note-status small flex-shrink-0';
+  summary.append(preview, state);
+  actions.append(history, control, activity);
+  content.append(summary, actions);
+  updateNoteActions(content, row, queue.entry(row.id));
+  return content;
+}
+function updateNoteActions(content, row, entry){
+  content.querySelector('.employee-note-ai').disabled = !!(queue.paused || ai?.busy || callbacks?.busy || deletions?.busy);
+  content.querySelector('.employee-note-activity').disabled = !!(environmentProblem || actionBlocked(row));
+  const state = content.querySelector('.employee-note-status');
+  state.textContent = environmentProblem ? '조회 전용' : statusLabels[entry?.state] || '';
+  state.hidden = !state.textContent;
 }
 function rowStyle(row){
   const data=queue.rows.get(row.getData().id)||row.getData(),entry=queue.entry(data.id),element=row.getElement();
@@ -155,9 +196,10 @@ const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)'
     headerTooltip:'현재 배정에서 내가 마지막으로 기록한 통화 또는 저장한 통화결과의 한국 날짜입니다. 부재도 포함합니다.',
     formatter:cell=>{const value=queue.rows.get(cell.getRow().getData().id)?.last_tm_date||cell.getValue();cell.getElement().classList.toggle('missing-tm-date',!value);return text('span',value||'-');}},
     ...employeeGridFields.flatMap(field=>[
-    {...column(field),...(field==='callback_due_at'?{formatter:callbackCell}:{})},
+    {...column(field),...(field==='callback_due_at'?{formatter:callbackCell}:{}),
+      ...(field==='notes'?{formatter:notesCell,headerTooltip:actionTooltip}:{})},
     ...(field==='call_result'?[{title:'삭제요청',field:'_deletion',headerSort:false,width:120,minWidth:120,headerTooltip:deletionHelp,titleFormatter:sortTitle('deletion_request_status','삭제요청',()=>state,changeSort),formatter:deletionCell}]:[])
-  ]),{title:'작업',field:'_actions',headerSort:false,minWidth:380,headerTooltip:actionTooltip,titleFormatter:()=>{const label=text('span','작업');label.tabIndex=0;label.setAttribute('aria-label','작업 도움말. '+actionHelp);return label;},formatter:actions},{title:'저장상태',field:'_status',minWidth:175,headerSort:false,formatter:cell=>text('span',environmentProblem?'조회 전용':statusLabels[queue.entry(cell.getRow().getData().id)?.state]||'저장됨')}]});
+  ])]});
 const ready=new Promise(resolve=>table.on('tableBuilt',resolve));
 function renderStatus(){
   const entries=queue.all();$('#queue-status').textContent=readOnly?'조회 전용':queue.paused?'저장 중단':!queueReady?'저장 대기열 확인 중':queue.invalid.size?`입력 오류 · 미저장${entries.length?' '+entries.length+'행':''}`:entries.length?`저장 대기 ${entries.length}행`:'모든 변경 저장됨';
@@ -175,14 +217,14 @@ function renderStatus(){
     if(entry?.state==='blocked'){row.delete().catch(()=>{});continue;}
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
     const tm=row.getCell('last_tm_date');if(tm&&base&&tm.getValue()!==base.last_tm_date)tm.setValue(base.last_tm_date);
-    const status=entry?eState(entry):'saved',statusCell=row.getCell('_status');if(statusCell)statusCell.setValue(status);else data._status=status;
-    const actionState=JSON.stringify([base?.callback_id,base?.callback_version,base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,ai?.canGenerate(),queue.paused,entry?.state]);
-    for(const field of ['_actions','_deletion']){const cell=row.getCell(field);if(cell)cell.setValue(actionState);}
+    const actionState=JSON.stringify([base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,queue.paused,entry?.state]);
+    row.getCell('_deletion')?.setValue(actionState);
+    const noteActions = row.getCell('notes')?.getElement().querySelector('.employee-note-content');
+    if (noteActions) updateNoteActions(noteActions, base || data, entry);
     const callback=row.getCell('callback_due_at');if(callback&&!callback.getElement().classList.contains('tabulator-editing'))callback.getElement().replaceChildren(callbackCell(callback));
     rowStyle(row);
   }
 }
-const eState=e=>[e.state,e.version,Object.keys(e.pending).length,e.error].join(':');
 queue.addEventListener('change',renderStatus);
 let nextCursor=null,streamTotal=0,appendFailed=false;
 let loadGeneration=0,loadedBusinessDate=null,serverClock=null;

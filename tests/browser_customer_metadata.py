@@ -147,7 +147,7 @@ class CustomerMetadataBrowserTests(Fixtures, StaticLiveServerTestCase):
         page.goto(self.live_server_url+f'/app/employee/mine?site_id={self.site.pk}')
         expect(page.locator('#page-info')).to_contain_text('검색 1명')
         self.assertEqual([field for field,_ in header('employee-grid')], ['_number','last_tm_date','customer_name',
-            'phone_normalized','call_result','_deletion','residence','notes','callback_due_at','memo','visit_at','_actions','_status'])
+            'phone_normalized','call_result','_deletion','residence','notes','callback_due_at','memo','visit_at'])
         self.assertEqual(page.locator('#employee-grid [tabulator-field="assignee_name"]').count(),0)
         for field in ['phone_normalized','last_tm_date','_number']:
             cell=page.locator(f'#employee-grid .tabulator-row [tabulator-field="{field}"]').first

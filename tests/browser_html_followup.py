@@ -40,11 +40,19 @@ class HTMLFollowupBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.visit('/app/employee/today')
         expect(page.locator('#page-info')).to_contain_text('50 / 125명')
         expected=['_number','last_tm_date','customer_name','phone_normalized','call_result','_deletion','residence','notes','callback_due_at','memo','visit_at']
-        self.assertEqual(page.locator('#employee-grid .tabulator-col').evaluate_all('(els)=>els.slice(0,11).map(e=>e.getAttribute("tabulator-field"))'),expected)
+        self.assertEqual(page.locator('#employee-grid .tabulator-col').evaluate_all('(els)=>els.map(e=>e.getAttribute("tabulator-field"))'),expected)
         first=page.locator('#employee-grid .tabulator-row .missing-tm-date').first
         expect(first).to_have_text('-');self.assertEqual(first.evaluate('(e)=>getComputedStyle(e).backgroundColor'),'rgb(255, 240, 223)')
         for target in [100,125]:
-            page.locator('#employee-grid .tabulator-tableholder').evaluate('(e)=>e.scrollTop=e.scrollHeight')
+            expect(page.locator('#next')).to_be_enabled()
+            page.locator('#employee-grid .tabulator-tableholder').evaluate('''async holder => {
+                // Tabulator can revise the remaining scroll distance as it measures newly loaded rows.
+                for (let step = 0; step < 8; step++) {
+                    holder.scrollTop = holder.scrollHeight;
+                    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                    if (holder.scrollHeight - holder.scrollTop - holder.clientHeight < 2) break;
+                }
+            }''')
             try:expect(page.locator('#page-info')).to_contain_text(f'{target} / 125명')
             except AssertionError:
                 import json
@@ -63,7 +71,7 @@ class HTMLFollowupBrowserTests(Fixtures,StaticLiveServerTestCase):
         open_detail_filter(page,'callback_due_at',match=False)
         page.locator('#filter-dialog').press('Escape')
         self.visit('/app/employee/mine')
-        self.assertEqual(page.locator('#employee-grid .tabulator-col').evaluate_all('(els)=>els.slice(0,11).map(e=>e.getAttribute("tabulator-field"))'),expected)
+        self.assertEqual(page.locator('#employee-grid .tabulator-col').evaluate_all('(els)=>els.map(e=>e.getAttribute("tabulator-field"))'),expected)
         for width in [1440,390,320]:
             page.set_viewport_size({'width':width,'height':960});page.locator('#employee-grid .tabulator-tableholder').evaluate('(e)=>e.scrollLeft=0')
             self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'),width)

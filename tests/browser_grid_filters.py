@@ -60,7 +60,10 @@ class GridFilterBrowserTests(Fixtures,StaticLiveServerTestCase):
             row=page.locator(f'#{self.grid} .tabulator-row').filter(has=page.get_by_text('010-8000-0000',exact=True))
             fields=['customer_name','call_result','callback_due_at','visit_at','notes','memo','residence']+(['admin_notes','contract_status'] if actor==self.admin else [])
             for field in fields:
-                expect(row.locator(f'[tabulator-field="{field}"]')).to_have_text('-')
+                cell = row.locator(f'[tabulator-field="{field}"]')
+                if field == 'notes' and actor == self.employee:
+                    cell = cell.locator('.employee-note-preview')
+                expect(cell).to_have_text('-')
             for empty in [False,True]:
                 for field,value in {'call_result':'INTERESTED',**({'contract_status':'CONTRACTED'} if actor==self.admin else {})}.items():
                     cell=row.locator(f'[tabulator-field="{field}"]');cell.dblclick() if actor==self.employee else cell.click()

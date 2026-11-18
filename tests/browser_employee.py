@@ -149,7 +149,7 @@ class EmployeeBrowserTests(Fixtures,StaticLiveServerTestCase):
         def hold(route):held.append(route)
         page.route('**/api/employee/batch-update',hold,times=1);page.locator('#save-now').click();page.wait_for_function("document.querySelector('#pending-rows').textContent.includes('저장 중')")
         self.edit('가상 전송 중 다음 입력');self.assertEqual(held[0].request.post_data_json['rows'][0]['changes'],{'notes':'가상 전송 스냅샷'})
-        held[0].fulfill(response=held[0].fetch());self.saved();expect(self.cell()).to_have_text('가상 전송 중 다음 입력');self.assertEqual(len(self.sent),2)
+        held[0].fulfill(response=held[0].fetch());self.saved();expect(self.cell().locator('.employee-note-preview')).to_have_text('가상 전송 중 다음 입력');self.assertEqual(len(self.sent),2)
         captured=[]
         def lose(route):captured.append(route.request.post_data_json);response=route.fetch();self.assertEqual(response.status,200);route.abort('failed')
         page.route('**/api/employee/batch-update',lose,times=1);self.edit('가상 응답 유실');page.locator('#save-now').click();expect(page.locator('#pending-rows')).to_contain_text('저장 결과 확인 대기')

@@ -172,7 +172,7 @@ class EmployeePerformanceBrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(page.locator('#today-call-attempts')).to_have_text('0콜')
         page.unroute('**/api/dashboard/performance*',delay)
         page.locator('#performance-open-mine').click();expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        cell=page.locator('#employee-grid .tabulator-row [tabulator-field="_actions"]').first
+        cell=page.locator('#employee-grid .tabulator-row .employee-note-actions').first
         cell.scroll_into_view_if_needed();cell.get_by_role('button',name='통화·방문 기록').click()
         expect(page.locator('#activity-dialog')).to_be_visible();page.locator('#activity-close').click()
         self.assertEqual(self.errors,[]);self.assertEqual(self.external,[])
