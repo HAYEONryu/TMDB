@@ -6,7 +6,7 @@ import {api, option} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
 import {CallbackAction} from './callback-action.js';
 import {installHistory} from './customer-history.js';
-import {HardDelete} from './hard-delete.js';
+import {HardDelete} from './hard-delete.js?v=bulk-1';
 import {customerLabels,customerFields,choiceLabel} from './customer-columns.js';
 import {openGridFilter} from './grid-filter.js';
 import {createQueryUI,createQueryScheduler} from './customer-query.js';
@@ -44,6 +44,7 @@ function status() {
   if($("#add-row"))$("#add-row").disabled=blocked||!!newRow||!loadedState||!siteInfo?.items.some(site=>site.id===state.site);
   if($("#new-row-help")){$("#new-row-help").hidden=!newRow;$("#cancel-new-row").disabled=blocked;$("#new-row-error").textContent=newRow?.error||"";}
   $("#bulk").disabled = blocked || !rows.size;
+  if (trash) $('#bulk-hard-delete').disabled = blocked || !table.getSelectedData().length;
   $("#previous").disabled = blocked || state.page <= 1;
   $("#next").disabled = blocked || state.page >= lastPage;
   $("#site").disabled = blocked; $("#page-size").disabled = blocked; $("#sort").disabled = blocked;
@@ -158,6 +159,7 @@ const table = new Tabulator("#customer-grid", {height:"min(60vh, 640px)", layout
       {title:'작업',field:'_actions',headerSort:false,minWidth:255,formatter:cell=>historyButton(cell.getRow().getData())},
     ] : [])]});
 const ready = new Promise(resolve => table.on("tableBuilt",resolve));
+if (trash) table.on('rowSelectionChanged', status);
 table.on("cellEdited", cell => {
   const data = cell.getRow().getData(), field=cell.getField(), base=rows.get(data.id);
   if(data._new&&newRow){if(newRow.error)notice('새 고객 입력을 수정했습니다. 저장을 눌러 주세요.');newRow.error="";cell.getRow().reformat();status();return;}
@@ -378,6 +380,10 @@ if(!trash){$("#assignee-cancel").onclick=()=>$("#assignee-dialog").close();$("#a
 await ready;
 callbacks=new CallbackAction({userId:$('#management').dataset.userId,request:actorRequest,flush:async()=>!hasChanges()||save(),getRow:id=>rows.get(id),refresh:load,notice,changed:status});callbacks.update();
 hard=new HardDelete({userId:$('#management').dataset.userId,request:actorRequest,refresh:async siteDeleted=>{if(siteDeleted){await loadSites();state.page=1;state.filters={};state.q='';state.assignee='';$('#search').value='';const url=new URL(location.href);if(state.site)url.searchParams.set('site_id',state.site);else url.searchParams.delete('site_id');url.searchParams.delete('assignee_id');history.replaceState(null,'',url);}await load();},notice,changed:status});hard.update();
+if (trash) $('#bulk-hard-delete').onclick = () => guarded(() => {
+  const selected = table.getSelectedData();
+  if (selected.length) hard.openBulk(selected, state.site);
+}).catch(showError);
 $('#delete-site')?.addEventListener('click',()=>guarded(()=>{const site=siteInfo.items.find(site=>site.id===state.site);if(site)hard.openSite(site);}).catch(showError));
 if(trash)await table.addColumn({title:'영구 삭제',field:'_hard',headerSort:false,minWidth:130,formatter:cell=>{const button=text('button','영구 삭제');button.className='hard-customer btn btn-sm btn-outline-danger';button.onclick=()=>guarded(()=>hard.openCustomer(cell.getRow().getData())).catch(showError);return button;}});
 busy=true;status();

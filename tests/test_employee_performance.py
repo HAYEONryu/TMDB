@@ -70,6 +70,39 @@ class EmployeePerformanceTests(Fixtures, TransactionTestCase):
         self.assertEqual(assignment.end_reason,Assignment.EndReason.MANUAL_RECALL)
         return assignment
 
+    def test_clear_reverses_prospects_in_same_assignment_including_previous_month(self):
+        self.now = datetime(2026, 10, 31, 23, 59, tzinfo=KST)
+        Assignment.objects.filter(pk__in=[self.a.current_assignment_id, self.b.current_assignment_id]).update(
+            assigned_at=self.now - timedelta(hours=1),
+        )
+        self.client = login(self.employee)
+        self.save_result(self.a, 'INTERESTED')
+        self.save_result(self.b, 'INTERESTED')
+        self.record(connection='CONNECTED')
+        self.record(kind='VISIT')
+        self.assertEqual(self.day(self.report(), '2026-10-31')['prospect_count'], 2)
+
+        self.now += timedelta(minutes=1)
+        self.save_result(self.a, None)
+        day = self.day(self.report('2026-10'), '2026-10-31')
+        self.assertEqual((day['prospect_count'], day['call_count'], day['connected_count'], day['visit_count']), (1, 1, 1, 1))
+        self.save_result(self.a, 'INTERESTED')
+        self.assertEqual(self.day(self.report(), '2026-11-01')['prospect_count'], 1)
+        self.save_result(self.a, None)
+        self.assertEqual(self.day(self.report(), '2026-11-01')['prospect_count'], 0)
+        self.assertEqual(self.day(self.report('2026-10'), '2026-10-31')['prospect_count'], 1)
+
+    def test_clear_only_cancels_the_result_it_reversed(self):
+        self.save_result(self.a, 'INTERESTED')
+        self.save_result(self.a, 'REJECTED')
+        self.save_result(self.a, None)
+        self.assertEqual(self.day(self.report(), '2026-11-17')['prospect_count'], 1)
+        self.save_result(self.b, 'INTERESTED')
+        change_assignee(self.admin, self.b.pk, self.assignee_body(self.b, self.other))
+        self.save_result(self.b, None, self.other)
+        self.assertEqual(self.day(self.report(), '2026-11-17')['prospect_count'], 2)
+        self.assertEqual(self.day(self.report(client=login(self.other)), '2026-11-17')['prospect_count'], 0)
+
     def test_recalled_prospect_assignment_excluded_but_call_and_visit_evidence_kept(self):
         self.save_result(self.a,'INTERESTED');self.record(connection='CONNECTED');self.record(connection='NOT_CONNECTED');self.record(kind='VISIT')
         before=self.report();self.assertEqual(self.day(before,'2026-11-17')['prospect_count'],1)

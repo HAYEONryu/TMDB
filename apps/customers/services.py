@@ -16,7 +16,7 @@ from apps.common.transactions import business_write, retry_transient_write
 from apps.consultations.models import ConsultationRevision
 from apps.consultations.snapshots import audit_snapshot
 from apps.customers.models import Customer, CustomerChangeEvent, CustomerDeletionRequest
-from apps.customers.tm import with_last_tm_date, with_tm_state
+from apps.customers.tm import TM_DATE_FIELD, with_last_tm_date, with_tm_state
 from apps.customers.choices import CURRENT_CHOICES, FIELD_LABELS
 from apps.customers.queries import KST, enriched, iso, serialize, visible_values
 from apps.operations.models import IdempotencyRecord, MutationReceipt, OperationEvent
@@ -192,12 +192,21 @@ def update_row(actor, body, *, employee_only=False):
                 fresh = safe_row(cid,actor)
                 result = {**result, 'row': {**result['row'], 'tm_status': fresh['tm_status'], 'last_tm_date':fresh['last_tm_date']}}
             return result
+        now = timezone.now()
         try:
             if actor.role != User.Role.ADMIN and isinstance(body["changes"], dict) and set(body["changes"]) & ADMIN_ONLY_FIELDS:
                 raise AccessError("FORBIDDEN", "연락처·관리자 비고는 관리자만 수정할 수 있습니다.", 403)
             if customer.version != body["expected_version"]:
                 raise AccessError("VERSION_CONFLICT", "다른 변경이 저장되었습니다. 서버값과 비교해 주세요.", 409)
-            values = normalized_changes(customer, body["changes"])
+            changes = body["changes"]
+            clear_requested = isinstance(changes, dict) and TM_DATE_FIELD in changes
+            if clear_requested:
+                if actor.role != User.Role.EMPLOYEE or assignment.assigned_at > now:
+                    raise AccessError("FORBIDDEN", "현재 담당 직원만 최종 TM 날짜를 지울 수 있습니다.", 403)
+                if changes[TM_DATE_FIELD] is not None:
+                    invalid("최종 TM 날짜는 지우기만 할 수 있습니다.")
+                changes = {field: value for field, value in changes.items() if field != TM_DATE_FIELD}
+            values = normalized_changes(customer, changes) if changes or not clear_requested else {}
             if "phone_normalized" in values and values["phone_normalized"] != customer.phone_normalized and Customer.objects.filter(deleted_at=None,
                     phone_normalized=values["phone_normalized"]).exclude(pk=customer.pk).exists():
                 raise AccessError("DUPLICATE_PHONE", "전체 현장의 휴지통 제외 고객 중 같은 연락처가 있습니다.", 409)
@@ -228,8 +237,10 @@ def update_row(actor, body, *, employee_only=False):
                 if exc.code=='AI_RESULT_STALE':result['server_row']=safe_row(cid, actor)
                 MutationReceipt.objects.create(actor=actor,customer=customer,mutation_id=mutation_id,body_hash=body_hash,result=result,expires_at=timezone.now()+timedelta(days=7))
                 return result
-        now = timezone.now()
-        if actual:
+        clear_date = clear_requested and with_last_tm_date(Customer.objects.filter(pk=cid), now).values_list(
+            'last_tm_at', flat=True,
+        ).first() is not None
+        if actual or clear_date:
             for field, value in actual.items():
                 if field != "callback_due_at":
                     setattr(customer, field, value)
@@ -252,14 +263,16 @@ def update_row(actor, body, *, employee_only=False):
             if assignment and assignment.first_activity_at is None and set(actual) - IDENTITY_FIELDS - {"admin_notes"}:
                 assignment.first_activity_at = now
                 assignment.save(update_fields=["first_activity_at", "updated_at"])
-            after = snapshot(customer, callback if callback and callback.status == "PENDING" else None)
-            after.update({field: getattr(customer, field) for field in identity_fields})
-            CustomerChangeEvent.objects.create(customer=customer, assignment=assignment, changed_by=actor, changed_at=now, changed_fields=sorted(actual))
-            ConsultationRevision.objects.create(customer=customer, assignment=assignment, actor=actor, saved_at=now,
-                customer_version=customer.version, changed_fields=sorted(actual), before_values=audit_snapshot(before, actual), after_values=audit_snapshot(after, actual),
-                notes=customer.notes if set(actual)-IDENTITY_FIELDS-{'admin_notes'} else '',
-                source=ConsultationRevision.Source.AI_APPLIED if source_result else ConsultationRevision.Source.MANUAL,source_ai_result=source_result)
-        result = {"ok": True, "customer_id": str(cid), "mutation_id": str(mutation_id), "changed": bool(actual),
+            changed_fields = set(actual) | ({TM_DATE_FIELD} if clear_date else set())
+            CustomerChangeEvent.objects.create(customer=customer, assignment=assignment, changed_by=actor, changed_at=now, changed_fields=sorted(changed_fields))
+            if actual:
+                after = snapshot(customer, callback if callback and callback.status == "PENDING" else None)
+                after.update({field: getattr(customer, field) for field in identity_fields})
+                ConsultationRevision.objects.create(customer=customer, assignment=assignment, actor=actor, saved_at=now,
+                    customer_version=customer.version, changed_fields=sorted(actual), before_values=audit_snapshot(before, actual), after_values=audit_snapshot(after, actual),
+                    notes=customer.notes if set(actual)-IDENTITY_FIELDS-{'admin_notes'} else '',
+                    source=ConsultationRevision.Source.AI_APPLIED if source_result else ConsultationRevision.Source.MANUAL,source_ai_result=source_result)
+        result = {"ok": True, "customer_id": str(cid), "mutation_id": str(mutation_id), "changed": bool(actual or clear_date),
                   "version": customer.version, "row": safe_row(cid, actor)}
         MutationReceipt.objects.create(actor=actor, customer=customer, mutation_id=mutation_id, body_hash=body_hash,
             result=result, expires_at=now+timedelta(days=7))

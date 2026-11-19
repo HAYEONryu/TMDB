@@ -7,7 +7,7 @@ from django.test import TransactionTestCase, override_settings
 from apps.assignments.services import change_assignee
 from apps.consultations.models import ConsultationRevision, CustomerActivity, PerformanceTracking
 from apps.customers.choices import customer_schema
-from apps.customers.models import Customer
+from apps.customers.models import Customer, CustomerChangeEvent
 from apps.customers.queries import KST
 from apps.customers.services import update_row
 from apps.operations.employee_performance import performance
@@ -113,6 +113,47 @@ class DailyCallResultTests(Fixtures,TransactionTestCase):
         change_assignee(self.admin,self.row.pk,self.assignee_body(self.row,self.other));self.row.refresh_from_db()
         change_assignee(self.admin,self.row.pk,self.assignee_body(self.row,self.employee));self.row.refresh_from_db()
         self.assertIsNone(listing()['last_tm_date']);self.assertEqual(listing()['tm_status'],'PENDING')
+
+    def test_clear_tm_date_changes_only_display_and_new_evidence_restores_it(self):
+        result = update_row(self.employee, {**self.mutation(self.row), 'changes': {'call_result': 'INTERESTED'}})
+        self.assertEqual(result['row']['last_tm_date'], '2026-11-18')
+        activity = CustomerActivity.objects.create(customer=self.row, site=self.site, actor=self.employee,
+            assignment=self.row.current_assignment, kind='CALL', connection='NOT_CONNECTED', occurred_at=self.now,
+            idempotency_key=uuid4(), body_hash='synthetic')
+        self.row.refresh_from_db()
+        clear = {**self.mutation(self.row), 'changes': {'last_tm_date': None}}
+        wrong_value = {**clear, 'mutation_id': str(uuid4()), 'changes': {'last_tm_date': '2026-11-01'}}
+        self.assertEqual(update_row(self.employee, wrong_value)['error']['code'], 'VALIDATION_ERROR')
+        self.assertEqual(update_row(self.admin, clear)['error']['code'], 'FORBIDDEN')
+
+        result = update_row(self.employee, clear)
+        self.assertTrue(result['ok'])
+        self.assertIsNone(result['row']['last_tm_date'])
+        self.assertEqual(result['row']['tm_status'], 'COMPLETED')
+        self.assertEqual(result['row']['call_result'], 'INTERESTED')
+        self.assertIsNone(update_row(self.employee, clear)['row']['last_tm_date'])
+        self.assertEqual(CustomerChangeEvent.objects.filter(changed_fields=['last_tm_date']).count(), 1)
+        self.assertEqual(ConsultationRevision.objects.filter(customer=self.row).count(), 1)
+        self.assertTrue(CustomerActivity.objects.filter(pk=activity.pk).exists())
+        self.row.refresh_from_db()
+        note = update_row(self.employee, self.mutation(self.row, '메모 저장과 날짜 지우기 분리'))
+        self.assertIsNone(note['row']['last_tm_date'])
+
+        self.now += timedelta(minutes=1)
+        CustomerActivity.objects.create(customer=self.row, site=self.site, actor=self.employee,
+            assignment=self.row.current_assignment, kind='CALL', connection='NOT_CONNECTED', occurred_at=activity.occurred_at,
+            idempotency_key=uuid4(), body_hash='synthetic')
+        rows = self.client.get('/api/customers', {'site_id': str(self.site.pk), 'view': 'mine'}).json()['data']
+        self.assertEqual(rows[0]['last_tm_date'], '2026-11-18')
+
+    def test_reset_date_and_result_in_same_save_keep_date_blank(self):
+        update_row(self.employee, {**self.mutation(self.row), 'changes': {'call_result': 'INTERESTED'}})
+        self.row.refresh_from_db()
+        self.now += timedelta(minutes=1)
+        result = update_row(self.employee, {**self.mutation(self.row), 'changes': {'last_tm_date': None, 'call_result': 'NO_ANSWER'}})
+        self.assertIsNone(result['row']['last_tm_date'])
+        self.assertEqual(result['row']['tm_status'], 'COMPLETED')
+        self.assertEqual(result['row']['call_result'], 'NO_ANSWER')
 
     def test_planned_visit_maps_existing_code_saves_filters_and_is_not_actual_visit(self):
         self.assertEqual(customer_schema()['call_result']['VISIT_BOOKED'],'방문예정')

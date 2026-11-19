@@ -3,8 +3,8 @@ import calendar
 import re
 from datetime import date, datetime, time, timedelta
 from django.db import connection, transaction
-from django.db.models import Count, Q
-from django.db.models.functions import TruncDate
+from django.db.models import BooleanField, Case, Count, OuterRef, Q, Subquery, Value, When
+from django.db.models.functions import Coalesce, TruncDate
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
@@ -37,8 +37,19 @@ def performance(person, site_id, month, now):
     calls = CustomerActivity.objects.filter(actor=person, site_id=site_id, kind='CALL', occurred_at__lte=now)
     call_days = {r['day']: r for r in calls.filter(occurred_at__gte=start, occurred_at__lt=end)
         .annotate(day=TruncDate('occurred_at', tzinfo=KST)).values('day').annotate(count=Count('pk'),connected=Count('pk',filter=Q(connection='CONNECTED')))}
-    prospects = {r['day']: r['count'] for r in prospect_saves.filter(saved_at__gte=start, saved_at__lt=end,
-        after_values__call_result=Customer.CallResult.INTERESTED)
+    # A clear reverses the interest that was in effect immediately before it.
+    # Follow the original actor and assignment, including clears in later months.
+    next_result = saves.filter(customer_id=OuterRef('customer_id'), assignment_id=OuterRef('assignment_id'),
+        customer_version__gt=OuterRef('customer_version'), changed_fields__contains=['call_result']
+    ).order_by('customer_version').annotate(reverted=Case(
+        When(before_values__call_result=Customer.CallResult.INTERESTED, after_values__call_result=None, then=Value(True)),
+        default=Value(False), output_field=BooleanField(),
+    ))
+    counted_prospects = prospect_saves.filter(saved_at__gte=start, saved_at__lt=end,
+        after_values__call_result=Customer.CallResult.INTERESTED).alias(
+        reverted=Coalesce(Subquery(next_result.values('reverted')[:1]), Value(False)),
+    ).filter(reverted=False)
+    prospects = {r['day']: r['count'] for r in counted_prospects
         .annotate(day=TruncDate('saved_at', tzinfo=KST)).values('day').annotate(count=Count('customer_id', distinct=True))}
     visits = {r['visited_on']: r['count'] for r in CustomerActivity.objects.filter(actor=person, site_id=site_id,
         kind='VISIT', visited_on__gte=month, visited_on__lt=end.date(), visited_on__lte=today)

@@ -101,7 +101,7 @@ class TodayTMBrowserTests(Fixtures,StaticLiveServerTestCase):
         self.assertEqual(self.db(lambda:ConsultationRevision.objects.filter(customer=self.row).count()),0)
         page.unroute('**/api/employee/batch-update',fail);self.save()
         self.assert_state('완료');expect(page.locator('#page-info')).to_contain_text('검색 1명')
-        expect(self.status()).to_have_text(timezone.localdate(timezone.now(), KST).isoformat())
+        expect(self.status().locator('.tm-date-value')).to_have_text(timezone.localdate(timezone.now(), KST).isoformat())
         self.assertEqual(self.errors,[])
 
     def test_result_clear_then_reenter_and_save_buttons_keyboard_responsive(self):

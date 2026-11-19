@@ -82,16 +82,16 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.clock.install()
         edit('call_result','VISIT_BOOKED');page.clock.fast_forward(91000)
         expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨');expect(cell('call_result')).to_have_text('방문예정')
-        expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
+        expect(cell('last_tm_date').locator('.tm-date-value')).to_have_text(self.today.isoformat())
         self.assertFalse(self.db(lambda:CustomerActivity.objects.filter(customer=self.row,kind='CALL').exists()))
         self.assertFalse(self.db(lambda:CustomerDeletionRequest.objects.exists()))
         long_notes='상담 전체 내용 '*30+chr(10)+'두 번째 줄과 확인할 질문'
         edit('notes',long_notes);page.locator('#save-now').click()
         expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
-        expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
+        expect(cell('last_tm_date').locator('.tm-date-value')).to_have_text(self.today.isoformat())
         cell('notes').dblclick();expect(cell('notes').locator('textarea')).to_have_value(long_notes);page.locator('h1').click()
         page.reload();expect(cell('call_result')).to_have_text('방문예정')
-        expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
+        expect(cell('last_tm_date').locator('.tm-date-value')).to_have_text(self.today.isoformat())
         page.locator('#open-filters').click();page.locator('section[data-field="call_result"] details summary').click()
         page.locator('.filter-toggle[data-value="VISIT_BOOKED"]').click();page.locator('#filter-apply').click()
         expect(page.locator('#page-info')).to_contain_text('검색 1명');expect(page.locator('#active-filters')).to_contain_text('방문예정')
@@ -101,11 +101,11 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
         page.locator('#activity-connection').select_option('NOT_CONNECTED')
         page.locator('#activity-at').fill(self.db(timezone.now).astimezone(KST).strftime('%Y-%m-%dT%H:%M:%S'))
         page.locator('#activity-submit').click()
-        expect(page.locator('#activity-dialog')).not_to_be_visible();expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
+        expect(page.locator('#activity-dialog')).not_to_be_visible();expect(cell('last_tm_date').locator('.tm-date-value')).to_have_text(self.today.isoformat())
         self.assertEqual(self.db(lambda:CustomerActivity.objects.filter(customer=self.row,kind='CALL').count()),1)
         edit('notes','상담내용만 정정');page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
         edit('memo','가상 메모');page.locator('#save-now').click();expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
-        expect(cell('last_tm_date')).to_have_text(self.today.isoformat())
+        expect(cell('last_tm_date').locator('.tm-date-value')).to_have_text(self.today.isoformat())
         for width in [1440,390,320]:
             page.set_viewport_size({'width':width,'height':960})
             page.locator('#employee-grid .tabulator-tableholder').evaluate('e=>e.scrollLeft=0')
@@ -123,6 +123,50 @@ class DailyCallResultBrowserTests(Fixtures,StaticLiveServerTestCase):
         expect(page.get_by_role('button',name='요청완료',exact=True)).to_be_visible()
         self.assertTrue(self.db(lambda:CustomerDeletionRequest.objects.exists()))
         self.assertEqual(self.errors,[])
+
+    def test_clear_date_after_confirmed_save_and_clear_prospect_on_dashboard(self):
+        self.seed(with_result_history=False)
+        self.db(lambda: Customer.objects.filter(pk=self.row.pk).update(call_result=None))
+        self.login(self.employee)
+        page = self.page
+        grid = self.live_server_url + f'/app/employee/mine?site_id={self.site.pk}'
+        page.goto(grid)
+        date_cell = page.locator('#employee-grid .tabulator-row [tabulator-field=last_tm_date]')
+        value = date_cell.locator('.tm-date-value')
+        result = page.locator('#employee-grid .tabulator-row [tabulator-field=call_result]')
+
+        def save_result(value):
+            result.dblclick()
+            result.locator('select').select_option(value)
+            page.locator('#save-now').click()
+            expect(page.locator('#queue-status')).to_have_text('모든 변경 저장됨')
+
+        save_result('INTERESTED')
+        expect(value).to_have_text(self.today.isoformat())
+        page.goto(self.live_server_url + '/app/employee')
+        expect(page.locator('#month-prospect-total')).to_have_text('1명')
+        page.goto(grid)
+        date_cell.locator('.tm-date-value').dblclick()
+        expect(date_cell.locator('input')).to_have_count(0)
+
+        def fail_save(route):
+            route.fulfill(status=503, json={'error': {'message': '가상 저장 실패'}})
+
+        page.route('**/api/employee/batch-update', fail_save, times=1)
+        date_cell.get_by_role('button', name='날짜 지우기').click()
+        confirm_action(page)
+        expect(page.locator('#pending-panel')).to_contain_text('저장 결과 확인 대기')
+        expect(value).to_have_text(self.today.isoformat())
+        page.locator('#save-now').click()
+        expect(value).to_have_text('-')
+        page.reload()
+        expect(value).to_have_text('-')
+        expect(result).to_have_text('가망고객')
+
+        save_result('')
+        page.goto(self.live_server_url + '/app/employee')
+        expect(page.locator('#month-prospect-total')).to_have_text('0명')
+        self.assertEqual(self.errors, [])
 
     def test_default_date_rolls_at_kst_midnight_without_closing_day(self):
         self.seed();self.page.clock.install();self.login(self.employee);page=self.page

@@ -2,7 +2,7 @@ import {sortTitle,syncSortHeaders} from './server-sort.js';
 import {confirmAction} from './shared-ui.js';
 import {listenAdminUpdates} from './admin-updates.js';
 import {ActivityRecorder} from './activity-recorder.js';
-import {EmployeeQueue,changes,normalized} from './employee-queue.js';
+import {EmployeeQueue,changes,normalized} from './employee-queue.js?v=tm-date-clear-1';
 import {employeeSupportError} from './browser-environment.js';
 import {withRequestTimeout} from './request-timeout.js';
 import {option} from './api.js';
@@ -117,6 +117,42 @@ function actionTooltip(event,_column,onRendered){
   return tooltip;
 }
 const actionBlocked=row=>queue.paused||!queue.canEdit(row)||callbacks?.busy||deletions?.busy||ai?.busy||!!callbacks?.pending.value||!!deletions?.pending.value;
+function cannotClearDate(row){
+  const entry = queue.entry(row.id);
+  return !!(actionBlocked(row) || queue.invalidRow(row.id) || (entry && changes(entry).last_tm_date === null));
+}
+async function clearTMDate(row){
+  commitEditor();
+  if (cannotClearDate(row) || !await confirmAction(
+    `${row.customer_name || '이 고객'}의 현재 배정에서 최종 TM 날짜를 지웁니다. 새 통화나 통화결과를 저장하면 날짜가 다시 표시됩니다.`,
+    {title:'최종 TM 날짜 지우기',confirmText:'날짜 지우기'},
+  )) return;
+  const current = queue.rows.get(row.id);
+  if (!current?.last_tm_date || current.assignment_id !== row.assignment_id || cannotClearDate(current)) return;
+  if (queue.stage(current, 'last_tm_date', null)) {
+    const saved = await queue.flush(true, row.id);
+    notice(saved ? '최종 TM 날짜를 지웠습니다.' : '최종 TM 날짜의 저장 상태를 확인해 주세요.');
+  }
+}
+function tmDateCell(cell){
+  const data = cell.getRow().getData();
+  const row = queue.rows.get(data.id) || data;
+  const value = row.last_tm_date;
+  cell.getElement().classList.toggle('missing-tm-date', !value);
+  const content = document.createElement('div');
+  const label = text('span', value || '-');
+  label.className = 'tm-date-value';
+  content.append(label);
+  if (value) {
+    const clear = text('button', '날짜 지우기');
+    clear.type = 'button';
+    clear.className = 'tm-date-clear btn btn-sm btn-outline-secondary d-block mt-1';
+    clear.disabled = cannotClearDate(row);
+    clear.onclick = () => clearTMDate(row).catch(error);
+    content.append(clear);
+  }
+  return content;
+}
 function callbackCell(cell){
   const row=queue.rows.get(cell.getRow().getData().id)||cell.getRow().getData(),wrap=document.createElement('span');
   wrap.className='callback-cell';wrap.append(text('span',display('callback_due_at',cell.getValue())));
@@ -193,8 +229,8 @@ const table=new Tabulator('#employee-grid',{index:'id',height:'min(60vh, 640px)'
   columns:[{title:'No.',field:'_number',frozen:true,width:56,minWidth:56,hozAlign:'center',headerSort:false},
     {title:labels.last_tm_date,field:'last_tm_date',frozen:true,width:140,headerSort:false,editor:false,
     titleFormatter:sortTitle('last_tm_date',labels.last_tm_date,()=>state,changeSort),
-    headerTooltip:'현재 배정에서 내가 마지막으로 기록한 통화 또는 저장한 통화결과의 한국 날짜입니다. 부재도 포함합니다.',
-    formatter:cell=>{const value=queue.rows.get(cell.getRow().getData().id)?.last_tm_date||cell.getValue();cell.getElement().classList.toggle('missing-tm-date',!value);return text('span',value||'-');}},
+    headerTooltip:'현재 배정의 최종 TM 날짜입니다. 날짜 지우기로 표시값을 비울 수 있습니다.',
+    formatter:tmDateCell},
     ...employeeGridFields.flatMap(field=>[
     {...column(field),...(field==='callback_due_at'?{formatter:callbackCell}:{}),
       ...(field==='notes'?{formatter:notesCell,headerTooltip:actionTooltip}:{})},
@@ -217,6 +253,8 @@ function renderStatus(){
     if(entry?.state==='blocked'){row.delete().catch(()=>{});continue;}
     for(const field of editable){const cell=row.getCell(field);if(!cell){if(base)data[field]=values[field];continue;}if(cell.getElement().classList.contains('tabulator-editing'))continue;if(base&&cell.getValue()!==values[field])cell.setValue(values[field]);}
     const tm=row.getCell('last_tm_date');if(tm&&base&&tm.getValue()!==base.last_tm_date)tm.setValue(base.last_tm_date);
+    const clear = tm?.getElement().querySelector('.tm-date-clear');
+    if (clear) clear.disabled = cannotClearDate(base || data);
     const actionState=JSON.stringify([base?.pending_deletion_request_id,callbacks?.busy,!!callbacks?.pending.value,deletions?.busy,deletions?.busyId,!!deletions?.pending.value,deletions?.isConfirmed(base||data),ai?.busy,queue.paused,entry?.state]);
     row.getCell('_deletion')?.setValue(actionState);
     const noteActions = row.getCell('notes')?.getElement().querySelector('.employee-note-content');
@@ -254,7 +292,8 @@ async function load(append=false){
     if($('#tm-business-date'))$('#tm-business-date').textContent='기준일 '+loadedBusinessDate+' · 한국 시간';
     const offset = (data.page - 1) * data.page_size;
     const values = data.data.map((row, index) => ({
-      ...row, ...(queue.entry(row.id) ? changes(queue.entry(row.id)) : {}), _number: offset + index + 1,
+      ...row, ...(queue.entry(row.id) ? changes(queue.entry(row.id)) : {}),
+      last_tm_date: row.last_tm_date, _number: offset + index + 1,
     }));
     if(append){if(values.some(row=>table.getRow(row.id)))throw new Error('목록이 변경되었습니다. 목록 새로고침으로 다시 조회해 주세요.');await table.addData(values);}else{await table.setData(values);$('#employee-grid .tabulator-tableholder').scrollTop=0;}
     nextCursor=data.next_cursor;streamTotal=data.total;appendFailed=false;

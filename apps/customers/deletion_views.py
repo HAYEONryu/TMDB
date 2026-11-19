@@ -4,7 +4,7 @@ from apps.accounts.access import require_role,actor_identity
 from apps.accounts.models import User
 from apps.common.http import api_errors,json_object
 from apps.customers.employee import queue_identity
-from apps.customers.deletions import submit,approve,notifications,hard_delete_customer,hard_delete_site,confirm_site
+from apps.customers.deletions import submit,approve,notifications,hard_delete_bulk,hard_delete_customer,hard_delete_site,confirm_site
 
 
 @require_POST
@@ -33,6 +33,15 @@ def approve_request(request,request_id):
 @api_errors
 def delete_customer(request,customer_id):
     actor_identity(request);result,status=hard_delete_customer(request.user,customer_id,json_object(request));return JsonResponse(result,status=status)
+
+
+@require_POST
+@require_role(User.Role.ADMIN)
+@api_errors
+def delete_customers(request):
+    actor_identity(request)
+    result, status = hard_delete_bulk(request.user, json_object(request))
+    return JsonResponse(result, status=status)
 
 
 @require_POST

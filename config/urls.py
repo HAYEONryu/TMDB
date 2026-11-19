@@ -45,6 +45,7 @@ urlpatterns = [
     path('api/deletion-requests/bulk-approve',deletion_views.bulk_approve_requests),
     path('api/deletion-requests/<uuid:request_id>/approve',deletion_views.approve_request),
     path('api/customers/<uuid:customer_id>/hard-delete',deletion_views.delete_customer),
+    path('api/customers/bulk-hard-delete',deletion_views.delete_customers),
     path('api/sites/<uuid:site_id>/hard-delete',deletion_views.delete_site),
     path('api/sites/<uuid:site_id>/deletion-confirmation',deletion_views.confirm_site_view),
     path('api/dashboard',dashboard),

@@ -38,6 +38,11 @@ class P7Tests(Fixtures,TransactionTestCase):
     def approve(self,rid=None,actor=None,**kwargs):return approve(actor or self.admin,rid or self.request()['request_id'],{'idempotency_key':str(uuid4()),**kwargs})
     def trash(self,restore=False):return trash_operation(self.admin,{'site_id':str(self.site.pk),'customer_ids':[str(self.customer.pk)],'idempotency_key':str(uuid4())},restore=restore)
     def hard_body(self):self.customer.refresh_from_db();return {'expected_version':self.customer.version,'confirm':True,'idempotency_key':str(uuid4())}
+    def bulk_hard_body(self, customers, site='all'):
+        for customer in customers:
+            customer.refresh_from_db()
+        return {'site_id': str(site), 'confirm': True, 'idempotency_key': str(uuid4()),
+                'rows': [{'customer_id': str(customer.pk), 'expected_version': customer.version} for customer in customers]}
     def site_body(self,site=None,actor=None):
         s=site or self.site;key=str(uuid4());proof=confirm_site(actor or self.admin,s.pk,{'confirm_name':s.name,'idempotency_key':key});return {'confirmation':proof['confirmation'],'idempotency_key':key}
 
@@ -126,6 +131,59 @@ class P7Tests(Fixtures,TransactionTestCase):
             ImportCandidate.objects.create(batch=batch,row_number=number,normalized_values=values);ImportRowResult.objects.create(batch=batch,row_number=number,success=True,customer_name=name,phone_input=phone[:3]+'-'+phone[3:7]+'-'+phone[7:])
         hard_delete_customer(self.admin,self.customer.pk,self.hard_body());removed=ImportRowResult.objects.get(batch=batch,row_number=2);self.assertEqual((removed.customer_name,removed.phone_input,removed.error_code),('','','SOURCE_DELETED'));self.assertEqual(ImportCandidate.objects.filter(batch=batch).count(),1)
         result,status=commit_upload(self.admin,batch.pk,{'site_id':str(self.site.pk),'idempotency_key':str(uuid4())});self.assertEqual(status,200);self.assertEqual(result['success_count'],1);self.assertFalse(Customer.objects.filter(site=self.site,phone_normalized=self.customer.phone_normalized).exists());self.assertTrue(Customer.objects.filter(phone_normalized='01080009999').exists())
+
+    def test_bulk_hard_delete_multisite_removes_selected_sources_and_replays(self):
+        other = self.customers(site=self.second, offset=100)[0]
+        keep = self.customers(offset=200)[0]
+        selected = [self.customer, other]
+        for customer in [*selected, keep]:
+            if not customer.current_assignment_id:
+                self.assign(customer)
+            update_row(self.employee, self.mutation(customer))
+            trash_operation(self.admin, {'site_id': str(customer.site_id), 'customer_ids': [str(customer.pk)],
+                                         'idempotency_key': str(uuid4())})
+        batch = ImportBatch.objects.create(site=self.second, created_by=self.admin, expires_at=timezone.now()+timedelta(hours=1))
+        ImportRowResult.objects.create(batch=batch, row_number=2, phone_input=other.phone_normalized)
+        body = self.bulk_hard_body(selected)
+        client = login(self.admin)
+        path = '/api/customers/bulk-hard-delete'
+        first = client.post(path, body, content_type='application/json')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), {'ok': True, 'affected_count': 2})
+        replayed = client.post(path, {**body, 'rows': body['rows'][::-1]}, content_type='application/json')
+        self.assertEqual(replayed.status_code, 200)
+        self.assertEqual(replayed.json(), first.json())
+        self.assertEqual(list(Customer.objects.values_list('pk', flat=True)), [keep.pk])
+        self.assertEqual(list(ConsultationRevision.objects.values_list('customer_id', flat=True)), [keep.pk])
+        self.assertEqual(list(Assignment.objects.values_list('customer_id', flat=True)), [keep.pk])
+        self.assertEqual(ImportRowResult.objects.get(batch=batch).phone_input, '')
+        self.assertEqual(OperationEvent.objects.filter(operation='CUSTOMER_BULK_HARD_DELETE').count(), 1)
+        receipt = IdempotencyRecord.objects.get(operation='CUSTOMER_BULK_HARD_DELETE')
+        self.assertEqual(receipt.target_ids, [])
+        self.assertEqual(receipt.result['payload'], first.json())
+
+    def test_bulk_hard_delete_rejects_invalid_selection_before_erasing(self):
+        other = self.customers(site=self.second, offset=100)[0]
+        selected = [self.customer, other]
+        for customer in selected:
+            trash_operation(self.admin, {'site_id': str(customer.site_id), 'customer_ids': [str(customer.pk)],
+                                         'idempotency_key': str(uuid4())})
+        body = self.bulk_hard_body(selected)
+        path = '/api/customers/bulk-hard-delete'
+        self.assertEqual(login(self.employee).post(path, body, content_type='application/json').status_code, 403)
+        client = login(self.admin)
+        for changes, code in [({'confirm': False}, 422), ({'rows': [body['rows'][0]] * 2}, 422),
+                              ({'site_id': str(self.site.pk)}, 409)]:
+            self.assertEqual(client.post(path, {**body, **changes}, content_type='application/json').status_code, code)
+        # A restore after the list was opened invalidates the entire selection.
+        trash_operation(self.admin, {'site_id': str(other.site_id), 'customer_ids': [str(other.pk)],
+                                     'idempotency_key': str(uuid4())}, restore=True)
+        response = client.post(path, body, content_type='application/json')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['error']['code'], 'DELETE_SELECTION_CHANGED')
+        self.assertTrue(Customer.objects.filter(pk=self.customer.pk, deleted_at__isnull=False).exists())
+        self.assertTrue(Customer.objects.filter(pk=other.pk, deleted_at__isnull=True).exists())
+        self.assertFalse(OperationEvent.objects.filter(operation='CUSTOMER_BULK_HARD_DELETE').exists())
 
     def test_site_deletion_default_fallback_then_none_and_original_name_not_in_receipt(self):
         self.request();body=self.site_body();name=self.site.name;sid=self.site.pk;first,_=hard_delete_site(self.admin,sid,body);self.assertEqual(first['affected_count'],1);self.assertEqual(hard_delete_site(self.admin,sid,body)[0],first)

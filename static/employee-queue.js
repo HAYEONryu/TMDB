@@ -2,7 +2,7 @@ import {newRequestId} from './request-id.js';
 import {employeeSupportError,lockSupportError} from './browser-environment.js';
 import {QueueStore} from './employee-store.js';
 
-export const fields=['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo'];
+export const fields=['customer_name','call_result','visit_at','contract_status','notes','callback_due_at','housing_status','residence','route','memo','last_tm_date'];
 const blocked=new Set(['ASSIGNMENT_CHANGED','CUSTOMER_DELETED','SITE_DELETED','FORBIDDEN']);
 const auth=new Set(['UNAUTHENTICATED','ACCOUNT_DISABLED','SESSION_INVALID','PASSWORD_CHANGE_REQUIRED','QUEUE_CONTEXT_MISMATCH','PASSWORD_CHANGE_NEEDED']);
 const day=86400000;
@@ -13,7 +13,7 @@ export function normalized(field,value){
     if(!Number.isFinite(date.getTime())||date.getUTCFullYear()<1||date.getUTCFullYear()>9999)throw new Error('유효한 날짜와 시간을 입력해 주세요.');
     return date.toISOString();
   }
-  if(field==='call_result')return value||null;
+  if(field==='call_result'||field==='last_tm_date')return value||null;
   if(field==='contract_status')return value||'UNKNOWN';
   if(['customer_name','housing_status','residence','route'].includes(field))return (value||'').trim();
   return (value||'').replace(/\r\n?/g,'\n');

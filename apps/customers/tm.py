@@ -1,14 +1,16 @@
-"""TM completion evidence for the current assignment, never inferred from state."""
+"""TM completion and displayed date for the current assignment."""
+from datetime import datetime, timezone as datetime_timezone
 from django.db.models import BooleanField, Case, CharField, Exists, OuterRef, Subquery, Value, When
-from django.db.models.functions import Greatest
+from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 from apps.callbacks.models import Callback
 from apps.consultations.models import ConsultationRevision
 from apps.consultations.models import CustomerActivity
 from apps.customers.cohorts import day_bounds
-from apps.customers.models import Customer
+from apps.customers.models import Customer, CustomerChangeEvent
 
 HUMAN_SOURCES = ['MANUAL', 'AI_APPLIED']
+TM_DATE_FIELD = 'last_tm_date'
 
 
 def call_result_revisions(now):
@@ -21,14 +23,25 @@ def call_result_revisions(now):
 
 def with_last_tm_date(query, now=None):
     now = now or timezone.now()
+    cleared = CustomerChangeEvent.objects.filter(
+        customer_id=OuterRef('pk'), assignment_id=OuterRef('current_assignment_id'),
+        changed_by_id=OuterRef('current_assignment__employee_id'),
+        changed_at__gte=OuterRef('current_assignment__assigned_at'), changed_at__lte=now,
+        changed_fields__contains=[TM_DATE_FIELD],
+    ).order_by('-changed_at')
+    query = query.alias(tm_date_cutoff=Coalesce(
+        Subquery(cleared.values('changed_at')[:1]), Value(datetime.min.replace(tzinfo=datetime_timezone.utc)),
+    ))
     attempts = CustomerActivity.objects.filter(
         customer_id=OuterRef('pk'), assignment_id=OuterRef('current_assignment_id'),
         actor_id=OuterRef('current_assignment__employee_id'), site_id=OuterRef('site_id'),
         assignment__ended_at__isnull=True, kind=CustomerActivity.Kind.CALL,
         occurred_at__gte=OuterRef('current_assignment__assigned_at'), occurred_at__lte=now,
+        created_at__gt=OuterRef('tm_date_cutoff'), created_at__lte=now,
     ).order_by('-occurred_at', '-pk')
     results = call_result_revisions(now).filter(
         assignment__ended_at__isnull=True, after_values__call_result__in=Customer.CallResult.values,
+        saved_at__gt=OuterRef('tm_date_cutoff'),
     ).order_by('-saved_at', '-customer_version', '-pk')
     # PostgreSQL chooses the latest available TM evidence, leaving an empty date
     # when neither a call attempt nor a confirmed result exists.

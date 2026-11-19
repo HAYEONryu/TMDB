@@ -171,6 +171,48 @@ def hard_delete_customer(actor,cid,body):
 
 
 @retry_transient_write
+def hard_delete_bulk(actor, body):
+    if set(body) != {'rows', 'site_id', 'idempotency_key', 'confirm'} or body['confirm'] is not True:
+        invalid('선택 고객의 영구 삭제 확인이 필요합니다.')
+    rows = body['rows']
+    if not isinstance(rows, list) or not 1 <= len(rows) <= 100:
+        invalid('현재 페이지에서 삭제할 고객 1~100명을 선택해 주세요.')
+    versions = {}
+    for row in rows:
+        if (not isinstance(row, dict) or set(row) != {'customer_id', 'expected_version'} or
+                type(row['expected_version']) is not int or row['expected_version'] < 1):
+            invalid('선택 고객의 버전을 확인해 주세요.')
+        customer_id = identifier(row['customer_id'])
+        if customer_id in versions:
+            invalid('같은 고객을 중복 선택할 수 없습니다.')
+        versions[customer_id] = row['expected_version']
+
+    selected_site = 'all' if body['site_id'] == 'all' else identifier(body['site_id'])
+    key = identifier(body['idempotency_key'])
+    body_hash = destructive_hash({'site_id': str(selected_site), 'rows': [[str(pk), versions[pk]] for pk in sorted(versions)]})
+    operation = 'CUSTOMER_BULK_HARD_DELETE'
+    with business_write():
+        actor = locked_actor(actor, admin=True)
+        cached = replay(actor, operation, key, body_hash)
+        if cached:
+            return cached
+        targets = Customer.objects.filter(pk__in=versions)
+        site_ids = set(targets.order_by().values_list('site_id', flat=True).distinct())
+        if selected_site != 'all' and site_ids != {selected_site}:
+            raise AccessError('SITE_CHANGED', '선택한 현장과 삭제 대상이 일치하지 않아 전체 삭제를 취소했습니다.', 409)
+        list(Site.objects.select_for_update().filter(pk__in=site_ids).order_by('pk'))
+        customers = list(targets.select_for_update().order_by('pk'))
+        if len(customers) != len(versions) or any(not customer.deleted_at or customer.version != versions[customer.pk]
+                                                   for customer in customers):
+            raise AccessError('DELETE_SELECTION_CHANGED',
+                '복구되거나 이미 삭제된 고객 또는 변경된 고객이 있어 전체 삭제를 취소했습니다. 다시 선택해 주세요.', 409)
+        list(Assignment.objects.select_for_update().filter(customer_id__in=versions).order_by('pk'))
+        erase_customers(customers)
+        OperationEvent.objects.create(actor=actor, operation=operation, occurred_at=timezone.now(), affected_count=len(customers))
+        return remember(actor, operation, key, body_hash, {'ok': True, 'affected_count': len(customers)})
+
+
+@retry_transient_write
 def hard_delete_site(actor,sid,body):
     if set(body)!={'confirmation','idempotency_key'} or not isinstance(body['confirmation'],str):invalid('현장명 확인이 필요합니다.')
     key=identifier(body['idempotency_key']);body_hash=destructive_hash({'site_id':str(sid),**body})
