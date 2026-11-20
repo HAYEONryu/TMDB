@@ -206,6 +206,48 @@ class P4Tests(Fixtures,TestCase):
         self.assertEqual(self.post("/api/users/batch-update",body).status_code,409)
         self.employee.refresh_from_db();self.assertEqual(self.employee.name,"가상이름")
 
+    def test_user_permanent_deletion_requires_saved_inactive_state_and_preserves_history(self):
+        phone, user_id = self.employee.phone_normalized, self.employee.pk
+        customer = self.customers()[0]
+        assignment = self.assign(customer, progress=True)
+        self.assertTrue(update_row(self.employee, self.mutation(customer))['ok'])
+        old_session = login(self.employee)
+        path = f'/api/users/{user_id}/hard-delete'
+        body = {'confirm': True, 'expected_version': self.employee.updated_at.isoformat(), 'idempotency_key': str(uuid4())}
+        self.assertEqual(self.post(path, body).json()['error']['code'], 'USER_ACTIVE')
+        self.assertEqual(old_session.post(path, body, content_type='application/json').status_code, 403)
+        self.assertEqual(self.post(path, {**body, 'confirm': False}).status_code, 422)
+
+        self.post('/api/users/batch-update', self.user_body(self.edit(self.employee, is_active=False)))
+        self.employee.refresh_from_db()
+        self.assertEqual(self.post(path, body).json()['error']['code'], 'VERSION_CONFLICT')
+        stale_reactivation = self.user_body(self.edit(self.employee, is_active=True))
+        body['expected_version'] = self.employee.updated_at.isoformat()
+        first = self.post(path, body)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.json(), {'ok': True, 'unassigned_count': 1})
+        self.assertEqual(self.post(path, body).json(), first.json())
+        self.assertEqual(self.post(path, {**body, 'idempotency_key': str(uuid4())}).status_code, 404)
+        self.assertEqual(OperationEvent.objects.filter(operation='USER_HARD_DELETE').count(), 1)
+        self.assertEqual(self.post('/api/users/batch-update', stale_reactivation).status_code, 404)
+        self.assertEqual(self.post(f'/api/users/{user_id}/reset-password', {'idempotency_key': str(uuid4())}).status_code, 404)
+
+        self.employee.refresh_from_db()
+        self.assertIsNotNone(self.employee.deleted_at)
+        self.assertIsNone(self.employee.phone_normalized)
+        self.assertFalse(self.employee.has_usable_password())
+        self.assertEqual(self.employee.name, '삭제된 사용자')
+        self.assertNotIn(str(user_id), self.client.get('/api/users').content.decode())
+        self.assertEqual(old_session.get('/api/me').status_code, 401)
+        assignment.refresh_from_db()
+        customer.refresh_from_db()
+        self.assertIsNone(customer.current_assignment_id)
+        self.assertEqual(assignment.end_reason, Assignment.EndReason.USER_DISABLED)
+        self.assertEqual(ConsultationRevision.objects.get(customer=customer).actor_id, user_id)
+        self.assertEqual(self.client.get('/api/users/transfer-needed').json()['total'], 0)
+        self.assertEqual(self.post('/api/users', {'name': '가상 신규 계정', 'phone': phone,
+            'role': 'EMPLOYEE', 'idempotency_key': str(uuid4())}).status_code, 201)
+
     def test_deactivation_all_sites_dates_only_unprogressed_keeps_progress_and_reactivation_does_not_restore(self):
         a,b=self.customers(2);c,d=self.customers(2,self.second)
         for customer,progress in [(a,False),(b,True),(c,False),(d,True)]:

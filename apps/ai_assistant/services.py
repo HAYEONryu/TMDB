@@ -99,7 +99,8 @@ def reserve(actor, body):
             current_access(actor, customer, aid)
             site = customer.site
         elif feature == Feature.EMPLOYEE_COACHING:
-            employee = User.objects.filter(pk=identifier(body["employee_id"]), role=User.Role.EMPLOYEE).first()
+            employee = User.objects.filter(pk=identifier(body["employee_id"]), role=User.Role.EMPLOYEE,
+                                           deleted_at__isnull=True).first()
             if not employee: failure("FORBIDDEN", "직원 대상을 확인해 주세요.", 403)
         elif feature == Feature.TEAM_GUIDE:
             site = Site.objects.filter(pk=identifier(body["site_id"])).first()

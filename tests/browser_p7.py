@@ -100,7 +100,7 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         customer=self.db(lambda:Customer.objects.get(pk=self.rows[0].pk));self.db(lambda:update_row(self.employee,self.mutation(customer,'승인 직전 최신 가상 상담')))
         self.edit('승인 후 거부할 미전송 변경')
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
-        admin.route('**/approve',lose,times=1);admin.get_by_role('button',name='승인',exact=True).click();confirm_action(admin);expect(admin.locator('#approval-pending')).to_be_visible();admin.reload();expect(admin.locator('#approval-pending')).to_be_visible();admin.locator('#approval-retry').click();expect(admin.locator('#approval-pending')).not_to_be_visible();expect(admin.locator('#delete-request-count')).to_have_text('고객정보 삭제 요청 0건')
+        admin.route('**/approve',lose,times=1);admin.locator('#delete-request-rows').get_by_role('button',name='승인',exact=True).click();confirm_action(admin);expect(admin.locator('#approval-pending')).to_be_visible();admin.reload();expect(admin.locator('#approval-pending')).to_be_visible();admin.locator('#approval-retry').click();expect(admin.locator('#approval-pending')).not_to_be_visible();expect(admin.locator('#delete-request-count')).to_have_text('고객정보 삭제 요청 0건')
         saved=self.db(lambda:Customer.objects.get(pk=customer.pk));self.assertTrue(saved.notes.startswith('승인 직전 최신 가상 상담\n['));self.assertEqual(saved.notes.count('고객요청으로 인한 삭제'),1)
         self.page.locator('#save-now').click();expect(self.page.locator('#pending-rows')).to_contain_text('전송 불가');expect(self.row()).to_have_count(0);self.assertEqual(self.db(lambda:Customer.objects.get(pk=customer.pk).notes),saved.notes)
         admin.screenshot(path=str(self.evidence/'p7-approval-desktop.png'),full_page=True);admin_context.close()
@@ -117,6 +117,40 @@ class P7BrowserTests(Fixtures,StaticLiveServerTestCase):
         def lose(route):self.assertEqual(route.fetch().status,200);route.abort('failed')
         page.route('**/hard-delete',lose,times=1);page.locator('#hard-confirm').click();expect(page.locator('#hard-pending')).to_be_visible();self.assertFalse(self.db(lambda:Customer.objects.filter(pk=self.rows[0].pk).exists()))
         page.once('dialog',lambda dialog:dialog.accept());page.reload();expect(page.locator('#hard-pending')).to_be_visible();page.locator('#hard-retry').click();expect(page.locator('#hard-pending')).not_to_be_visible();expect(page.locator('#page-info')).to_contain_text('검색 0명');hard=[body for url,body in self.requests if '/hard-delete' in url];self.assertEqual(hard[0],hard[1]);context.close()
+
+    def test_trash_bulk_hard_delete_confirms_site_counts_and_keeps_unselected_row(self):
+        def seed():
+            other = self.customers(site=self.second, offset=100)[0]
+            for customer in [self.rows[0], self.rows[1], other]:
+                trash_operation(self.admin, {'site_id': str(customer.site_id), 'customer_ids': [str(customer.pk)],
+                                             'idempotency_key': str(uuid4())})
+            return other
+        other = self.db(seed)
+        context, page = self.admin_page()
+        page.goto(self.live_server_url + '/app/admin/trash?site_id=all')
+        expect(page.locator('#page-info')).to_contain_text('검색 3명')
+        button = page.get_by_role('button', name='일괄 영구 삭제', exact=True)
+        expect(button).to_be_disabled()
+        for customer in [self.rows[0], other]:
+            row = page.locator('#customer-grid .tabulator-row').filter(has_text=customer.customer_name)
+            row.get_by_role('checkbox').check()
+        button.click()
+        dialog = page.get_by_role('dialog', name='일괄 영구 삭제')
+        expect(dialog).to_contain_text('선택한 고객 2명')
+        expect(dialog).to_contain_text(f'{self.site.name} · 1명')
+        expect(dialog).to_contain_text(f'{self.second.name} · 1명')
+        page.keyboard.press('Escape')
+        expect(button).to_be_focused()
+        expect(page.locator('#page-info')).to_contain_text('검색 3명')
+        button.click()
+        page.set_viewport_size({'width': 320, 'height': 844})
+        self.assertLessEqual(page.evaluate('document.documentElement.scrollWidth'), 320)
+        dialog.get_by_role('button', name='선택 고객 영구 삭제').click()
+        expect(page.locator('#message')).to_have_text('2명의 고객정보를 영구 삭제했습니다.')
+        expect(page.locator('#page-info')).to_contain_text('검색 1명')
+        expect(button).to_be_disabled()
+        self.assertEqual(self.db(lambda: set(Customer.objects.values_list('pk', flat=True))), {self.rows[1].pk, self.rows[2].pk})
+        context.close()
 
     def test_site_exact_name_confirmation_and_private_retry_payload(self):
         context,page=self.admin_page();page.goto(self.live_server_url+f'/app/admin/customers?site_id={self.site.pk}');expect(page.locator('#page-info')).to_contain_text('검색 3명');page.locator('#delete-site').click();page.locator('#hard-name').fill(self.site.name+' ');page.locator('#hard-confirm').click();expect(page.locator('#hard-error')).to_contain_text('정확히');self.assertTrue(self.db(lambda:Site.objects.filter(pk=self.site.pk).exists()))

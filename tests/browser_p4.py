@@ -134,6 +134,45 @@ class P4BrowserTests(Fixtures,StaticLiveServerTestCase):
         page.get_by_role("button",name="다시 조회",exact=True).click();page.locator("#user-discard").click();expect(own.get_by_label("관리자",exact=True)).to_be_checked()
         page.set_viewport_size({"width":390,"height":844});self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"),390);page.screenshot(path=str(self.evidence/"p4-users-mobile.png"),full_page=True);staff.close()
 
+    def test_user_permanent_delete_only_after_saved_deactivation_and_retries_same_request(self):
+        customer = self.rows[0]
+        self.db(lambda: self.assign(customer, progress=True))
+        page = self.page
+        page.goto(self.live_server_url + '/app/admin/users')
+        record = page.locator(f'#user-rows tr[data-id="{self.employee.pk}"]')
+        delete = record.get_by_role('button', name='영구 삭제', exact=True)
+        expect(delete).to_be_disabled()
+        record.get_by_label('비활성화', exact=True).check()
+        expect(delete).to_be_disabled()
+        self.save_users()
+        expect(delete).to_be_enabled()
+        delete.click()
+        dialog = page.get_by_role('dialog', name='사용자 영구 삭제')
+        expect(dialog).to_contain_text(self.employee.name)
+        expect(dialog).to_contain_text('미배정')
+        page.keyboard.press('Escape')
+        expect(delete).to_be_focused()
+
+        payloads = []
+        def lose_response(route):
+            payloads.append(route.request.post_data_json)
+            self.assertEqual(route.fetch().status, 200)
+            route.abort('failed')
+        page.route('**/api/users/*/hard-delete', lose_response, times=1)
+        delete.click()
+        page.locator('#user-delete-confirm').click()
+        expect(page.locator('#user-delete-pending')).to_be_visible()
+        page.once('dialog', lambda dialog: dialog.accept())
+        page.reload()
+        expect(page.locator('#user-delete-pending')).to_be_visible()
+        with page.expect_request('**/api/users/*/hard-delete') as sent:
+            page.locator('#user-delete-retry').click()
+        self.assertEqual(sent.value.post_data_json, payloads[0])
+        expect(record).to_have_count(0)
+        expect(page.locator('#user-message')).to_contain_text('고객 1명을 미배정')
+        expect(page.locator('#transfer-page')).to_contain_text('이관 필요 0명')
+        self.assertIsNone(self.db(lambda: Customer.objects.get(pk=customer.pk).current_assignment_id))
+
     def test_assignee_and_user_save_lost_response_replay_and_noop(self):
         customer=self.rows[0];self.db(lambda:self.assign(customer))
         page=self.page;page.goto(self.live_server_url+f"/app/admin/customers?site_id={self.site.pk}&assignee_id={self.employee.pk}")

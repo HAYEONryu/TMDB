@@ -3,20 +3,29 @@ import {confirmAction} from './shared-ui.js';
 import {newRequestId} from './request-id.js';
 import {api} from "./api.js";
 import {PendingOperation} from "./pending-operation.js";
+import {announceAdminUpdate} from './admin-updates.js';
 const $=selector=>document.querySelector(selector),userId=$("#user-management").dataset.userId,notice=message=>{$("#user-message").textContent=message;};
 const reset=new PendingOperation("user-reset",userId,/^\/api\/users\/[0-9a-f-]+\/reset-password$/);
-let busy=true,leaving=false,page=1,lastPage=1,q="",transferPage=1,transferLast=1,records=new Map(),drafts=new Map(),saveBody=null,createBody=null,createUnknown=false,resetTarget;
+const removal = new PendingOperation('user-delete', userId, /^\/api\/users\/[0-9a-f-]+\/hard-delete$/,
+  (url, body) => api(url, body, 'POST', {'X-TM-Actor': userId}));
+let busy=true,leaving=false,page=1,lastPage=1,q="",transferPage=1,transferLast=1,records=new Map(),drafts=new Map(),saveBody=null,createBody=null,createUnknown=false,resetTarget,deleteTarget;
 function status(){
-  const locked=busy||!!saveBody||!!reset.value;
+  const waiting = !!(reset.value || removal.value);
+  const locked=busy||!!saveBody||waiting;
   document.querySelectorAll("#user-rows input").forEach(input=>input.disabled=locked);
-  document.querySelectorAll("#user-rows button").forEach(button=>button.disabled=locked);
-  for(const id of ["add-user","reload-users","user-search","user-search-form button","transfer-previous","transfer-next"]){const button=$("#"+id);if(button)button.disabled=busy||!!reset.value;}
-  $("#save-users").disabled=busy||!!reset.value||(!drafts.size&&!saveBody);
-  $("#user-previous").disabled=busy||!!reset.value||page<=1;$("#user-next").disabled=busy||!!reset.value||page>=lastPage;
+  document.querySelectorAll("#user-rows button").forEach(button=>{
+    const id = button.dataset.deleteUser;
+    button.disabled = locked || (!!id && (records.get(id)?.is_active || drafts.has(id)));
+  });
+  for(const id of ["add-user","reload-users","user-search","user-search-form button","transfer-previous","transfer-next"]){const button=$("#"+id);if(button)button.disabled=busy||waiting;}
+  $("#save-users").disabled=busy||waiting||(!drafts.size&&!saveBody);
+  $("#user-previous").disabled=busy||waiting||page<=1;$("#user-next").disabled=busy||waiting||page>=lastPage;
   $("#transfer-previous").disabled ||= transferPage<=1;$("#transfer-next").disabled ||= transferPage>=transferLast;
   $("#user-dirty").textContent=saveBody?"저장 결과를 확인하지 못했습니다. 같은 요청으로 다시 확인하세요.":drafts.size?`미저장 ${drafts.size}명`:"변경사항 없음";
   $("#reset-pending").hidden=!reset.value;
-  for(const id of ["reset-retry","reset-discard","user-save-confirm","user-save-cancel","reset-confirm","reset-cancel"])$("#"+id).disabled=busy;
+  $('#user-delete-pending').hidden = !removal.value;
+  for(const id of ["reset-retry","reset-discard","user-save-confirm","user-save-cancel","reset-confirm","reset-cancel",
+    'user-delete-retry', 'user-delete-discard', 'user-delete-confirm', 'user-delete-cancel'])$("#"+id).disabled=busy;
   for(const id of ["new-user-name","new-user-phone","new-user-admin"])$("#"+id).disabled=busy||createUnknown;
   $("#add-user-submit").disabled=busy;$("#add-user-cancel").disabled=busy;
 }
@@ -29,8 +38,27 @@ function render(){
       if(type==="checkbox"){input.className="form-check-input";input.checked=value;}else{input.className="form-control";input.value=value;input.maxLength=field==="name"?100:20;}
       input.oninput=()=>{const changed={...person,...drafts.get(person.id)};changed[field]=type==="checkbox"?field==="role"?(input.checked?"ADMIN":"EMPLOYEE"):!input.checked:input.value;const base=records.get(person.id);if(["name","phone","is_active","role"].some(key=>changed[key]!==base[key]))drafts.set(person.id,changed);else drafts.delete(person.id);status();};td.append(input);tr.append(td);
     }
-    for(const value of [person.must_change_password?"첫 변경 필요":"사용 가능",`${person.transfer_needed_count}명`]){const td=document.createElement("td");td.textContent=value;tr.append(td);}
-    const td=document.createElement("td"),button=document.createElement("button");button.className="btn btn-sm btn-outline-secondary";button.textContent="비밀번호 재설정";button.onclick=()=>guarded(()=>{resetTarget=person.id;$("#reset-name").textContent=`${person.name}님의 비밀번호를 재설정하시겠습니까?`;$("#reset-dialog").showModal();});td.append(button);tr.append(td);return tr;
+    for(const value of [!records.get(person.id).is_active?'비활성':person.must_change_password?"첫 변경 필요":"사용 가능",`${person.transfer_needed_count}명`]){const td=document.createElement("td");td.textContent=value;tr.append(td);}
+    const td=document.createElement("td"),button=document.createElement("button");button.className="btn btn-sm btn-outline-secondary";button.textContent="비밀번호 재설정";button.onclick=()=>guarded(()=>{resetTarget=person.id;$("#reset-name").textContent=`${person.name}님의 비밀번호를 재설정하시겠습니까?`;$("#reset-dialog").showModal();});
+    const actions = document.createElement('div');
+    actions.className = 'd-flex gap-2 flex-wrap';
+    actions.append(button);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn btn-sm btn-outline-danger';
+    remove.textContent = '영구 삭제';
+    remove.dataset.deleteUser = person.id;
+    remove.onclick = () => guarded(() => {
+      const target = records.get(person.id);
+      if (!target || target.is_active) return;
+      deleteTarget = target;
+      $('#user-delete-target').textContent = `${target.name} · ${target.phone}`;
+      $('#user-delete-dialog').showModal();
+    });
+    actions.append(remove);
+    td.append(actions);
+    tr.append(td);
+    return tr;
   }));status();
 }
 async function transfers(target=transferPage){
@@ -39,7 +67,9 @@ async function transfers(target=transferPage){
   $("#transfer-page").textContent=`이관 필요 ${data.total}명 · ${transferPage} / ${transferLast}페이지${data.as_of?' · '+new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(new Date(data.as_of))+' 조회':''}`;status();
 }
 async function load(target=page,search=q){
-  const data=await api("/api/users?"+new URLSearchParams({page:target,q:search}));page=target;lastPage=data.last_page;q=search;
+  const data=await api("/api/users?"+new URLSearchParams({page:target,q:search}));
+  if (target > data.last_page) return load(data.last_page, search);
+  page=target;lastPage=data.last_page;q=search;
   records=new Map(data.items.map(person=>[person.id,person]));render();$("#user-page").textContent=`사용자 ${data.total}명 · ${page} / ${lastPage}페이지`;await transfers();
 }
 async function run(action){if(busy)return;busy=true;status();notice("");try{await action();}catch(error){notice(error.message);}finally{busy=false;status();}}
@@ -73,7 +103,36 @@ async function doReset(value){
 }
 $("#reset-cancel").onclick=()=>$("#reset-dialog").close();$("#reset-confirm").onclick=()=>run(()=>doReset({endpoint:`/api/users/${resetTarget}/reset-password`,body:{idempotency_key:newRequestId()}}));
 $("#reset-retry").onclick=()=>run(()=>doReset());$("#reset-discard").onclick=()=>run(async()=>{if(!await confirmAction("비밀번호 재설정 확인 알림을 닫습니다. 서버에서 이미 처리된 작업은 그대로 유지됩니다.",{title:"확인 알림 닫기",confirmText:"알림 닫기"}))return;reset.clear();await load();notice("확인 알림을 닫았습니다. 서버에서 이미 처리된 작업은 그대로 유지됩니다. 현재 계정 상태를 확인하세요.");});
+async function doDelete(value){
+  $('#user-delete-dialog').close();
+  let result;
+  try {
+    result = await removal.execute(value);
+  } catch (error) {
+    if ([404, 409].includes(error.status)) {
+      try { await load(); } catch { /* Keep the deletion result visible. */ }
+    }
+    notice(error.message);
+    return;
+  }
+  announceAdminUpdate();
+  const summary = '계정을 영구 삭제했습니다.' + (result.unassigned_count ? ` 고객 ${result.unassigned_count}명을 미배정으로 돌렸습니다.` : '');
+  try { await load(); notice(summary); }
+  catch { notice(`${summary} 목록을 불러오지 못했습니다. 다시 조회해 주세요.`); }
+}
+$('#user-delete-cancel').onclick = () => $('#user-delete-dialog').close();
+$('#user-delete-confirm').onclick = () => run(() => doDelete({
+  endpoint: `/api/users/${deleteTarget.id}/hard-delete`,
+  body: {confirm: true, expected_version: deleteTarget.version, idempotency_key: newRequestId()},
+}));
+$('#user-delete-retry').onclick = () => run(() => doDelete());
+$('#user-delete-discard').onclick = () => run(async () => {
+  if (!await confirmAction('영구 삭제 결과 확인 알림을 닫고 현재 사용자 목록을 조회합니다.',
+    {title: '확인 알림 닫기', confirmText: '알림 닫기'})) return;
+  removal.clear();
+  await load();
+});
 document.addEventListener("click",event=>{const link=event.target.closest("a[href]");if(!link)return;if(busy){event.preventDefault();return;}if(drafts.size||saveBody){event.preventDefault();guarded(()=>{location.href=link.href;});}},true);
 document.querySelector('form[action="/auth/logout"]')?.addEventListener("submit",event=>{if(busy||drafts.size||saveBody){event.preventDefault();event.stopImmediatePropagation();guarded(()=>event.target.submit());}},true);
-window.addEventListener("beforeunload",event=>{if(!leaving&&(busy||drafts.size||saveBody||createUnknown)){event.preventDefault();event.returnValue="";}});
+window.addEventListener("beforeunload",event=>{if(!leaving&&(busy||drafts.size||saveBody||createUnknown||removal.value)){event.preventDefault();event.returnValue="";}});
 status();try{await load();}catch(error){notice(error.message);}finally{busy=false;status();}

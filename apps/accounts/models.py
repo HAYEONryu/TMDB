@@ -26,12 +26,13 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100)
-    phone_normalized = models.CharField(max_length=11, unique=True)
+    phone_normalized = models.CharField(max_length=11, unique=True, null=True)
     role = models.CharField(max_length=8, choices=Role.choices, default=Role.EMPLOYEE)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     must_change_password = models.BooleanField(default=True)
     session_version = models.PositiveBigIntegerField(default=1)
+    deleted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     objects = UserManager()
@@ -44,6 +45,10 @@ class User(AbstractBaseUser, PermissionsMixin):
             models.CheckConstraint(condition=Q(role__in=["ADMIN", "EMPLOYEE"]), name="user_role_valid"),
             models.CheckConstraint(condition=Q(name__regex=r"\S"), name="user_name_not_empty"),
             models.CheckConstraint(condition=Q(session_version__gte=1), name="user_session_version_positive"),
+            models.CheckConstraint(condition=(
+                Q(deleted_at__isnull=True, phone_normalized__isnull=False) |
+                Q(deleted_at__isnull=False, phone_normalized__isnull=True, is_active=False, password__startswith='!')
+            ), name='user_deleted_login_disabled'),
         ]
 
     def __str__(self):

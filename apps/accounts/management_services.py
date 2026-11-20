@@ -31,7 +31,7 @@ def user_list(params):
     except (ValueError,TypeError):page=0
     q=params.get("q","")
     if not 1<=page<=1000000 or len(q)>200:invalid("사용자 조회 조건을 확인해 주세요.")
-    query=User.objects.all()
+    query=User.objects.filter(deleted_at__isnull=True)
     if q.strip():query=query.filter(Q(name__icontains=q.strip())|Q(phone_normalized__contains=q.replace("-","").strip()))
     total=query.count();rows=list(query.order_by("created_at","pk")[(page-1)*50:page*50])
     counts=dict(transfer_query().values("current_assignment__employee_id").annotate(n=Count("pk")).values_list("current_assignment__employee_id","n"))
@@ -160,7 +160,7 @@ def update_users(actor,body):
         cached=replay(actor,"USER_UPDATE",key,body_hash)
         if cached:return cached
         for uid,version,_ in normalized_rows:
-            if uid not in users:raise AccessError("NOT_FOUND","사용자를 찾을 수 없습니다.",404)
+            if uid not in users or users[uid].deleted_at:raise AccessError("NOT_FOUND","사용자를 찾을 수 없습니다.",404)
             if users[uid].updated_at.isoformat()!=version:raise AccessError("VERSION_CONFLICT","사용자가 변경되었습니다. 현재 변경값을 보관하고 다시 조회해 비교해 주세요.",409)
         result=apply_edits(actor,users,{uid:values for uid,_,values in normalized_rows})
         return remember(actor,"USER_UPDATE",key,body_hash,result,target_ids=[uid for uid,_,_ in normalized_rows])
@@ -171,7 +171,60 @@ def update_access(actor,target_id,*,is_active=None,role=None):
     with business_write():
         actor,users=locked_users(actor)
         target=users.get(target_id)
-        if target is None:raise AccessError("NOT_FOUND","사용자를 찾을 수 없습니다.",404)
+        if target is None or target.deleted_at:raise AccessError("NOT_FOUND","사용자를 찾을 수 없습니다.",404)
         values=normalized(target.name,target.phone_normalized,target.role if role is None else role,target.is_active if is_active is None else is_active)
         apply_edits(actor,users,{target_id:values})
         return users[target_id]
+
+
+@retry_transient_write
+def delete_user(actor, target_id, body):
+    if (set(body) != {'confirm', 'expected_version', 'idempotency_key'} or body['confirm'] is not True or
+            not isinstance(body['expected_version'], str)):
+        invalid('사용자 영구 삭제 확인이 필요합니다.')
+    key = identifier(body['idempotency_key'])
+    body_hash = fingerprint({'id': str(target_id), 'expected_version': body['expected_version']})
+    operation = 'USER_HARD_DELETE'
+    with business_write():
+        actor, users = locked_users(actor)
+        cached = replay(actor, operation, key, body_hash)
+        if cached:
+            return cached
+        target = users.get(target_id)
+        if target is None or target.deleted_at:
+            raise AccessError('NOT_FOUND', '이미 삭제되었거나 존재하지 않는 사용자입니다.', 404)
+        if target.is_active:
+            raise AccessError('USER_ACTIVE', '사용자를 비활성화하고 저장한 뒤 영구 삭제해 주세요.', 409)
+        if target.updated_at.isoformat() != body['expected_version']:
+            raise AccessError('VERSION_CONFLICT', '사용자 정보가 변경되었습니다. 다시 조회한 뒤 영구 삭제해 주세요.', 409)
+
+        from apps.assignments.models import Assignment
+        from apps.assignments.services import end_locked
+        from apps.customers.models import Customer
+        from apps.sites.models import Site
+        live = Customer.objects.filter(deleted_at__isnull=True, current_assignment__employee=target,
+                                       current_assignment__ended_at__isnull=True)
+        list(Site.objects.select_for_update().filter(pk__in=live.values('site_id')).order_by('pk'))
+        customers = list(live.select_for_update(of=('self',)).order_by('pk'))
+        assignments = list(Assignment.objects.select_for_update().filter(
+            pk__in=[customer.current_assignment_id for customer in customers],
+        ).order_by('pk'))
+        now = timezone.now()
+        end_locked(customers, assignments, actor, Assignment.EndReason.USER_DISABLED, now)
+
+        # Keep the historical actor key used by protected business records.
+        target.name = '삭제된 사용자'
+        target.phone_normalized = None
+        target.set_unusable_password()
+        target.is_staff = False
+        target.is_superuser = False
+        target.must_change_password = False
+        target.last_login = None
+        target.deleted_at = now
+        target.session_version += 1
+        target.save(update_fields=['name', 'phone_normalized', 'password', 'is_staff', 'is_superuser',
+                                   'must_change_password', 'last_login', 'deleted_at', 'session_version', 'updated_at'])
+        target.groups.clear()
+        target.user_permissions.clear()
+        OperationEvent.objects.create(actor=actor, operation=operation, occurred_at=now, affected_count=1)
+        return remember(actor, operation, key, body_hash, {'ok': True, 'unassigned_count': len(customers)})

@@ -73,6 +73,7 @@ urlpatterns = [
     path("api/customers/<uuid:customer_id>/assignee",assignment_views.assignee),
     path("api/users",user_views.users),
     path("api/users/batch-update",user_views.update),
+    path("api/users/<uuid:user_id>/hard-delete",user_views.hard_delete),
     path("api/users/transfer-needed",user_views.transfers),
     path("app/admin/imports", import_views.page),
     path("api/imports/template", import_views.template),

@@ -65,12 +65,12 @@ def reset_password(actor, target_id, *, idempotency_key=None):
     with business_write():
         users = {u.pk: u for u in User.objects.select_for_update().filter(pk__in=[actor.pk, target_id]).order_by("pk")}
         verify_actor(actor, users[actor.pk], admin=True)
+        target = users.get(target_id)
+        if target is None or target.deleted_at:
+            raise AccessError("NOT_FOUND", "사용자를 찾을 수 없습니다.", 404)
         if key:
             cached=replay(users[actor.pk],"PASSWORD_RESET",key,body_hash)
-            if cached:return users.get(target_id)
-        target = users.get(target_id)
-        if target is None:
-            raise AccessError("NOT_FOUND", "사용자를 찾을 수 없습니다.", 404)
+            if cached:return target
         target.set_password(INITIAL_PASSWORD)
         target.must_change_password = True
         target.session_version += 1
